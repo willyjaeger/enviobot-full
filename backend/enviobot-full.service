@@ -1,0 +1,13 @@
+[Unit]
+Description=EnvioBot Full Gunicorn Application Server
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/var/www/enviobot-full/backend
+Environment="PATH=/var/www/enviobot-full/backend/venv/bin"
+ExecStart=/var/www/enviobot-full/backend/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:5001 app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
