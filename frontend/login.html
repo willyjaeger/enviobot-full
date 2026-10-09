@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingresar — EnvioBot Full</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5a623' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z'/%3E%3Cpolyline points='3.4 7.1 12 12 20.6 7.1'/%3E%3Cline x1='12' y1='21.1' x2='12' y2='12'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .auth-wrapper {
+            min-height: 85vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .auth-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 36px 32px;
+            max-width: 420px;
+            width: 100%;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+        }
+    </style>
+</head>
+<body>
+    <div class="container auth-wrapper">
+        <div class="auth-card">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <div class="logo-wrap" style="margin-bottom: 12px;">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+                        <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+                        <line x1="12" y1="21.1" x2="12" y2="12"></line>
+                    </svg>
+                    <span style="font-weight: 800; font-size: 20px; letter-spacing: -0.2px; color: var(--text);">EnvioBot <span style="color: var(--accent);">Full</span></span>
+                </div>
+                <h1 style="font-size: 20px; font-weight: 800; margin-bottom: 4px;">Ingresá a tu panel</h1>
+                <p style="font-size: 13px; color: var(--text2);">Monitoreá tus stocks en bodega y evitá quiebres de venta.</p>
+            </div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" required autocomplete="email" placeholder="vos@tutienda.com.ar">
+                </div>
+                <div class="form-group">
+                    <label for="password">Contraseña</label>
+                    <input type="password" id="password" required autocomplete="current-password">
+                </div>
+
+                <button type="submit" class="btn btn-block" style="padding: 11px; margin-top: 8px; font-size: 14px;">
+                    Ingresar
+                </button>
+            </form>
+
+            <div style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); text-align: center;">
+                <a href="index.html" style="font-size: 12.5px; color: var(--accent-text); text-decoration: none;">
+                    → Ver demo interactivo sin iniciar sesión
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await res.json();
+                if (data.ok && data.token) {
+                    localStorage.setItem('enviobot_full_token', data.token);
+                    window.location.href = 'index.html';
+                } else {
+                    alert(data.error || 'Error al iniciar sesión');
+                }
+            } catch (err) {
+                // Fallback a demo si corre sin backend
+                window.location.href = 'index.html';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="img/cajita_icono.svg">
+    <link rel="icon" type="image/png" href="img/enviobot_app_icon.png">
+    <link rel="apple-touch-icon" href="img/enviobot_app_icon.png">
+    <script>
+        // Anti-flicker de tema claro/oscuro
+        (function () {
+            try {
+                if (localStorage.getItem('enviobot_full_theme') === 'light' || localStorage.getItem('enviobot_theme') === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <div class="container">
+        <!-- ── Topbar Sticky ────────────────────────────── -->
+        <div class="topbar">
+            <header>
+                <a href="#" class="logo-wrap">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+                        <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+                        <line x1="12" y1="21.1" x2="12" y2="12"></line>
+                    </svg>
+                    <span style="font-weight: 800; font-size: 19px; letter-spacing: -0.2px; color: var(--text);">EnvioBot <span style="color: var(--accent);">Full</span></span>
+                </a>
+
+                <div class="user-info">
+                    <div class="user-email" id="userEmailText">info@logax.com.ar</div>
+                    <div class="top-actions">
+                        <button id="themeToggleBtn" onclick="toggleTheme()" class="icon-btn" title="Alto contraste para pantallas con mucha luz">
+                            <svg id="themeIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M20 14.5A8.5 8.5 0 019.5 4 8.5 8.5 0 1020 14.5z"></path>
+                            </svg>
+                            <span id="themeLabel">Modo claro</span>
+                        </button>
+                        <button onclick="abrirConfiguracion()" class="icon-btn" title="Ajustar parámetros y alertas">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"></circle>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                            </svg>
+                            <span>Configuración</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Barra de Métricas Superiores (Dashboard) -->
+            <div class="status-bar">
+                <div class="stat">
+                    <div class="stat-value" id="statTotal">—</div>
+                    <div class="stat-label">En Depósito</div>
+                    <div class="stat-sub">Publicaciones monitoreadas</div>
+                </div>
+                <div class="stat stat-ok">
+                    <div class="stat-value" id="statOk">—</div>
+                    <div class="stat-label">Stock Óptimo</div>
+                    <div class="stat-sub">Cubiertos con holgura</div>
+                </div>
+                <div class="stat stat-warn">
+                    <div class="stat-value" id="statWarning">—</div>
+                    <div class="stat-label">Preparar Colecta</div>
+                    <div class="stat-sub">Próximos a requerir flete</div>
+                </div>
+                <div class="stat stat-danger">
+                    <div class="stat-value" id="statCritical">—</div>
+                    <div class="stat-label">Quiebre Inminente</div>
+                    <div class="stat-sub">¡Mandar flete hoy mismo!</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Contenido Principal ──────────────────────── -->
+        <div class="main-content">
+            <!-- Columna Izquierda: Tabla y Monitoreo -->
+            <div class="card">
+                <!-- Barra de Depósito Integrada -->
+                <div class="depot-toolbar">
+                    <div class="depot-selector-group">
+                        <span style="font-size: 13px; font-weight: 700; color: var(--text2);">Depósito:</span>
+                        <select id="activeWarehouseSelect" class="depot-select" onchange="cambiarDeposito(this.value)">
+                            <option value="meli_full" selected>Mercado Envíos Full (Bs As)</option>
+                            <option value="cordoba">Depósito Córdoba</option>
+                            <option value="rosario">Hub Rosario</option>
+                            <option value="mdp">Depósito Mar del Plata</option>
+                        </select>
+                        <button class="btn btn-secondary btn-sm" onclick="abrirModalNuevoDeposito()" title="Dar de alta un nuevo depósito o sucursal">
+                            + Nuevo Depósito
+                        </button>
+                    </div>
+
+                    <div class="depot-info-pill">
+                        Demora flete: <strong id="depotTransitDaysText">5 días</strong> · Cobertura objetivo: <strong id="depotTargetDaysText">30 días</strong>
+                    </div>
+                </div>
+
+                <h2>
+                    <span>Pronóstico y Rotación de Stock</span>
+                    <button class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="abrirModalColecta()">
+                        Armar Colecta
+                    </button>
+                </h2>
+
+                <!-- Filtros -->
+                <div class="filter-bar">
+                    <input type="text" class="filter-input" id="searchInput" 
+                           placeholder="Buscar por SKU, título o MLA..." 
+                           oninput="onSearchChange(this.value)">
+
+                    <select class="filter-select" id="filterStatusSelect" onchange="onFilterChange(this.value)">
+                        <option value="all">Todos los estados</option>
+                        <option value="action_required">Requieren Colecta Hoy</option>
+                        <option value="warning">Preparar colecta</option>
+                        <option value="critical">Quiebre crítico / Sin stock</option>
+                        <option value="ok">Stock óptimo</option>
+                    </select>
+                </div>
+
+                <!-- Tabla Principal -->
+                <div class="table-responsive">
+                    <table class="stock-table">
+                        <thead>
+                            <tr>
+                                <th>Publicación / SKU</th>
+                                <th class="num-cell" title="Unidades disponibles reales hoy en este depósito">Stock Actual</th>
+                                <th class="num-cell" title="Venta promedio diaria de unidades">Ritmo (VPD)</th>
+                                <th class="num-cell" title="Días que te dura el stock antes de quebrar">Días Cobertura</th>
+                                <th class="num-cell" title="Fecha estimada en la que se agota totalmente el stock si no se repone">Quiebra el</th>
+                                <th class="num-cell" title="Día límite en el que tenés que entrar a MercadoLibre a pedir la colecta para que el camión llegue antes de quebrar">Cuándo pedir Colecta a MeLi</th>
+                                <th class="num-cell" title="Días de stock teórico que querés mantener de este producto">Stock Deseado</th>
+                                <th class="num-cell">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stockTableBody">
+                            <!-- Filas inyectadas por app.js -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Columna Derecha: Control y Widget de Alertas -->
+            <div class="sidebar-col">
+                <!-- Card 1: Widget de Alertas de Reposición -->
+                <div class="card" id="widgetAlertasCard">
+                    <h2>Alertas de Reposición</h2>
+                    <div id="widgetAlertContainer">
+                        <!-- Inyectado dinámicamente por app.js -->
+                    </div>
+                </div>
+
+                <!-- Card 2: Cuenta MercadoLibre -->
+                <div class="card">
+                    <h2>Conexión MercadoLibre</h2>
+                    <div class="nested-box">
+                        <div class="nested-title">
+                            <span>Estado de Conexión</span>
+                            <span class="badge badge-ok">Activo</span>
+                        </div>
+                        <div style="font-size: 13.5px; color: var(--text2); line-height: 1.8;">
+                            <div>Cuenta: <strong style="color: var(--text);">TIENDA_OFICIAL_AR</strong></div>
+                            <div>Depósito: <strong id="sidebarDepotName" style="color: var(--text);">Mercado Envíos Full (Bs As)</strong></div>
+                            <div>Último chequeo: <span id="lastSyncText">Hace 12 min</span></div>
+                        </div>
+
+                        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
+                            <button id="btnCheckStockNow" onclick="sincronizarAhora()" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; font-weight: 700; font-size: 13px;">
+                                <span id="syncBtnText">Chequear Stock Real</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal: Nuevo Depósito ──────────────────────── -->
+    <div class="modal-overlay" id="depotModal">
+        <div class="modal-card modal-card-depot">
+            <div class="modal-header">
+                <h3 style="color: var(--accent-text); font-size: 20px; font-weight: 800;">Nuevo Depósito</h3>
+                <button class="modal-close" onclick="cerrarModalNuevoDeposito()">✕</button>
+            </div>
+            <form onsubmit="guardarNuevoDeposito(event)">
+                <div class="form-group">
+                    <label>Nombre del Depósito</label>
+                    <input type="text" id="newDepotName" placeholder="Ej: Depósito Mendoza" required>
+                </div>
+                <div class="form-group">
+                    <label>Ciudad / Provincia</label>
+                    <input type="text" id="newDepotCity" placeholder="Ej: Mendoza Capital" required>
+                </div>
+                <div class="form-group">
+                    <label>Demora habitual del flete (Días de viaje del camión)</label>
+                    <input type="number" id="newDepotTransit" value="3" min="1" max="60" required>
+                    <small>Días que tarda el flete en llegar a este depósito desde tu fábrica central.</small>
+                </div>
+                <div class="form-group">
+                    <label>Días de stock objetivo a mantener (Cobertura)</label>
+                    <input type="number" id="newDepotTarget" value="25" min="5" max="180" required>
+                    <small>Cuántos días de ventas querés que te duren los envíos a este depósito.</small>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+                    <button type="button" class="btn btn-secondary" onclick="cerrarModalNuevoDeposito()">Cancelar</button>
+                    <button type="submit" class="btn" style="padding: 10px 22px;">Guardar Depósito</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ── Modal de Armado de Colecta ────────────────── -->
+    <div class="modal-overlay" id="colectaModal">
+        <div class="modal-card modal-card-large">
+            <div class="modal-header">
+                <div>
+                    <h3 style="color: var(--accent); font-size: 21px; font-weight: 800;">Armar Colecta para Despacho</h3>
+                    <p style="font-size: 13.5px; color: var(--text2); margin-top: 4px;">
+                        Publicaciones en fecha límite de reposición según la demora del flete de este depósito y tu ritmo de venta.
+                    </p>
+                </div>
+                <button class="modal-close" onclick="cerrarModalColecta()">✕</button>
+            </div>
+
+            <div class="colecta-summary-bar">
+                <div style="font-size: 13px;">
+                    <span>Destino: <strong id="colectaDestinoText" style="color: var(--accent);">Mercado Envíos Full (Bs As)</strong></span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-size: 12px; color: var(--text2);">Días a cubrir con este flete:</label>
+                    <select id="colectaDiasSelect" onchange="recalcularColecta()" class="filter-select" style="padding: 5px 10px;">
+                        <option value="15">15 días (Reposición rápida)</option>
+                        <option value="30" selected>30 días (1 mes de ventas)</option>
+                        <option value="45">45 días</option>
+                        <option value="60">60 días (Bimestral)</option>
+                    </select>
+                </div>
+                <div style="font-size: 14px;">
+                    Total bultos: <strong id="colectaTotalUnits" style="color: var(--accent); font-size: 17px;">0 un.</strong>
+                </div>
+            </div>
+
+            <!-- Cronograma de Pasos para MercadoLibre -->
+            <div class="colecta-timeline-bar" id="colectaTimelineBar">
+                <div class="timeline-step">
+                    <span class="step-num">1</span>
+                    <div><strong>Pedir Colecta en MeLi</strong><br><span id="timelineAskDate" style="color: var(--accent); font-weight: 700;">PEDIR HOY</span></div>
+                </div>
+                <div class="timeline-arrow">→</div>
+                <div class="timeline-step">
+                    <span class="step-num">2</span>
+                    <div><strong>Retiro por tu galpón</strong><br><span id="timelinePickupDate" style="color: var(--text2);">En 48 hs</span></div>
+                </div>
+                <div class="timeline-arrow">→</div>
+                <div class="timeline-step">
+                    <span class="step-num">3</span>
+                    <div><strong>Disponible en depósito</strong><br><span id="timelineArrivalDate" style="color: var(--text2);">Antes del quiebre</span></div>
+                </div>
+            </div>
+
+            <div class="modal-body-scroll">
+                <table class="colecta-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 35px; text-align: center;">
+                                <input type="checkbox" id="checkAllColecta" checked onchange="toggleSelectAllColecta(this.checked)">
+                            </th>
+                            <th>Producto / SKU</th>
+                            <th style="text-align: right;">Stock Actual</th>
+                            <th style="text-align: right;">Venta Diaria</th>
+                            <th style="text-align: right;">Demora Flete</th>
+                            <th style="text-align: center; width: 110px;">Unidades a Mandar</th>
+                        </tr>
+                    </thead>
+                    <tbody id="colectaTableBody">
+                        <!-- Inyectado por app.js -->
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-secondary btn-sm" onclick="copiarListaColecta()">
+                        Copiar Lista
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="exportarColectaCSV()">
+                        Descargar CSV (Excel)
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="imprimirColecta()">
+                        Imprimir Remito
+                    </button>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
+                    <button type="button" class="btn" onclick="confirmarDespachoColecta()">Confirmar Despacho</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal de Configuración ────────────────────── -->
+    <div class="modal-overlay" id="configModal">
+        <div class="modal-card modal-card-config">
+            <div class="modal-header">
+                <h3 style="color: var(--accent-text); font-size: 18px; font-weight: 800;">Configuración del Sistema</h3>
+                <button class="modal-close" onclick="cerrarConfiguracion()">✕</button>
+            </div>
+
+            <!-- Pestañas de Configuración -->
+            <div class="config-tabs">
+                <button class="config-tab-btn active" id="tabBtnGeneral" onclick="switchConfigTab('general')">
+                    Depósitos y Parámetros
+                </button>
+                <button class="config-tab-btn" id="tabBtnWhatsapp" onclick="switchConfigTab('whatsapp')">
+                    Alertas de WhatsApp (Equipo)
+                </button>
+            </div>
+
+            <form id="configForm" onsubmit="guardarConfiguracion(event)" style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+                <!-- Contenedor con Scroll Interno -->
+                <div class="modal-body-scrollable">
+                    <!-- TAB 1: Parámetros Generales y por Depósito -->
+                    <div id="configTabGeneral">
+                        <!-- Sección de Depósitos y Tiempos de Flete -->
+                        <div style="margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
+                                <div>
+                                    <h4 style="font-size: 14px; font-weight: 700; color: var(--text);">Demora del Camión y Cobertura por Depósito</h4>
+                                    <p style="font-size: 12.5px; color: var(--text2); margin-top: 2px;">
+                                        La demora del flete se calcula por depósito de destino según la distancia a cada provincia.
+                                    </p>
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="cerrarConfiguracion(); abrirModalNuevoDeposito();">
+                                    + Nuevo Depósito
+                                </button>
+                            </div>
+
+                            <table class="config-depots-table">
+                                <thead>
+                                    <tr>
+                                        <th>Depósito</th>
+                                        <th>Ubicación</th>
+                                        <th style="text-align: center; width: 130px;">Demora Flete</th>
+                                        <th style="text-align: center; width: 130px;">Stock Objetivo</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cfgDepotsTableBody">
+                                    <!-- Filas generadas dinámicamente con WAREHOUSES -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Parámetros Generales de Alarma -->
+                        <div style="border-top: 1px solid var(--border); padding-top: 16px;">
+                            <h4 style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px;">Parámetros Generales de Alarma</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                                <div class="form-group">
+                                    <label>Colchón de seguridad general</label>
+                                    <div style="display: inline-flex; align-items: center; gap: 6px;">
+                                        <input type="number" id="cfgSafetyStock" class="input-days-2digit" value="2" min="0" max="99" oninput="if(this.value.length>2) this.value=this.value.slice(0,2);" required>
+                                        <span style="color: var(--text2); font-size: 12px; font-weight: 600;">días</span>
+                                    </div>
+                                    <small>Días de margen por si el camión se atrasa o MeLi demora en recepcionar los bultos.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>Email para Alarma Diaria Matutina</label>
+                                    <input type="email" id="cfgEmail" placeholder="admin@tutienda.com.ar" value="ventas@tienda.com.ar">
+                                    <small>Resumen matutino de publicaciones que alcanzaron su fecha límite de reposición.</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: Destinatarios de WhatsApp (Monetizable) -->
+                    <div id="configTabWhatsapp" style="display: none;">
+                        <div class="plan-limit-banner">
+                            <div>
+                                <span>Plan actual: <strong id="waPlanBadge" style="color: var(--accent);">Plan Pro</strong></span>
+                                <div style="font-size: 11px; color: var(--text2); margin-top: 2px;">
+                                    Utilizados: <span id="waCountUsed">2</span> de <span id="waMaxAllowed">2</span> números permitidos.
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-sm" style="background: var(--surf2); border: 1px solid var(--border-hover); font-size: 11px;" onclick="mostrarInfoUpgrade()">
+                                Mejorar Plan
+                            </button>
+                        </div>
+
+                        <!-- Tabla de Destinatarios de WhatsApp -->
+                        <table class="recipients-table">
+                            <thead>
+                                <tr>
+                                    <th>Nombre</th>
+                                    <th>Celular</th>
+                                    <th>Rol</th>
+                                    <th>Depósito</th>
+                                    <th style="text-align: right;">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recipientsTableBody">
+                                <!-- Inyectado por app.js -->
+                            </tbody>
+                        </table>
+
+                        <!-- Formulario Agregar Destinatario -->
+                        <div id="addRecipientBox" style="background: var(--surf2); padding: 12px; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 12px;">
+                            <div style="font-size: 12px; font-weight: 700; margin-bottom: 8px; color: var(--text);">
+                                + Agregar número de WhatsApp al equipo
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                                <input type="text" id="newRecipName" placeholder="Nombre (ej: Marcos)" class="filter-input" style="padding: 6px 10px; font-size: 12px;">
+                                <input type="text" id="newRecipPhone" placeholder="+54 9 11 1234-5678" class="filter-input" style="padding: 6px 10px; font-size: 12px;">
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: center;">
+                                <select id="newRecipRole" class="filter-select" style="padding: 6px 10px; font-size: 12px;">
+                                    <option value="admin">Dueño / Gerencia</option>
+                                    <option value="deposito">Encargado Depósito</option>
+                                    <option value="flete">Chofer / Fletero</option>
+                                </select>
+                                <select id="newRecipDepot" class="filter-select" style="padding: 6px 10px; font-size: 12px;">
+                                    <option value="all">Todos los depósitos</option>
+                                    <option value="meli_full">Solo MeLi Full (Bs As)</option>
+                                    <option value="cordoba">Solo Córdoba</option>
+                                    <option value="rosario">Solo Rosario</option>
+                                    <option value="mdp">Solo Mar del Plata</option>
+                                </select>
+                                <button type="button" class="btn btn-sm" onclick="agregarDestinatarioWA()" style="background: var(--accent); color: #111; font-weight: 700; padding: 7px 12px;">
+                                    Agregar
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Mensaje de Límite Alcanzado (si aplica) -->
+                        <div id="waLimitReachedMsg" style="display: none; background: rgba(255, 82, 82, 0.12); border: 1px solid rgba(255, 82, 82, 0.4); border-radius: 6px; padding: 10px; font-size: 11.5px; color: #ff7676; margin-bottom: 12px;">
+                            Alcanzaste el límite de números de tu plan actual. Pasate al <strong>Plan Enterprise</strong> para alertas ilimitadas a todo tu equipo de depósito y logística.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer Fijo al Fondo del Modal -->
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="cerrarConfiguracion()" id="btnConfigCancel">Cancelar</button>
+                    <button type="submit" class="btn" id="btnConfigSave" style="padding: 8px 20px;">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/theme.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

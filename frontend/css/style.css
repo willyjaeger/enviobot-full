@@ -1,0 +1,1081 @@
+/* =====================================================================
+   EnvioBot Full - Hoja de Estilos Principal
+   Clon exacto de la identidad visual de enviobot.com.ar/app
+   ===================================================================== */
+
+:root {
+    --bg:                    #111318;
+    --surface:               #1c1e26;
+    --surf2:                 #252830;
+    --border:                rgba(255, 255, 255, 0.07);
+    --border-hover:          rgba(255, 255, 255, 0.15);
+    --accent:                #f5a623;
+    --accent-text:           #f5a623;
+    --accent-d:              #c97f10;
+    --text:                  #e8e9ed;
+    --text2:                 #8a8d9a;
+    --good:                  #4CAF50;
+    --good-bg:               rgba(76, 175, 80, 0.12);
+    --good-border:           rgba(76, 175, 80, 0.35);
+    --warn:                  #f5a623;
+    --warn-bg:               rgba(245, 166, 35, 0.14);
+    --warn-border:           rgba(245, 166, 35, 0.40);
+    --danger:                #ff5252;
+    --danger-bg:             rgba(255, 82, 82, 0.14);
+    --danger-border:         rgba(255, 82, 82, 0.40);
+    --btn-secondary-bg:      #3a3e4a;
+    --btn-secondary-hover:   #474c5a;
+    --logo-bg:               var(--surface);
+    --card-nested-bg:        var(--surf2);
+    --card-nested-select-bg: var(--surface);
+    color-scheme: dark;
+}
+
+/* Modo Claro de Alto Contraste */
+:root[data-theme="light"] {
+    --bg:                    #f4f5f7;
+    --surface:               #ffffff;
+    --surf2:                 #eceef2;
+    --border:                rgba(15, 17, 23, 0.12);
+    --border-hover:          rgba(15, 17, 23, 0.25);
+    --accent-text:           #b45309;
+    --text:                  #1a1c22;
+    --text2:                 #676b78;
+    --btn-secondary-bg:      #dde1e7;
+    --btn-secondary-hover:   #ccd1d9;
+    --logo-bg:               var(--surf2);
+    --card-nested-bg:        var(--surface);
+    --card-nested-select-bg: var(--surf2);
+    color-scheme: light;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 13.5px;
+    line-height: 1.5;
+}
+
+.container {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 18px 20px 40px;
+}
+
+/* ── Topbar Sticky ────────────────────────────────── */
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--bg);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+    box-shadow: 0 10px 14px -8px rgba(0, 0, 0, 0.45);
+}
+
+header {
+    background: var(--surface);
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid var(--border);
+}
+
+.logo-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--logo-bg);
+    padding: 6px 12px;
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text);
+}
+
+.logo-badge {
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: rgba(245, 166, 35, 0.15);
+    color: var(--accent);
+    border: 1px solid rgba(245, 166, 35, 0.35);
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-left: 2px;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text2);
+}
+
+.top-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+    background: transparent;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 12px;
+    color: var(--text2);
+    border: 1px solid var(--border);
+    padding: 5px 10px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.icon-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+}
+
+/* ── Barra de Métricas (Status Bar) ───────────────── */
+.status-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+}
+
+@media (max-width: 900px) {
+    .status-bar {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 540px) {
+    .status-bar {
+        grid-template-columns: 1fr;
+    }
+}
+
+.stat {
+    background: var(--surface);
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.stat.stat-ok {
+    border-left-color: var(--good);
+}
+
+.stat.stat-warn {
+    border-left-color: var(--warn);
+}
+
+.stat.stat-danger {
+    border-left-color: var(--danger);
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--accent-text);
+    letter-spacing: -0.02em;
+}
+
+.stat.stat-ok .stat-value { color: var(--good); }
+.stat.stat-warn .stat-value { color: var(--warn); }
+.stat.stat-danger .stat-value { color: var(--danger); }
+
+.stat-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 2px;
+}
+
+.stat-sub {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 1px;
+}
+
+/* ── Layout Principal ────────────────────────────── */
+.main-content {
+    display: grid;
+    grid-template-columns: 2.2fr 0.95fr;
+    gap: 18px;
+    align-items: start;
+}
+
+@media (max-width: 1024px) {
+    .main-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+.card {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 18px;
+    border: 1px solid var(--border);
+}
+
+.card h2 {
+    font-size: 16.5px;
+    margin-bottom: 14px;
+    color: var(--accent-text);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* ── Botones ──────────────────────────────────────── */
+.btn {
+    background: var(--accent);
+    color: #111318;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    text-decoration: none;
+    transition: background 0.15s, transform 0.1s;
+}
+
+.btn:hover {
+    background: #ffb84d;
+}
+
+.btn-secondary {
+    background: var(--btn-secondary-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+    background: var(--btn-secondary-hover);
+    border-color: var(--accent);
+}
+
+.btn-sm {
+    padding: 5px 10px;
+    font-size: 11px;
+}
+
+.btn-block {
+    width: 100%;
+}
+
+/* ── Filtros y Búsqueda ───────────────────────────── */
+.filter-bar {
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.filter-input, .filter-select {
+    padding: 7px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: inherit;
+}
+
+.filter-input:focus, .filter-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.filter-input {
+    flex: 1;
+    min-width: 180px;
+}
+
+/* ── Tabla de Stock y Pronósticos ─────────────────── */
+.table-responsive {
+    overflow-x: auto;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+table.stock-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    text-align: left;
+}
+
+table.stock-table th {
+    background: var(--surf2);
+    color: var(--text2);
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+table.stock-table td {
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+table.stock-table tr:last-child td {
+    border-bottom: none;
+}
+
+table.stock-table tr:hover td {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.product-cell {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 240px;
+}
+
+.product-thumb {
+    width: 42px;
+    height: 42px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.product-title {
+    font-weight: 600;
+    color: var(--text);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.35;
+}
+
+.product-meta {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 2px;
+}
+
+.num-cell {
+    text-align: center;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.badge-ok {
+    color: var(--good);
+    background: var(--good-bg);
+    border-color: var(--good-border);
+}
+
+.badge-warn {
+    color: var(--warn);
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+}
+
+.badge-danger {
+    color: var(--danger);
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+}
+
+.badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.lead-time-input {
+    width: 50px;
+    padding: 4px 5px;
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    font-size: 12px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.lead-time-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ── Panel Lateral Derecho (Sticky) ──────────────── */
+.sidebar-col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    position: sticky;
+    top: 155px;
+}
+
+.nested-box {
+    background: var(--surf2);
+    border-radius: 6px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    margin-bottom: 12px;
+}
+
+.nested-box:last-child {
+    margin-bottom: 0;
+}
+
+.nested-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.restock-sug-card {
+    background: rgba(245, 166, 35, 0.08);
+    border: 1px dashed var(--accent);
+    border-radius: 6px;
+    padding: 12px;
+    margin-top: 10px;
+}
+
+.restock-units {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--accent-text);
+}
+
+/* ── Modales ─────────────────────────────────────── */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+.modal-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px 24px;
+    max-width: 600px;
+    width: 92%;
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    flex-shrink: 0;
+}
+
+.modal-close {
+    background: transparent;
+    border: none;
+    color: var(--text2);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.modal-close:hover {
+    color: var(--text);
+    background: var(--surf2);
+}
+
+.modal-body-scrollable {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    padding-right: 6px;
+}
+
+.modal-body-scrollable::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-body-scrollable::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.modal-body-scrollable::-webkit-scrollbar-thumb {
+    background: var(--border-hover);
+    border-radius: 4px;
+}
+
+.modal-body-scrollable::-webkit-scrollbar-thumb:hover {
+    background: var(--text2);
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 14px;
+}
+
+.form-group label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.form-group input, .form-group select {
+    padding: 8px 11px;
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 5px;
+    font-size: 12.5px;
+    font-family: inherit;
+}
+
+.form-group input:focus, .form-group select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.form-group small {
+    font-size: 11.5px;
+    color: var(--text2);
+    line-height: 1.4;
+}
+
+.input-days-2digit {
+    width: 44px;
+    padding: 4px 2px;
+    background: var(--surf2);
+    border: 1px solid var(--border-hover);
+    color: var(--text);
+    border-radius: 4px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 12.5px;
+    font-family: inherit;
+    -moz-appearance: textfield;
+}
+
+.input-days-2digit::-webkit-outer-spin-button,
+.input-days-2digit::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.input-days-2digit:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ── Widget de Alertas (Columna Derecha) ────────── */
+.widget-alert-status {
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    border: 1px solid var(--border);
+}
+
+.widget-alert-status.critical {
+    background: rgba(255, 82, 82, 0.12);
+    border-color: rgba(255, 82, 82, 0.40);
+    color: #ff6b6b;
+}
+
+.widget-alert-status.warning {
+    background: rgba(245, 166, 35, 0.12);
+    border-color: rgba(245, 166, 35, 0.40);
+    color: var(--accent-text);
+}
+
+.widget-alert-status.ok {
+    background: rgba(76, 175, 80, 0.10);
+    border-color: rgba(76, 175, 80, 0.35);
+    color: #4CAF50;
+}
+
+.widget-alert-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.widget-alert-item {
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-size: 12px;
+}
+
+.widget-alert-item-title {
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.widget-alert-item-meta {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text2);
+    font-size: 11px;
+}
+
+/* ── Barra de Depósito en la Cabecera Principal ──── */
+.depot-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.depot-selector-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.depot-select {
+    background: var(--surf2);
+    border: 1px solid var(--border-hover);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 700;
+    padding: 7px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    outline: none;
+}
+
+.depot-select:focus {
+    border-color: var(--accent);
+}
+
+.depot-info-pill {
+    font-size: 11.5px;
+    color: var(--text2);
+    background: var(--surf2);
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+.depot-info-pill strong {
+    color: var(--text);
+}
+
+/* ── Badges de Fecha para Pedir Colecta a MeLi ────── */
+.badge-date-today {
+    display: inline-block;
+    background: rgba(255, 82, 82, 0.18);
+    border: 1px solid rgba(255, 82, 82, 0.45);
+    color: #ff5252;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 800;
+    font-size: 11.5px;
+    letter-spacing: -0.1px;
+}
+
+.badge-date-soon {
+    display: inline-block;
+    background: rgba(245, 166, 35, 0.16);
+    border: 1px solid rgba(245, 166, 35, 0.45);
+    color: var(--accent-text);
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 11.5px;
+}
+
+.badge-date-normal {
+    font-size: 12px;
+    color: var(--text2);
+}
+
+.cell-sub-quiebre {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 3px;
+    letter-spacing: -0.1px;
+}
+
+.cell-sub-quiebre strong {
+    color: var(--text);
+}
+
+/* ── Banner de Próxima Colecta en Widget ─────────── */
+.proxima-colecta-banner {
+    background: rgba(245, 166, 35, 0.07);
+    border: 1px solid rgba(245, 166, 35, 0.35);
+    border-radius: 6px;
+    padding: 11px 13px;
+    margin-bottom: 12px;
+}
+
+.proxima-colecta-label {
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    margin-bottom: 3px;
+}
+
+.proxima-colecta-date {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 5px;
+}
+
+.proxima-colecta-desc {
+    font-size: 11.5px;
+    color: var(--text2);
+    line-height: 1.45;
+}
+
+.proxima-colecta-desc strong {
+    color: var(--text);
+}
+
+/* ── Cronograma de Colecta MeLi en Modal ─────────── */
+.colecta-timeline-bar {
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11.5px;
+}
+
+.timeline-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.step-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.timeline-arrow {
+    color: var(--text2);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+/* ── Usuario en Header ────────────────────────────── */
+.user-email {
+    font-size: 13px;
+    color: var(--text2);
+    font-weight: 500;
+    letter-spacing: -0.1px;
+}
+
+/* ── Pestañas y Modal de Configuración ────────────── */
+.config-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+}
+
+.config-tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text2);
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.config-tab-btn:hover {
+    color: var(--text);
+}
+
+.config-tab-btn.active {
+    background: var(--surf2);
+    color: var(--accent);
+}
+
+.plan-limit-banner {
+    background: rgba(245, 166, 35, 0.10);
+    border: 1px solid rgba(245, 166, 35, 0.35);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+}
+
+.recipients-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin-bottom: 14px;
+}
+
+.recipients-table th {
+    background: var(--surf2);
+    padding: 7px 10px;
+    text-align: left;
+    color: var(--text2);
+    font-size: 11px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+}
+
+.recipients-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.role-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.role-admin { background: rgba(245, 166, 35, 0.2); color: var(--accent-text); }
+.role-deposito { background: rgba(76, 175, 80, 0.2); color: #4CAF50; }
+.role-flete { background: rgba(33, 150, 243, 0.2); color: #64b5f6; }
+
+/* ── Modal de Colecta Amplio y Legible ────────────── */
+.modal-card-large {
+    max-width: 980px;
+    width: 95%;
+    max-height: 88vh;
+    padding: 22px 26px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-card-config {
+    max-width: 740px;
+    width: 94%;
+    max-height: 86vh;
+    padding: 22px 26px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-card-depot {
+    max-width: 520px;
+    width: 92%;
+    max-height: 86vh;
+    padding: 22px 26px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-body-scroll {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    padding-right: 6px;
+    margin: 12px 0;
+}
+
+.colecta-summary-bar {
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.colecta-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+
+.colecta-table th {
+    background: var(--surf2);
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text2);
+    border-bottom: 1px solid var(--border);
+}
+
+.colecta-table td {
+    padding: 10px 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.unit-input-colecta {
+    width: 72px;
+    padding: 5px 8px;
+    background: var(--surf2);
+    border: 1px solid var(--border-hover);
+    color: var(--text);
+    border-radius: 4px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 13px;
+}
+
+.unit-input-colecta:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ── Tabla de Depósitos en Configuración ─────────── */
+.config-depots-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+    margin-top: 8px;
+    margin-bottom: 14px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.config-depots-table th {
+    background: var(--surf2);
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text2);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+}
+
+.config-depots-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.config-depots-table tr:last-child td {
+    border-bottom: none;
+}
+
+
+
+
