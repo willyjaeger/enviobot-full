@@ -70,11 +70,18 @@
             const password = document.getElementById('password').value;
 
             try {
-                const res = await fetch('/api/auth/login', {
+                let res = await fetch('/api/full/auth/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email, password })
                 });
+                if (res.status === 404) {
+                    res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email, password })
+                    });
+                }
                 const data = await res.json();
                 if (data.ok && data.token) {
                     localStorage.setItem('enviobot_full_token', data.token);

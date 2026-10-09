@@ -58,6 +58,7 @@ def hash_pw(pw: str) -> str:
 # -------------------------------------------------------------
 
 @app.route("/api/auth/register", methods=["POST"])
+@app.route("/api/full/auth/register", methods=["POST"])
 def register():
     data = request.get_json() or {}
     email = data.get("email", "").strip().lower()
@@ -90,6 +91,7 @@ def register():
     return jsonify({"ok": True, "token": token, "user": {"id": user_id, "email": email, "full_name": full_name}}), 201
 
 @app.route("/api/auth/login", methods=["POST"])
+@app.route("/api/full/auth/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
     email = data.get("email", "").strip().lower()
@@ -108,6 +110,7 @@ def login():
     return jsonify({"ok": True, "token": token, "user": user}), 200
 
 @app.route("/api/auth/me", methods=["GET"])
+@app.route("/api/full/auth/me", methods=["GET"])
 @jwt_required()
 def me():
     user_id = int(get_jwt_identity())
