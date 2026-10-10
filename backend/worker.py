@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 worker.py - Motor de Sincronización y Pronóstico de Quiebre de Stock (EnvioBot Full)
-Corre de forma periódica en el servidor (via Cron o Systemd Timer) o a demanda por API.
+Compatible con la base de datos enviobot_web y soporte multi-cuenta de MercadoLibre.
 """
 
 import os
@@ -14,14 +14,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_NAME = os.getenv("DB_NAME", "enviobot_full")
+DB_NAME = os.getenv("DB_NAME", "enviobot_web")
 DB_PORT = int(os.getenv("DB_PORT", 3306))
 
-ML_CLIENT_ID = os.getenv("ML_SHARED_CLIENT_ID", "")
-ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "")
+ML_CLIENT_ID = os.getenv("ML_CLIENT_ID", os.getenv("ML_SHARED_CLIENT_ID", "1845856849463362"))
+ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "2f2cg8ZGY4X9pLOFxgPUOAQefHQePf6q")
 MELI_API = "https://api.mercadolibre.com"
 
 def get_db():
@@ -35,7 +35,7 @@ def get_db():
         autocommit=True
     )
 
-def refresh_ml_token(conn, user_id, refresh_token):
+def refresh_ml_token(conn, cred_id, refresh_token):
     """Renueva el access_token de MeLi si está expirado o próximo a expirar."""
     url = f"{MELI_API}/oauth/token"
     payload = {
@@ -49,27 +49,32 @@ def refresh_ml_token(conn, user_id, refresh_token):
         if r.status_code == 200:
             data = r.json()
             new_access = data["access_token"]
-            new_refresh = data["refresh_token"]
-            expires_at = datetime.utcnow() + timedelta(seconds=data["expires_in"])
+            new_refresh = data.get("refresh_token", refresh_token)
+            expires_at = int(time.time() + data.get("expires_in", 21600))
             with conn.cursor() as cur:
                 cur.execute("""
                     UPDATE ml_credentials 
-                    SET access_token=%s, refresh_token=%s, expires_at=%s, updated_at=NOW()
-                    WHERE user_id=%s
-                """, (new_access, new_refresh, expires_at, user_id))
-            print(f"[{datetime.now()}] Token renovado con éxito para usuario {user_id}")
+                    SET ml_access_token=%s, ml_refresh_token=%s, ml_token_expires_at=%s, updated_at=NOW()
+                    WHERE id=%s
+                """, (new_access, new_refresh, expires_at, cred_id))
+            print(f"[{datetime.now()}] Token MeLi renovado (cred_id: {cred_id})")
             return new_access
         else:
-            print(f"[{datetime.now()}] Error renovando token usuario {user_id}: {r.text}")
+            print(f"[{datetime.now()}] Error renovando token cred_id {cred_id}: {r.text}")
             return None
     except Exception as e:
-        print(f"[{datetime.now()}] Excepción renovando token usuario {user_id}: {e}")
+        print(f"[{datetime.now()}] Excepción renovando token cred_id {cred_id}: {e}")
         return None
 
+def get_valid_token_for_cred(conn, cred):
+    """Devuelve token válido o lo refresca automáticamente."""
+    expires_at = cred.get("ml_token_expires_at") or 0
+    if time.time() < expires_at - 300:
+        return cred.get("ml_access_token")
+    return refresh_ml_token(conn, cred["id"], cred.get("ml_refresh_token"))
+
 def fetch_full_publications(access_token, meli_user_id):
-    """
-    Recupera todas las publicaciones del vendedor que tienen logística Fulfillment (Full).
-    """
+    """Recupera todas las publicaciones del vendedor en Fulfillment (Full)."""
     headers = {"Authorization": f"Bearer {access_token}"}
     all_items = []
     limit = 50
@@ -80,9 +85,8 @@ def fetch_full_publications(access_token, meli_user_id):
         try:
             r = requests.get(url, headers=headers, timeout=12)
             if r.status_code == 401:
-                return None # Requiere refresh
+                return None
             if r.status_code != 200:
-                print(f"Aviso buscando items: {r.status_code} - {r.text}")
                 break
 
             data = r.json()
@@ -90,7 +94,6 @@ def fetch_full_publications(access_token, meli_user_id):
             if not item_ids:
                 break
 
-            # Multiget de items para detalles completos
             ids_chunk = ",".join(item_ids)
             multiget_url = f"{MELI_API}/items?ids={ids_chunk}"
             m_resp = requests.get(multiget_url, headers=headers, timeout=12)
@@ -102,20 +105,23 @@ def fetch_full_publications(access_token, meli_user_id):
             offset += limit
             if offset >= data.get("paging", {}).get("total", 0):
                 break
-            time.sleep(0.15) # Rate limit friendly
         except Exception as e:
-            print(f"Error extrayendo publicaciones: {e}")
+            print(f"Error consultando items Full: {e}")
             break
 
     return all_items
 
 def calculate_sales_velocity(access_token, meli_user_id, item_id):
-    """
-    Calcula las unidades vendidas en los últimos 7, 15 y 30 días para un item.
-    """
+    """Calcula unidades vendidas en los últimos 7, 15 y 30 días."""
     headers = {"Authorization": f"Bearer {access_token}"}
-    date_from = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00.000-03:00")
-    url = f"{MELI_API}/orders/search?seller={meli_user_id}&item={item_id}&order.date_created.from={date_from}&order.status=paid"
+    now = datetime.utcnow()
+    date_from_30d = (now - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00.000-00:00")
+    date_to = now.strftime("%Y-%m-%dT23:59:59.000-00:00")
+
+    url = f"{MELI_API}/orders/search?seller={meli_user_id}&item={item_id}&order.date_created.from={date_from_30d}&order.date_created.to={date_to}&limit=50"
+    sales_7d, sales_15d, sales_30d = 0, 0, 0
+    t_7d = now - timedelta(days=7)
+    t_15d = now - timedelta(days=15)
 
     try:
         r = requests.get(url, headers=headers, timeout=12)
@@ -123,178 +129,188 @@ def calculate_sales_velocity(access_token, meli_user_id, item_id):
             return 0, 0, 0
 
         orders = r.json().get("results", [])
-        now = datetime.utcnow()
-        v7, v15, v30 = 0, 0, 0
-
         for order in orders:
+            if order.get("status") in ("cancelled", "invalid"):
+                continue
+            date_created_str = order.get("date_created", "")
             try:
-                date_str = order.get("date_created", "")[:19]
-                order_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
-                diff_days = (now - order_date).days
+                order_dt = datetime.fromisoformat(date_created_str.replace("Z", "+00:00")).replace(tzinfo=None)
             except Exception:
-                diff_days = 0
+                order_dt = now
 
-            units = 0
-            for it in order.get("order_items", []):
-                if it.get("item", {}).get("id") == item_id:
-                    units += it.get("quantity", 1)
+            for item_ordered in order.get("order_items", []):
+                if item_ordered.get("item", {}).get("id") == item_id:
+                    qty = item_ordered.get("quantity", 1)
+                    sales_30d += qty
+                    if order_dt >= t_15d:
+                        sales_15d += qty
+                    if order_dt >= t_7d:
+                        sales_7d += qty
 
-            if diff_days <= 7:
-                v7 += units
-            if diff_days <= 15:
-                v15 += units
-            if diff_days <= 30:
-                v30 += units
-
-        return v7, v15, v30
+        return sales_7d, sales_15d, sales_30d
     except Exception:
         return 0, 0, 0
 
-def sync_user_full_inventory(conn, user):
-    user_id = user["user_id"]
-    access_token = user["access_token"]
-    refresh_token = user["refresh_token"]
-    meli_user_id = user["meli_user_id"]
-
-    print(f"[{datetime.now()}] Iniciando sync para usuario {user_id} (ML: {meli_user_id})...")
-
-    # Marcar estado de sincronización
-    with conn.cursor() as cur:
-        cur.execute("UPDATE ml_credentials SET sync_status='syncing' WHERE user_id=%s", (user_id,))
-        cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
-        settings = cur.fetchone()
-        if not settings:
-            cur.execute("INSERT INTO user_settings (user_id) VALUES (%s)", (user_id,))
-            default_lt = 7
-            default_ss = 3
-            target_cov = 30
-        else:
+def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
+    """Sincroniza una cuenta de MercadoLibre específica."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
+            settings = cur.fetchone() or {
+                "default_lead_time_days": 7,
+                "default_safety_stock_days": 3,
+                "target_coverage_days": 30
+            }
             default_lt = settings["default_lead_time_days"]
             default_ss = settings["default_safety_stock_days"]
             target_cov = settings["target_coverage_days"]
 
-    # Traer publicaciones en Full
-    items = fetch_full_publications(access_token, meli_user_id)
-    if items is None:
-        # Reintentar tras refrescar token
-        access_token = refresh_ml_token(conn, user_id, refresh_token)
-        if access_token:
-            items = fetch_full_publications(access_token, meli_user_id)
+        items = fetch_full_publications(access_token, meli_user_id)
+        if items is None:
+            return
 
-    if items is None:
-        with conn.cursor() as cur:
-            cur.execute("UPDATE ml_credentials SET sync_status='error', last_error='Error de autenticación' WHERE user_id=%s", (user_id,))
-        return
+        today = datetime.utcnow().date()
+        for item in items:
+            item_id = item.get("id")
+            title = item.get("title", "")
+            sku = item.get("seller_custom_field") or ""
+            stock = item.get("available_quantity", 0)
+            thumbnail = item.get("thumbnail")
+            permalink = item.get("permalink")
 
-    processed_count = 0
-    today = datetime.utcnow().date()
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO full_items 
+                    (user_id, ml_credential_id, item_id, sku, title, thumbnail, permalink, current_stock_full, last_synced_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        ml_credential_id = VALUES(ml_credential_id),
+                        sku = VALUES(sku),
+                        title = VALUES(title),
+                        thumbnail = VALUES(thumbnail),
+                        permalink = VALUES(permalink),
+                        current_stock_full = VALUES(current_stock_full),
+                        last_synced_at = NOW()
+                """, (user_id, cred_id, item_id, sku, title, thumbnail, permalink, stock))
 
-    for item in items:
-        item_id = item.get("id")
-        title = item.get("title", "")
-        sku = item.get("seller_custom_field") or ""
-        stock = item.get("available_quantity", 0)
-        thumbnail = item.get("thumbnail")
-        permalink = item.get("permalink")
+                cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s", (user_id, item_id))
+                irow = cur.fetchone()
+                lt = irow["lead_time_override"] if irow and irow["lead_time_override"] is not None else default_lt
+                ss = irow["safety_stock_override"] if irow and irow["safety_stock_override"] is not None else default_ss
 
-        # Guardar en full_items
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO full_items 
-                (user_id, item_id, sku, title, thumbnail, permalink, current_stock_full, last_synced_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())
-                ON DUPLICATE KEY UPDATE
-                    sku = VALUES(sku),
-                    title = VALUES(title),
-                    thumbnail = VALUES(thumbnail),
-                    permalink = VALUES(permalink),
-                    current_stock_full = VALUES(current_stock_full),
-                    last_synced_at = NOW()
-            """, (user_id, item_id, sku, title, thumbnail, permalink, stock))
+            # Calcular ventas y pronóstico
+            v7, v15, v30 = calculate_sales_velocity(access_token, meli_user_id, item_id)
+            vpd = round((0.50 * (v7 / 7.0)) + (0.35 * (v15 / 15.0)) + (0.15 * (v30 / 30.0)), 2)
 
-            cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s", (user_id, item_id))
-            item_row = cur.fetchone()
-            lt = item_row["lead_time_override"] if item_row and item_row["lead_time_override"] is not None else default_lt
-            ss = item_row["safety_stock_override"] if item_row and item_row["safety_stock_override"] is not None else default_ss
+            if vpd > 0:
+                days_left = round(stock / vpd, 1)
+                stockout_date = today + timedelta(days=int(days_left))
+                days_until_prep = days_left - (lt + ss)
+                reorder_deadline = today + timedelta(days=max(0, int(days_until_prep)))
+                suggested_restock = max(0, int(round((target_cov * vpd) - stock)))
+            else:
+                days_left = 999.0
+                stockout_date = None
+                reorder_deadline = None
+                suggested_restock = 0
 
-        # Calcular ventas históricas y run-rate (VPD)
-        v7, v15, v30 = calculate_sales_velocity(access_token, meli_user_id, item_id)
-        vpd = round((0.50 * (v7 / 7.0)) + (0.35 * (v15 / 15.0)) + (0.15 * (v30 / 30.0)), 2)
+            if stock <= 0:
+                status = 'out_of_stock'
+            elif days_left <= lt:
+                status = 'critical'
+            elif days_left <= (lt + ss):
+                status = 'warning'
+            else:
+                status = 'ok'
 
-        # Proyección de quiebre y fecha de pedido
-        if vpd > 0:
-            days_left = round(stock / vpd, 1)
-            stockout_date = today + timedelta(days=int(days_left))
-            days_until_prep = days_left - (lt + ss)
-            reorder_deadline = today + timedelta(days=max(0, int(days_until_prep)))
-            suggested_restock = max(0, int(round((target_cov * vpd) - stock)))
-        else:
-            days_left = 999.0
-            stockout_date = None
-            reorder_deadline = None
-            suggested_restock = 0
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO forecasts 
+                    (user_id, item_id, sales_last_7d, sales_last_15d, sales_last_30d, vpd_weighted, days_left, stockout_date, reorder_deadline_date, suggested_restock_units, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        sales_last_7d = VALUES(sales_last_7d),
+                        sales_last_15d = VALUES(sales_last_15d),
+                        sales_last_30d = VALUES(sales_last_30d),
+                        vpd_weighted = VALUES(vpd_weighted),
+                        days_left = VALUES(days_left),
+                        stockout_date = VALUES(stockout_date),
+                        reorder_deadline_date = VALUES(reorder_deadline_date),
+                        suggested_restock_units = VALUES(suggested_restock_units),
+                        status = VALUES(status),
+                        updated_at = NOW()
+                """, (user_id, item_id, v7, v15, v30, vpd, days_left, stockout_date, reorder_deadline, suggested_restock, status))
 
-        # Determinación de estado del semáforo
-        if stock <= 0:
-            status = 'out_of_stock'
-        elif days_left <= lt:
-            status = 'critical'  # Ya no llega a tiempo con su tiempo de reposición normal
-        elif days_left <= (lt + ss):
-            status = 'warning'   # MOMENTO EXACTO PARA PREPARAR EL ENVÍO
-        else:
-            status = 'ok'
+        print(f"[{datetime.now()}] Sync completada: user_id={user_id}, cred_id={cred_id}, {len(items)} items procesados.")
+    finally:
+        conn.close()
 
-        # Guardar pronóstico
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO forecasts 
-                (user_id, item_id, sales_last_7d, sales_last_15d, sales_last_30d, vpd_weighted, days_left, stockout_date, reorder_deadline_date, suggested_restock_units, status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    sales_last_7d = VALUES(sales_last_7d),
-                    sales_last_15d = VALUES(sales_last_15d),
-                    sales_last_30d = VALUES(sales_last_30d),
-                    vpd_weighted = VALUES(vpd_weighted),
-                    days_left = VALUES(days_left),
-                    stockout_date = VALUES(stockout_date),
-                    reorder_deadline_date = VALUES(reorder_deadline_date),
-                    suggested_restock_units = VALUES(suggested_restock_units),
-                    status = VALUES(status),
-                    updated_at = NOW()
-            """, (user_id, item_id, v7, v15, v30, vpd, days_left, stockout_date, reorder_deadline, suggested_restock, status))
-
-        processed_count += 1
-        time.sleep(0.08) # Pausa mínima para no ahogar la API de MeLi
-
+def sync_all_accounts_for_user(user_id):
+    """Sincroniza todas las cuentas de MeLi del usuario."""
+    conn = get_db()
     with conn.cursor() as cur:
-        cur.execute("""
-            UPDATE ml_credentials 
-            SET sync_status='idle', last_sync_at=NOW(), last_error=NULL 
-            WHERE user_id=%s
-        """, (user_id,))
+        cur.execute("SELECT id, user_id, ml_user_id, ml_access_token, ml_refresh_token, ml_token_expires_at FROM ml_credentials WHERE user_id=%s", (user_id,))
+        creds = cur.fetchall()
 
-    print(f"[{datetime.now()}] Finalizado sync usuario {user_id}. {processed_count} publicaciones procesadas.")
+    for cred in creds:
+        token = get_valid_token_for_cred(conn, cred)
+        if token and cred.get("ml_user_id"):
+            sync_account_full_catalog(user_id, cred["id"], token, cred["ml_user_id"])
+    conn.close()
 
-def run_worker():
-    print(f"[{datetime.now()}] === EnvioBot Full Worker Iniciado ===")
+    # Disparar evaluación de alertas para el usuario
+    try:
+        from alerts_engine import procesar_alertas_usuario
+        res_alert = procesar_alertas_usuario(user_id)
+        print(f"[{datetime.now()}] Alertas evaluadas para user_id={user_id}: {res_alert}")
+    except Exception as e:
+        print(f"[{datetime.now()}] Error evaluando alertas para user_id={user_id}: {e}")
+
+def run_periodic_sync(skip_alerts: bool = False):
+    """Ejecutado por Cron en producción para todos los clientes."""
+    print(f"[{datetime.now()}] === Iniciando Sync Periódica EnvioBot Full ===")
     conn = get_db()
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT c.user_id, c.access_token, c.refresh_token, c.meli_user_id
+            SELECT c.id, c.user_id, c.ml_user_id, c.ml_access_token, c.ml_refresh_token, c.ml_token_expires_at, c.ml_nickname
             FROM ml_credentials c
             JOIN users u ON u.id = c.user_id
-            WHERE u.is_active = 1
+            WHERE u.active = 1
         """)
-        users = cur.fetchall()
+        creds = cur.fetchall()
 
-    for user in users:
+    usuarios_procesados = set()
+    for cred in creds:
         try:
-            sync_user_full_inventory(conn, user)
+            token = get_valid_token_for_cred(conn, cred)
+            if token and cred.get("ml_user_id"):
+                sync_account_full_catalog(cred["user_id"], cred["id"], token, cred["ml_user_id"])
+                usuarios_procesados.add(cred["user_id"])
         except Exception as e:
-            print(f"[{datetime.now()}] Error procesando usuario {user['user_id']}: {e}")
+            print(f"Error procesando cred {cred.get('id')}: {e}")
 
     conn.close()
-    print(f"[{datetime.now()}] === EnvioBot Full Worker Finalizado ===")
+    print(f"[{datetime.now()}] === Sync Periódica Finalizada ({len(usuarios_procesados)} usuarios sincronizados) ===")
+
+    # Disparar motor de alertas para todos los usuarios sincronizados
+    if not skip_alerts:
+        try:
+            from alerts_engine import ejecutar_motor_alertas_global
+            ejecutar_motor_alertas_global()
+        except Exception as e:
+            print(f"[{datetime.now()}] Error ejecutando motor de alertas global: {e}")
 
 if __name__ == "__main__":
-    run_worker()
+    if "--alerts-only" in sys.argv:
+        from alerts_engine import ejecutar_motor_alertas_global
+        ejecutar_motor_alertas_global()
+    elif "--user" in sys.argv:
+        try:
+            idx = sys.argv.index("--user")
+            target_uid = int(sys.argv[idx + 1])
+            sync_all_accounts_for_user(target_uid)
+        except Exception as ex:
+            print(f"Uso: python worker.py --user <user_id> (Error: {ex})")
+    else:
+        run_periodic_sync()

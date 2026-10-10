@@ -14,6 +14,10 @@ const WAREHOUSES = {
 };
 
 let currentWarehouse = 'meli_full';
+let currentUser = null;
+let currentAccount = 'all';
+let currentPlanInfo = null;
+let currentAuthTab = 'login';
 
 // Dataset demo interactivo multi-depósito (funciona aún sin backend)
 const BASE_ITEMS_CATALOG = [
@@ -106,15 +110,34 @@ async function cargarDatos() {
     try {
         if (!token) throw new Error("Sin sesión activa");
 
-        const res = await fetch(`${API_BASE}/full/items?warehouse=${currentWarehouse}`, {
+        let url = `${API_BASE}/full/items?warehouse=${currentWarehouse}`;
+        if (currentAccount && currentAccount !== 'all') {
+            url += `&account_id=${currentAccount}`;
+        }
+
+        const res = await fetch(url, {
             headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
 
-        if (data.ok && data.items && data.items.length > 0) {
-            itemsData = data.items.map(it => adaptarItemDesdeBackend(it));
-            recalcularTodo();
+        if (res.status === 403 && data.subscription_required) {
+            if (data.can_start_trial) {
+                abrirModalActivarFull(currentUser);
+            } else {
+                abrirModalSuscripcionVencida(currentUser);
+            }
             return;
+        }
+
+        if (data.ok) {
+            if (data.plan_info) {
+                actualizarBadgePlan(data.plan_info);
+            }
+            if (data.items && data.items.length > 0) {
+                itemsData = data.items.map(it => adaptarItemDesdeBackend(it));
+                recalcularTodo();
+                return;
+            }
         }
     } catch (err) {
         // Modo demo interactivo
@@ -206,6 +229,11 @@ function recalcularTodo() {
     actualizarMetricas();
     renderizarWidgetAlertas();
     renderizarTabla();
+
+    // Evaluar y disparar notificación nativa de pantalla si corresponde
+    if (window.EnvioBotNotif && window.EnvioBotNotif.checkAuto) {
+        window.EnvioBotNotif.checkAuto(itemsData);
+    }
 }
 
 function actualizarMetricas() {
@@ -956,8 +984,104 @@ function eliminarDestinatarioWA(id) {
     }
 }
 
-function probarDestinatarioWA(phone, name) {
+async function probarDestinatarioWA(phone, name) {
+    const token = getToken();
+    if (token) {
+        try {
+            const resp = await fetch(`${API_BASE}/full/recipients/test-whatsapp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ phone: phone, name: name })
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                alert(`WhatsApp enviado a ${phone} (${name}).\n\nRespuesta:\n"${data.preview}"`);
+                return;
+            } else {
+                alert(`Error enviando WhatsApp a ${phone}:\n${data.error || 'Verifique la conexión con Evolution API / Gateway.'}`);
+                return;
+            }
+        } catch (e) {
+            console.error('Error probando WhatsApp:', e);
+        }
+    }
+    // Fallback demo/local sin backend
     alert(`WhatsApp de prueba enviado con éxito a ${phone} (${name}):\n\n"Alarma EnvioBot Full\nHola ${name}, tenés publicaciones en fecha límite de reposición para Mercado Envíos Full. Se deben preparar las unidades para el camión de hoy."`);
+}
+
+async function probarEmailSaliente() {
+    const emailInput = document.getElementById('cfgEmail');
+    const email = emailInput ? emailInput.value.trim() : '';
+    if (!email) {
+        alert("Por favor indicá un correo destinatario para recibir la prueba.");
+        if (emailInput) emailInput.focus();
+        return;
+    }
+
+    const btn = document.getElementById('btnTestEmail');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+    }
+
+    const token = getToken();
+    if (token) {
+        try {
+            const resp = await fetch(`${API_BASE}/full/settings/test-email`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ email: email })
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                alert(`✓ Correo de prueba enviado con éxito a: ${email}\n\nDetalle del servidor:\n${data.detail?.subject || 'Reporte de prueba enviado'}`);
+                return;
+            } else {
+                alert(`✗ Error al enviar correo de prueba a ${email}:\n\n${data.error || data.detail?.error || 'Verifique la configuración SMTP de DonWeb en backend/.env'}`);
+                return;
+            }
+        } catch (e) {
+            console.error('Error probando email:', e);
+            alert(`✗ Error de conexión con el servidor: ${e.message}`);
+            return;
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Probar Envío';
+            }
+        }
+    }
+
+    // Fallback demo/local sin backend
+    setTimeout(() => {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Probar Envío';
+        }
+        alert(`✓ [Modo Demo] Correo de prueba simulado hacia ${email}.\n\nRemitente configurado: alertas@enviobot.com.ar (DonWeb SMTP: smtp.donweb.com:465)`);
+    }, 400);
+}
+
+async function forzarEvaluacionAlertas() {
+    const token = getToken();
+    if (!token) {
+        alert("En modo demostración local. Para disparar alertas en vivo conectá tu backend.");
+        return;
+    }
+    try {
+        const resp = await fetch(`${API_BASE}/full/alerts/trigger-now`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            alert(`Evaluación de alertas ejecutada:\n\n• Publicaciones evaluadas\n• WhatsApps enviados: ${data.data?.mensajes_whatsapp_enviados || 0}\n• Email enviado: ${data.data?.email_enviado ? 'Sí' : 'No'}`);
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (e) {
+        alert(`Error conectando con el servidor: ${e.message}`);
+    }
 }
 
 function mostrarInfoUpgrade() {
@@ -1110,8 +1234,451 @@ function guardarNuevoDeposito(e) {
     alert(`Depósito "${name}" agregado con éxito.`);
 }
 
+// ── Manejo de Autenticación Rápida (Estilo Enviobot Pedidos) ─────────
+function abrirModalAuth(tab = 'login') {
+    cambiarAuthTab(tab);
+    const modal = document.getElementById('modalAuth');
+    if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalAuth() {
+    const modal = document.getElementById('modalAuth');
+    if (modal) modal.style.display = 'none';
+}
+
+function cambiarAuthTab(tab) {
+    currentAuthTab = tab;
+    const tabLogin = document.getElementById('tabAuthLogin');
+    const tabReg = document.getElementById('tabAuthRegister');
+    const nameGroup = document.getElementById('authNameGroup');
+    const btnSubmit = document.getElementById('btnAuthSubmit');
+    const errBox = document.getElementById('authErrorMsg');
+    if (errBox) errBox.style.display = 'none';
+
+    if (tab === 'login') {
+        if (tabLogin) tabLogin.classList.add('active');
+        if (tabReg) tabReg.classList.remove('active');
+        if (nameGroup) nameGroup.style.display = 'none';
+        if (btnSubmit) btnSubmit.textContent = 'Ingresar';
+    } else {
+        if (tabReg) tabReg.classList.add('active');
+        if (tabLogin) tabLogin.classList.remove('active');
+        if (nameGroup) nameGroup.style.display = 'flex';
+        if (btnSubmit) btnSubmit.textContent = 'Crear Cuenta (30d gratis)';
+    }
+}
+
+async function handleAuthSubmit(e) {
+    e.preventDefault();
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value.trim();
+    const name = document.getElementById('authName') ? document.getElementById('authName').value.trim() : '';
+    const errBox = document.getElementById('authErrorMsg');
+    const btnSubmit = document.getElementById('btnAuthSubmit');
+
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = 'Procesando...';
+    if (errBox) errBox.style.display = 'none';
+
+    try {
+        const endpoint = currentAuthTab === 'login' ? `${API_BASE}/full/auth/login` : `${API_BASE}/full/auth/register`;
+        const payload = currentAuthTab === 'login' ? { email, password } : { email, password, full_name: name };
+
+        let res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        // Fallback a ruta estándar si no estuviera prefijada
+        if (res.status === 404) {
+            const fallbackEndpoint = currentAuthTab === 'login' ? `${API_BASE}/auth/login` : `${API_BASE}/auth/register`;
+            res = await fetch(fallbackEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        }
+
+        const data = await res.json();
+        if (!data.ok) {
+            throw new Error(data.error || 'Ocurrió un error al autenticar.');
+        }
+
+        // Guardar token en localStorage
+        localStorage.setItem('enviobot_full_token', data.token);
+        localStorage.setItem('token', data.token);
+        cerrarModalAuth();
+
+        // Si es un usuario existente pero NO tiene suscripción a EnvioBot Full:
+        if (data.user && data.user.has_full_access === false) {
+            currentUser = data.user;
+            actualizarBadgePlan(data.user);
+            if (data.user.can_start_trial) {
+                abrirModalActivarFull(data.user);
+            } else {
+                abrirModalSuscripcionVencida(data.user);
+            }
+            return;
+        }
+
+        if (data.requires_ml_connect || (data.user && (!data.user.ml_accounts || data.user.ml_accounts.length === 0))) {
+            abrirOnboardingMeLi();
+        }
+
+        await checkUserSession();
+        cargarDatos();
+
+    } catch (err) {
+        if (errBox) {
+            errBox.textContent = err.message;
+            errBox.style.display = 'block';
+        } else {
+            alert(err.message);
+        }
+    } finally {
+        btnSubmit.disabled = false;
+        cambiarAuthTab(currentAuthTab);
+    }
+}
+
+function entrarModoDemo(e) {
+    if (e) e.preventDefault();
+    cerrarModalAuth();
+    // Renderizar demo
+    cargarDatos();
+}
+
+function cerrarSesion() {
+    localStorage.removeItem('enviobot_full_token');
+    localStorage.removeItem('token');
+    location.reload();
+}
+
+// ── Onboarding y Conexión de MercadoLibre ───────────────────────────
+function abrirOnboardingMeLi() {
+    const modal = document.getElementById('modalOnboardingMeLi');
+    if (modal) modal.style.display = 'flex';
+}
+
+function cerrarOnboardingMeLi() {
+    const modal = document.getElementById('modalOnboardingMeLi');
+    if (modal) modal.style.display = 'none';
+}
+
+async function iniciarConexionMeLi() {
+    const token = getToken();
+    let headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+        let res = await fetch(`${API_BASE}/full/ml/auth/login`, { headers });
+        if (res.status === 404) {
+            res = await fetch(`${API_BASE}/ml/auth/login`, { headers });
+        }
+
+        const data = await res.json();
+        if (data.ok && data.auth_url) {
+            // Redirige en la misma ventana oficial de MeLi para evitar bloqueo de pop-ups
+            window.location.href = data.auth_url;
+        } else {
+            alert(data.error || 'No se pudo iniciar la conexión con MercadoLibre.');
+        }
+    } catch (err) {
+        alert('Error conectando con MercadoLibre: ' + err.message);
+    }
+}
+
+// ── Manejo de Cuentas MeLi y Plan ──────────────────────────────────
+function renderMeLiAccounts(accounts) {
+    const select = document.getElementById('mlAccountSelect');
+    const btnConnect = document.getElementById('btnConnectMeLiHeader');
+    if (!select) return;
+
+    select.innerHTML = '<option value="all">Todas las cuentas MeLi</option>';
+    if (accounts && accounts.length > 0) {
+        accounts.forEach(acc => {
+            const opt = document.createElement('option');
+            opt.value = acc.id;
+            opt.textContent = `Cuenta: ${acc.ml_nickname || acc.ml_user_id}`;
+            select.appendChild(opt);
+        });
+        select.style.display = accounts.length > 1 ? 'inline-block' : 'none';
+        if (btnConnect) btnConnect.style.display = 'inline-block';
+    } else {
+        select.style.display = 'none';
+        if (btnConnect) btnConnect.style.display = 'inline-block';
+    }
+}
+
+function cambiarCuentaMeLi(accId) {
+    currentAccount = accId;
+    cargarDatos();
+}
+
+function actualizarBadgePlan(planInfo) {
+    currentPlanInfo = planInfo;
+    const badge = document.getElementById('planBadge');
+    if (!badge || !planInfo) return;
+
+    if (planInfo.has_full_access === false) {
+        if (planInfo.can_start_trial) {
+            badge.className = 'plan-badge trial';
+            badge.textContent = '⚡ Activar 30d gratis';
+            badge.onclick = () => abrirModalActivarFull(currentUser);
+        } else {
+            badge.className = 'plan-badge';
+            badge.textContent = '🔒 Requiere suscripción';
+            badge.onclick = () => abrirModalSuscripcionVencida(currentUser);
+        }
+        return;
+    }
+
+    badge.onclick = () => abrirModalPlan();
+    if (planInfo.plan_tier === 'trial') {
+        const days = planInfo.trial_days_left !== undefined ? planInfo.trial_days_left : 30;
+        badge.className = 'plan-badge trial';
+        badge.textContent = `🗓️ Prueba Gratis (${days}d restantes)`;
+    } else {
+        badge.className = 'plan-badge';
+        badge.textContent = `⭐ Plan ${planInfo.plan_name || planInfo.plan_tier}`;
+    }
+}
+
+function abrirModalActivarFull(user) {
+    const modal = document.getElementById('modalActivateFull');
+    const title = document.getElementById('activateFullTitle');
+    const msg = document.getElementById('activateFullMsg');
+    const actionArea = document.getElementById('activateFullActionArea');
+    if (!modal) return;
+
+    if (title) title.textContent = '¡Bienvenido a EnvioBot Full!';
+    if (msg) {
+        const nombre = (user && (user.full_name || user.email)) ? `Hola <strong>${user.full_name || user.email}</strong>: ` : '';
+        msg.innerHTML = `${nombre}Detectamos tu cuenta de EnvioBot. Para comenzar a monitorear el stock de tus depósitos y evitar quiebres, activá tus <strong>30 días de prueba gratuita</strong>.`;
+    }
+    if (actionArea) {
+        actionArea.innerHTML = `
+            <button id="btnStartTrialFull" onclick="activarPruebaFull()" class="btn btn-block" style="padding: 13px; font-size: 14px; font-weight: 700; background: var(--accent); color: #111; justify-content: center; cursor: pointer;">
+                🚀 Activar 30 días de prueba gratis
+            </button>
+        `;
+    }
+    modal.style.display = 'flex';
+}
+
+function abrirModalSuscripcionVencida(user) {
+    const modal = document.getElementById('modalActivateFull');
+    const title = document.getElementById('activateFullTitle');
+    const msg = document.getElementById('activateFullMsg');
+    const actionArea = document.getElementById('activateFullActionArea');
+    if (!modal) return;
+
+    if (title) title.textContent = 'Tu período de prueba de 30 días ha finalizado';
+    if (msg) {
+        msg.innerHTML = `Completaste tus 30 días de prueba gratuita en EnvioBot Full.<br><br>Para continuar monitoreando tu inventario Full y evitar que tus publicaciones quiebren stock, activá tu suscripción o registrá tu cuenta definitiva en <strong>admin.enviobot.com.ar</strong>.<br><br><span style="color: #ff7676; font-size: 12.5px; font-weight: 600;">⚠️ Si no activás tu suscripción, los datos temporales de la prueba serán eliminados para liberar espacio.</span>`;
+    }
+    if (actionArea) {
+        actionArea.innerHTML = `
+            <a href="https://wa.me/5491155550000?text=Hola,%20finalizo%20mi%20prueba%20de%2030%20dias%20de%20EnvioBot%20Full%20y%20quiero%20suscribirme" target="_blank" class="btn btn-block" style="padding: 13px; font-size: 14px; font-weight: 700; background: var(--accent); color: #111; justify-content: center; text-decoration: none;">
+                ⭐ Suscribirme y Activar Plan
+            </a>
+            <button onclick="abrirModalAuth('register')" class="btn btn-secondary btn-block" style="margin-top: 8px; font-size: 13px;">
+                Registrar cuenta definitiva
+            </button>
+        `;
+    }
+    modal.style.display = 'flex';
+}
+
+function cerrarModalActivarFull() {
+    const modal = document.getElementById('modalActivateFull');
+    if (modal) modal.style.display = 'none';
+}
+
+async function activarPruebaFull() {
+    const token = getToken();
+    const btn = document.getElementById('btnStartTrialFull');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Activando tus 30 días...';
+    }
+
+    try {
+        let res = await fetch(`${API_BASE}/full/auth/activate-trial`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        if (res.status === 404) {
+            res = await fetch(`${API_BASE}/auth/activate-trial`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+        const data = await res.json();
+        if (data.ok) {
+            cerrarModalActivarFull();
+            await checkUserSession();
+            // Abrir inmediatamente la conexión con Mercado Libre
+            abrirOnboardingMeLi();
+        } else {
+            alert(data.error || 'No se pudo activar el período de prueba.');
+        }
+    } catch (e) {
+        alert('Error activando prueba: ' + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = '🚀 Activar 30 días de prueba gratis';
+        }
+    }
+}
+
+function abrirModalPlan() {
+    const modal = document.getElementById('modalPlan');
+    const details = document.getElementById('planModalDetails');
+    if (!modal || !details) return;
+
+    const p = currentPlanInfo || { plan_tier: 'trial', plan_name: 'Prueba Gratis (30 días)', trial_days_left: 30 };
+    details.innerHTML = `
+        <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 14px;">
+            <div style="font-size: 11px; text-transform: uppercase; font-weight: 800; color: var(--accent); letter-spacing: 0.5px;">Tu Plan Activo</div>
+            <div style="font-size: 18px; font-weight: 800; margin-top: 4px; color: var(--text);">${p.plan_name || p.plan_tier.toUpperCase()}</div>
+            <div style="font-size: 12.5px; color: var(--text2); margin-top: 4px;">
+                ${p.plan_tier === 'trial' ? `Tenés <strong>${p.trial_days_left || 0} días restantes</strong> de prueba completa sin cargo.` : 'Suscripción activa.'}
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+            <div style="background: var(--surf2); padding: 12px; border-radius: 6px; border: 1px solid var(--border);">
+                <div style="font-size: 11px; color: var(--text2); font-weight: 700;">Cuentas MeLi permitidas</div>
+                <div style="font-size: 16px; font-weight: 800; color: var(--text); margin-top: 2px;">${p.limits ? p.limits.max_ml_accounts : 1}</div>
+            </div>
+            <div style="background: var(--surf2); padding: 12px; border-radius: 6px; border: 1px solid var(--border);">
+                <div style="font-size: 11px; color: var(--text2); font-weight: 700;">Alertas WhatsApp / Equipo</div>
+                <div style="font-size: 16px; font-weight: 800; color: var(--text); margin-top: 2px;">${p.limits ? p.limits.max_recipients : 2}</div>
+            </div>
+        </div>
+        <div style="font-size: 12px; color: var(--text2); line-height: 1.5;">
+            Los planes se configuran de forma centralizada para tu empresa desde <strong>admin.enviobot.com.ar</strong>.
+        </div>
+    `;
+    modal.style.display = 'flex';
+}
+
+function cerrarModalPlan() {
+    const modal = document.getElementById('modalPlan');
+    if (modal) modal.style.display = 'none';
+}
+
+function mostrarInfoUpgrade() {
+    abrirModalPlan();
+}
+
+// ── Chequeo de Sesión al Arrancar ──────────────────────────────────
+async function checkUserSession() {
+    const token = getToken();
+    const userEmailEl = document.getElementById('userEmailText');
+    const btnLogout = document.getElementById('btnLogoutBtn');
+    const btnLoginHeader = document.getElementById('btnLoginHeader');
+    const banner = document.getElementById('trialWelcomeBanner');
+
+    if (!token) {
+        // Modo Prueba Libre / Cliente Nuevo sin registro
+        if (userEmailEl) userEmailEl.textContent = 'Prueba 30 días';
+        if (btnLogout) btnLogout.style.display = 'none';
+        if (btnLoginHeader) btnLoginHeader.style.display = 'inline-flex';
+        if (banner) banner.style.display = 'flex';
+
+        const badge = document.getElementById('planBadge');
+        if (badge) {
+            badge.className = 'plan-badge trial';
+            badge.textContent = '🚀 Probar 30 días gratis';
+            badge.onclick = () => iniciarConexionMeLi();
+        }
+
+        const btnConnect = document.getElementById('btnConnectMeLiHeader');
+        if (btnConnect) {
+            btnConnect.style.display = 'inline-block';
+            btnConnect.textContent = '🚀 Conectar MercadoLibre (30d gratis)';
+        }
+        return false;
+    }
+
+    try {
+        let res = await fetch(`${API_BASE}/full/auth/me`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.status === 404) {
+            res = await fetch(`${API_BASE}/auth/me`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        }
+
+        if (res.status === 401) {
+            localStorage.removeItem('enviobot_full_token');
+            return false;
+        }
+
+        const data = await res.json();
+        if (data.ok && data.user) {
+            currentUser = data.user;
+            if (userEmailEl) userEmailEl.textContent = data.user.email || data.user.full_name;
+            if (btnLogout) btnLogout.style.display = 'inline-flex';
+            if (btnLoginHeader) btnLoginHeader.style.display = 'none';
+            if (banner) banner.style.display = 'none';
+
+            actualizarBadgePlan(data.user);
+            renderMeLiAccounts(data.user.ml_accounts);
+
+            // Si venció el plazo de 30 días:
+            if (data.user.has_full_access === false) {
+                abrirModalSuscripcionVencida(data.user);
+                return false;
+            }
+
+            // Si tiene Full activo pero no conectó cuentas de MeLi aún
+            if (!data.user.ml_accounts || data.user.ml_accounts.length === 0) {
+                abrirOnboardingMeLi();
+            }
+            return true;
+        }
+    } catch (err) {
+        console.error("Error verificando sesión:", err);
+    }
+    return false;
+}
+
 // ── Inicialización ─────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // 1. Detectar si viene token en la URL desde OAuth (?auth_token=... o ?token=...)
+    const params = new URLSearchParams(window.location.search);
+    const tokenFromUrl = params.get('auth_token') || params.get('token');
+    if (tokenFromUrl) {
+        localStorage.setItem('enviobot_full_token', tokenFromUrl);
+        localStorage.setItem('token', tokenFromUrl);
+    }
+
+    if (params.get('ml') === 'ok') {
+        const nickname = params.get('nickname') || '';
+        alert(`✓ ¡Cuenta de MercadoLibre ${nickname} conectada con éxito! Tu prueba gratuita de 30 días está activa. Sincronizando tu stock Full...`);
+        window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get('ml') === 'error') {
+        const msg = params.get('msg') || 'Error en la autorización de MercadoLibre';
+        alert(`✗ ${msg}`);
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // 2. Verificar sesión
+    await checkUserSession();
+
+    // 3. Cargar datos
     cargarDatos();
 });
+
 

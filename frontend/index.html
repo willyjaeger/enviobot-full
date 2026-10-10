@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/svg+xml" href="img/cajita_icono.svg">
-    <link rel="icon" type="image/png" href="img/enviobot_app_icon.png">
-    <link rel="apple-touch-icon" href="img/enviobot_app_icon.png">
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="apple-touch-icon" href="img/icon.png">
     <script>
         // Anti-flicker de tema claro/oscuro
         (function () {
@@ -23,18 +23,32 @@
     <div class="container">
         <!-- ── Topbar Sticky ────────────────────────────── -->
         <div class="topbar">
-            <header>
-                <a href="#" class="logo-wrap">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
-                        <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
-                        <line x1="12" y1="21.1" x2="12" y2="12"></line>
-                    </svg>
-                    <span style="font-weight: 800; font-size: 19px; letter-spacing: -0.2px; color: var(--text);">EnvioBot <span style="color: var(--accent);">Full</span></span>
-                </a>
+                <div style="display: flex; align-items: center; gap: 16px;">
+                    <a href="#" class="logo-wrap">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+                            <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+                            <line x1="12" y1="21.1" x2="12" y2="12"></line>
+                        </svg>
+                        <span style="font-weight: 800; font-size: 19px; letter-spacing: -0.2px; color: var(--text);">EnvioBot <span style="color: var(--accent);">Full</span></span>
+                    </a>
+
+                    <!-- Pestañas de Suite EnvioBot (Navegación directa entre Pedidos y Full) -->
+                    <div class="suite-tabs" style="display: inline-flex; background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 2px;">
+                        <a href="https://enviobot.com.ar/" class="suite-tab" style="padding: 4px 10px; font-size: 11.5px; font-weight: 600; color: var(--text2); text-decoration: none; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s ease;" title="Ir al panel de EnvioBot Pedidos">
+                            <span>📦</span> <span>Pedidos</span>
+                        </a>
+                        <a href="https://enviobot.com.ar/full" class="suite-tab active" style="padding: 4px 10px; font-size: 11.5px; font-weight: 800; color: #111; background: var(--accent); text-decoration: none; border-radius: 6px; display: inline-flex; align-items: center; gap: 5px;" title="Estás en EnvioBot Full (Control de Depósitos)">
+                            <span>🏭</span> <span>Full Stock</span>
+                        </a>
+                    </div>
+                </div>
 
                 <div class="user-info">
-                    <div class="user-email" id="userEmailText">info@logax.com.ar</div>
+                    <span id="planBadge" class="plan-badge trial" onclick="abrirModalPlan()" title="Ver estado del plan y suscripción">🗓️ 30 días de prueba</span>
+                    <select id="mlAccountSelect" class="depot-select" onchange="cambiarCuentaMeLi(this.value)" style="display: none; margin-left: 6px;"></select>
+                    <button id="btnConnectMeLiHeader" onclick="iniciarConexionMeLi()" class="btn btn-sm btn-meli" style="display:none; font-size:11.5px; padding: 4px 10px; margin-left: 6px;">+ Conectar MeLi</button>
+                    <div class="user-email" id="userEmailText">Usuario</div>
                     <div class="top-actions">
                         <button id="themeToggleBtn" onclick="toggleTheme()" class="icon-btn" title="Alto contraste para pantallas con mucha luz">
                             <svg id="themeIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -49,9 +63,31 @@
                             </svg>
                             <span>Configuración</span>
                         </button>
+                        <button onclick="abrirModalAuth('login')" class="icon-btn" title="Iniciar sesión con cuenta existente" id="btnLoginHeader" style="color: var(--accent); font-weight: 700; display: none;">
+                            <span>Ingresar</span>
+                        </button>
+                        <button onclick="cerrarSesion()" class="icon-btn" title="Cerrar sesión" id="btnLogoutBtn" style="color: var(--text2);">
+                            <span>Salir</span>
+                        </button>
                     </div>
                 </div>
             </header>
+
+            <!-- Banner destacado de Bienvenida a la Prueba de 30 días -->
+            <div id="trialWelcomeBanner" style="display: none; background: linear-gradient(90deg, rgba(245, 166, 35, 0.15), rgba(45, 50, 119, 0.15)); border: 1px solid rgba(245, 166, 35, 0.4); border-radius: 8px; padding: 12px 18px; margin: 10px 0 14px 0; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 26px;">🚀</span>
+                    <div>
+                        <div style="font-weight: 800; font-size: 14px; color: var(--text);">Estás usando EnvioBot Full en Modo Prueba (30 días gratis)</div>
+                        <div style="font-size: 12.5px; color: var(--text2); margin-top: 2px;">Conectá tu cuenta de Mercado Libre para sincronizar tu inventario real y predecir quiebres. No requiere tarjeta ni registro previo.</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button onclick="iniciarConexionMeLi()" class="btn btn-meli" style="padding: 9px 18px; font-weight: 700; font-size: 13px;">
+                        Conectar Mercado Libre
+                    </button>
+                </div>
+            </div>
 
             <!-- Barra de Métricas Superiores (Dashboard) -->
             <div class="status-bar">
@@ -370,9 +406,31 @@
                                 </div>
                                 <div class="form-group">
                                     <label>Email para Alarma Diaria Matutina</label>
-                                    <input type="email" id="cfgEmail" placeholder="admin@tutienda.com.ar" value="ventas@tienda.com.ar">
+                                    <div style="display: flex; gap: 8px;">
+                                        <input type="email" id="cfgEmail" placeholder="admin@tutienda.com.ar" value="ventas@tienda.com.ar" style="flex: 1;">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="btnTestEmail" onclick="probarEmailSaliente()" style="white-space: nowrap;">Probar Envío</button>
+                                    </div>
                                     <small>Resumen matutino de publicaciones que alcanzaron su fecha límite de reposición.</small>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- Notificaciones Nativas de Pantalla / Escritorio -->
+                        <div style="border-top: 1px solid var(--border); padding-top: 16px; margin-top: 16px;">
+                            <h4 style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Alertas de Pantalla en este Equipo (Web Push)</h4>
+                            <p style="font-size: 12px; color: var(--text2); margin-bottom: 10px;">
+                                Recibí un cartel emergente nativo en la esquina de Windows / Mac cuando haya publicaciones en fecha límite de colecta, incluso con la pestaña minimizada.
+                            </p>
+                            <div style="display: flex; align-items: center; justify-content: space-between; background: var(--surf2); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--border);">
+                                <div>
+                                    <strong style="font-size: 12.5px; color: var(--text);">Avisos de Escritorio</strong>
+                                    <div id="notifStatusText" style="font-size: 11px; color: var(--text2); margin-top: 2px;">
+                                        Permite recibir avisos automáticos en tu monitor sin instalar programas.
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnToggleDesktopNotif" onclick="window.EnvioBotNotif.requestPermission()">
+                                    Activar en esta PC
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -439,6 +497,17 @@
                         <div id="waLimitReachedMsg" style="display: none; background: rgba(255, 82, 82, 0.12); border: 1px solid rgba(255, 82, 82, 0.4); border-radius: 6px; padding: 10px; font-size: 11.5px; color: #ff7676; margin-bottom: 12px;">
                             Alcanzaste el límite de números de tu plan actual. Pasate al <strong>Plan Enterprise</strong> para alertas ilimitadas a todo tu equipo de depósito y logística.
                         </div>
+
+                        <!-- Botón de prueba de Alerta Consolidada -->
+                        <div style="margin-top: 10px; padding: 10px 12px; background: var(--surf2); border-radius: 6px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <span style="font-size: 12px; font-weight: 700; color: var(--text);">Prueba de Disparo de Alertas</span>
+                                <div style="font-size: 11px; color: var(--text2);">Evalúa las fechas límite de colecta y envía el WhatsApp consolidado a los destinatarios.</div>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="forzarEvaluacionAlertas()" style="font-size: 11px; padding: 5px 12px; white-space: nowrap;">
+                                Probar Alertas en Vivo
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -451,8 +520,140 @@
         </div>
     </div>
 
+    <!-- ── Modal de Autenticación Rápida (Fácil como Enviobot Pedidos) ── -->
+    <div id="modalAuth" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 1200;">
+        <div class="modal-card" style="max-width: 380px; width: 90%; padding: 26px;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <div style="font-weight: 800; font-size: 22px; color: var(--text); letter-spacing: -0.3px;">
+                    EnvioBot <span style="color: var(--accent);">Full</span>
+                </div>
+                <div style="font-size: 13px; color: var(--text2); margin-top: 4px;">
+                    Control de stock y prevención de quiebres
+                </div>
+            </div>
+
+            <!-- Tabs: Ingresar / Crear Cuenta -->
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab-btn active" id="tabAuthLogin" onclick="cambiarAuthTab('login')">Ingresar</button>
+                <button type="button" class="auth-tab-btn" id="tabAuthRegister" onclick="cambiarAuthTab('register')">Crear Cuenta (30d gratis)</button>
+            </div>
+
+            <form id="authForm" onsubmit="handleAuthSubmit(event)">
+                <div id="authNameGroup" class="form-group" style="display: none;">
+                    <label>Nombre o Empresa</label>
+                    <input type="text" id="authName" class="auth-input" placeholder="Ej: Guillermo / Mi Tienda">
+                </div>
+
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="authEmail" class="auth-input" placeholder="tu@email.com" required autocomplete="email">
+                </div>
+
+                <div class="form-group">
+                    <label>Contraseña</label>
+                    <input type="password" id="authPassword" class="auth-input" placeholder="••••••••" required autocomplete="current-password">
+                </div>
+
+                <div id="authErrorMsg" style="display: none; color: #ff7676; font-size: 12px; margin-bottom: 12px; background: rgba(255,82,82,0.1); padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255,82,82,0.3);"></div>
+
+                <button type="submit" id="btnAuthSubmit" class="btn btn-block" style="padding: 11px; font-weight: 700; font-size: 14px; margin-top: 6px;">
+                    Ingresar
+                </button>
+            </form>
+
+            <div style="margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); text-align: center;">
+                <a href="#" onclick="entrarModoDemo(event)" style="font-size: 12.5px; color: var(--accent); text-decoration: none; font-weight: 600;">
+                    → Explorar modo demo interactivo sin registrarse
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal Activar EnvioBot Full (Para usuarios existentes de Pedidos) ── -->
+    <div id="modalActivateFull" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 1240;">
+        <div class="modal-card" style="max-width: 440px; width: 90%; text-align: center; padding: 30px;">
+            <div style="width: 58px; height: 58px; border-radius: 50%; background: rgba(245, 166, 35, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+                    <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+                    <line x1="12" y1="21.1" x2="12" y2="12"></line>
+                </svg>
+            </div>
+            <h3 id="activateFullTitle" style="font-size: 19px; font-weight: 800; color: var(--text); margin-bottom: 8px;">
+                ¡Bienvenido a EnvioBot Full!
+            </h3>
+            <p id="activateFullMsg" style="font-size: 13.5px; color: var(--text2); line-height: 1.5; margin-bottom: 22px;">
+                Identificamos tu cuenta de EnvioBot. Para comenzar a monitorear el stock de tus depósitos y evitar quiebres, activá tus <strong>30 días de prueba sin cargo</strong>.
+            </p>
+
+            <div id="activateFullActionArea">
+                <button id="btnStartTrialFull" onclick="activarPruebaFull()" class="btn btn-block" style="padding: 13px; font-size: 14px; font-weight: 700; background: var(--accent); color: #111; justify-content: center; cursor: pointer;">
+                    🚀 Activar 30 días de prueba gratis
+                </button>
+            </div>
+
+            <div style="margin-top: 16px;">
+                <button onclick="entrarModoDemo(event)" class="btn btn-secondary btn-sm" style="font-size: 12px;">
+                    Ver demostración por ahora
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal Onboarding MeLi (Paso de suscripción) ── -->
+    <div id="modalOnboardingMeLi" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 1250;">
+        <div class="modal-card" style="max-width: 440px; width: 90%; text-align: center; padding: 30px;">
+            <div style="width: 56px; height: 56px; border-radius: 50%; background: rgba(255, 230, 0, 0.15); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                </svg>
+            </div>
+            <h3 style="font-size: 18px; font-weight: 800; color: var(--text); margin-bottom: 8px;">
+                ¡Tu prueba gratis de 30 días está activa!
+            </h3>
+            <p style="font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 22px;">
+                Para que EnvioBot Full pueda leer tu stock en bodega, calcular tu venta diaria (VPD) y proyectar los días restantes, conectá tu cuenta de MercadoLibre:
+            </p>
+
+            <button onclick="iniciarConexionMeLi()" class="btn btn-block btn-meli" style="padding: 13px; font-size: 14px; justify-content: center;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2d3277" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                </svg>
+                Conectar cuenta de MercadoLibre
+            </button>
+
+            <div style="margin-top: 16px;">
+                <button onclick="cerrarOnboardingMeLi()" class="btn btn-secondary btn-sm" style="font-size: 12px;">
+                    Ver panel de demostración por ahora
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal Información de Plan y Suscripción ── -->
+    <div id="modalPlan" class="modal-overlay" style="display: none; align-items: center; justify-content: center;">
+        <div class="modal-card" style="max-width: 460px; width: 90%; padding: 24px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 16px; font-weight: 800;">Tu Suscripción en EnvioBot</h3>
+                <button class="modal-close" onclick="cerrarModalPlan()">✕</button>
+            </div>
+            <div id="planModalDetails" style="font-size: 13px; color: var(--text);">
+                <!-- Contenido inyectado por app.js -->
+            </div>
+            <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="btn btn-secondary" onclick="cerrarModalPlan()">Cerrar</button>
+                <a href="https://wa.me/5491155550000?text=Hola,%20quiero%20mejorar%20mi%20plan%20de%20EnvioBot%20Full" target="_blank" class="btn" style="background: var(--accent); color: #111; font-weight: 700; text-decoration: none; padding: 8px 14px; font-size: 13px;">
+                    Mejorar Plan
+                </a>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="js/theme.js"></script>
+    <script src="js/notifications.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
