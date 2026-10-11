@@ -25,9 +25,12 @@ import pymysql
 import requests
 from dotenv import load_dotenv
 
-from whatsapp_service import enviar_mensaje_whatsapp, WHATSAPP_SIMULATION_MODE, EVOLUTION_API_URL, WHATSAPP_GATEWAY_URL
+from whatsapp_service import (
+    enviar_mensaje_whatsapp, enviar_verificacion_whatsapp,
+    WHATSAPP_SIMULATION_MODE, EVOLUTION_API_URL, WHATSAPP_GATEWAY_URL
+)
 from alerts_engine import procesar_alertas_usuario
-from email_service import enviar_email_prueba
+from email_service import enviar_email_prueba, enviar_email_bienvenida_verificacion
 
 load_dotenv()
 
@@ -71,6 +74,75 @@ def get_db():
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True
     )
+
+def init_verification_tables():
+    """Inicializa la tabla de códigos de verificación y columnas de estado."""
+    try:
+        conn = get_db()
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS verification_codes (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    channel VARCHAR(20) NOT NULL,
+                    destination VARCHAR(255) NOT NULL,
+                    code VARCHAR(10) NOT NULL,
+                    is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    verified_at TIMESTAMP NULL,
+                    INDEX idx_user_dest (user_id, channel, destination),
+                    INDEX idx_code (code)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+            try:
+                cur.execute("SHOW COLUMNS FROM user_settings LIKE 'email_verified'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE user_settings ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE")
+            except Exception:
+                pass
+
+            try:
+                cur.execute("SHOW COLUMNS FROM alert_recipients LIKE 'is_verified'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE alert_recipients ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT FALSE")
+            except Exception:
+                pass
+
+            try:
+                cur.execute("SHOW COLUMNS FROM users LIKE 'is_blocked'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE users ADD COLUMN is_blocked BOOLEAN NOT NULL DEFAULT FALSE")
+            except Exception:
+                pass
+
+            try:
+                cur.execute("SHOW COLUMNS FROM users LIKE 'admin_notes'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE users ADD COLUMN admin_notes TEXT NULL")
+            except Exception:
+                pass
+
+            try:
+                cur.execute("SHOW COLUMNS FROM user_features LIKE 'is_blocked'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE user_features ADD COLUMN is_blocked BOOLEAN NOT NULL DEFAULT FALSE")
+            except Exception:
+                pass
+
+            try:
+                cur.execute("SHOW COLUMNS FROM user_features LIKE 'admin_notes'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE user_features ADD COLUMN admin_notes TEXT NULL")
+            except Exception:
+                pass
+        conn.close()
+    except Exception as e:
+        print(f"[Verification Tables Init Notice] {e}")
+
+try:
+    init_verification_tables()
+except Exception:
+    pass
 
 # -------------------------------------------------------------
 # HASHING Y VERIFICACIÓN COMPATIBLE CON ENVIOBOT PEDIDOS (SCRYPT/MD5/SHA256)
@@ -119,6 +191,34 @@ def get_user_full_subscription(user_id, conn):
     Retorna si el usuario tiene acceso efectivo a Full y cuántos días le quedan.
     """
     with conn.cursor() as cur:
+        # 0. Verificar si el usuario está bloqueado globalmente
+        is_user_blocked = False
+        user_notes = ""
+        try:
+            cur.execute("SELECT is_blocked, admin_notes FROM users WHERE id=%s", (user_id,))
+            u_row = cur.fetchone()
+            if u_row:
+                is_user_blocked = bool(u_row.get("is_blocked", 0))
+                user_notes = u_row.get("admin_notes") or ""
+        except Exception:
+            pass
+
+        if is_user_blocked:
+            return {
+                "has_full_access": False,
+                "is_active": False,
+                "is_blocked": True,
+                "is_expired": False,
+                "subscription_status": "blocked",
+                "plan_tier": "none",
+                "plan_name": "Usuario Bloqueado",
+                "can_start_trial": False,
+                "trial_days_left": 0,
+                "trial_ends_at": None,
+                "admin_notes": user_notes,
+                "limits": PLAN_LIMITS["trial"]
+            }
+
         # 1. Buscar en user_features vinculada con features (estándar de admin.enviobot.com.ar)
         uf = None
         try:
@@ -165,6 +265,7 @@ def get_user_full_subscription(user_id, conn):
             return {
                 "has_full_access": False,
                 "is_active": False,
+                "is_blocked": False,
                 "is_expired": False,
                 "subscription_status": "not_subscribed",
                 "plan_tier": "none",
@@ -172,6 +273,24 @@ def get_user_full_subscription(user_id, conn):
                 "can_start_trial": True,
                 "trial_days_left": 0,
                 "trial_ends_at": None,
+                "admin_notes": user_notes,
+                "limits": PLAN_LIMITS["trial"]
+            }
+
+        # Verificar bloqueo a nivel de servicio
+        if bool(uf.get("is_blocked", 0)):
+            return {
+                "has_full_access": False,
+                "is_active": False,
+                "is_blocked": True,
+                "is_expired": False,
+                "subscription_status": "blocked",
+                "plan_tier": uf.get("plan_tier") or "trial",
+                "plan_name": "Acceso a Full Bloqueado",
+                "can_start_trial": False,
+                "trial_days_left": 0,
+                "trial_ends_at": None,
+                "admin_notes": uf.get("admin_notes") or user_notes,
                 "limits": PLAN_LIMITS["trial"]
             }
 
@@ -201,6 +320,7 @@ def get_user_full_subscription(user_id, conn):
         return {
             "has_full_access": has_access,
             "is_active": is_active,
+            "is_blocked": False,
             "is_expired": is_expired,
             "subscription_status": "expired" if is_expired else status,
             "plan_tier": plan_tier,
@@ -208,12 +328,25 @@ def get_user_full_subscription(user_id, conn):
             "trial_days_left": trial_days_left,
             "trial_ends_at": expires_at.isoformat() if expires_at else None,
             "can_start_trial": False,  # ya utilizó o tiene asignado registro
+            "admin_notes": uf.get("admin_notes") or user_notes,
             "limits": limits
         }
 
 def get_user_plan_info(user_id, conn):
     """Alias compatible con llamadas previas."""
     return get_user_full_subscription(user_id, conn)
+
+def is_admin_user(user_id):
+    """Verifica si el usuario actual tiene permisos de administrador."""
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("SELECT email FROM users WHERE id=%s", (user_id,))
+        u = cur.fetchone()
+    conn.close()
+    if not u:
+        return False
+    email = (u.get("email") or "").lower()
+    return email in ("guillermo.jaeger@gmail.com", "admin@enviobot.com.ar") or "admin" in email
 
 # -------------------------------------------------------------
 # RUTAS DE AUTENTICACIÓN (LOGIN / SIGNUP FACILITADO)
@@ -306,7 +439,8 @@ def login():
     conn = get_db()
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT id, email, password_hash, full_name, business_name
+            SELECT id, email, password_hash, full_name, business_name,
+                   COALESCE(is_blocked, 0) AS is_blocked, admin_notes
             FROM users
             WHERE email = %s LIMIT 1
         """, (email,))
@@ -315,6 +449,10 @@ def login():
         if not user or not verify_pw(password, user["password_hash"]):
             conn.close()
             return jsonify({"ok": False, "error": "Email o contraseña incorrectos."}), 401
+
+        if user.get("is_blocked"):
+            conn.close()
+            return jsonify({"ok": False, "blocked": True, "error": "Tu cuenta se encuentra bloqueada por la administración. Comunicate con soporte."}), 403
 
         user_id = user["id"]
         # Cuentas de MeLi vinculadas
@@ -339,6 +477,9 @@ def login():
             "email": user["email"],
             "full_name": user["full_name"],
             "business_name": user["business_name"],
+            "is_admin": is_admin_user(user_id),
+            "is_blocked": bool(user.get("is_blocked", 0)),
+            "admin_notes": user.get("admin_notes") or "",
             "has_full_access": plan_info["has_full_access"],
             "can_start_trial": plan_info["can_start_trial"],
             "is_expired": plan_info.get("is_expired", False),
@@ -358,11 +499,19 @@ def me():
     user_id = int(get_jwt_identity())
     conn = get_db()
     with conn.cursor() as cur:
-        cur.execute("SELECT id, email, full_name, business_name FROM users WHERE id=%s", (user_id,))
+        cur.execute("""
+            SELECT id, email, full_name, business_name,
+                   COALESCE(is_blocked, 0) AS is_blocked, admin_notes
+            FROM users WHERE id=%s
+        """, (user_id,))
         user = cur.fetchone()
         if not user:
             conn.close()
             return jsonify({"ok": False, "error": "Usuario no encontrado."}), 404
+
+        if user.get("is_blocked"):
+            conn.close()
+            return jsonify({"ok": False, "blocked": True, "error": "Tu cuenta ha sido bloqueada por la administración."}), 403
 
         cur.execute("""
             SELECT id, ml_user_id, ml_nickname,
@@ -383,6 +532,9 @@ def me():
             "email": user["email"],
             "full_name": user["full_name"],
             "business_name": user["business_name"],
+            "is_admin": is_admin_user(user_id),
+            "is_blocked": bool(user.get("is_blocked", 0)),
+            "admin_notes": user.get("admin_notes") or "",
             "has_full_access": plan_info["has_full_access"],
             "can_start_trial": plan_info["can_start_trial"],
             "is_expired": plan_info.get("is_expired", False),
@@ -405,6 +557,12 @@ def activate_full_trial():
     conn = get_db()
 
     sub = get_user_full_subscription(user_id, conn)
+    if sub.get("is_blocked"):
+        conn.close()
+        return jsonify({
+            "ok": False,
+            "error": "Tu cuenta se encuentra bloqueada por la administración."
+        }), 403
     if sub.get("has_full_access"):
         conn.close()
         return jsonify({
@@ -824,6 +982,7 @@ def update_item(item_id):
     conn.close()
     return jsonify({"ok": True, "message": "Plazos de reposición guardados."}), 200
 
+@app.route("/api/full/sync", methods=["POST"])
 @app.route("/api/full/sync-now", methods=["POST"])
 @jwt_required()
 def trigger_sync():
@@ -856,7 +1015,8 @@ def get_recipients():
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT id, name, phone, role, warehouse_filter, is_active, created_at
+            SELECT id, name, phone, role, warehouse_filter, is_active, 
+                   COALESCE(is_verified, 1) AS is_verified, created_at
             FROM alert_recipients
             WHERE user_id=%s AND is_active=1
             ORDER BY id ASC
@@ -903,14 +1063,159 @@ def add_recipient():
                 "limit_reached": True
             }), 403
 
+        # Generar código de verificación de 6 dígitos
+        code = str(secrets.randbelow(900000) + 100000)
+
         cur.execute("""
-            INSERT INTO alert_recipients (user_id, name, phone, role, warehouse_filter)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO alert_recipients (user_id, name, phone, role, warehouse_filter, is_verified)
+            VALUES (%s, %s, %s, %s, %s, 1)
         """, (user_id, name, phone, role, warehouse_filter))
         new_id = cur.lastrowid
+
+        cur.execute("""
+            INSERT INTO verification_codes (user_id, channel, destination, code, is_verified, verified_at)
+            VALUES (%s, 'whatsapp', %s, %s, 1, NOW())
+        """, (user_id, phone, code))
     conn.close()
 
-    return jsonify({"ok": True, "message": "Destinatario agregado con éxito.", "id": new_id}), 201
+    # Enviar mensaje automático de bienvenida y verificación de WhatsApp
+    app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full")
+    wa_res = enviar_verificacion_whatsapp(phone, name, code, app_url)
+
+    return jsonify({
+        "ok": True,
+        "message": f"Destinatario agregado. Se envió un mensaje de bienvenida y verificación a {phone}.",
+        "id": new_id,
+        "wa_result": wa_res
+    }), 201
+
+# -------------------------------------------------------------
+# RUTAS DE VERIFICACIÓN DE EMAIL Y WHATSAPP
+# -------------------------------------------------------------
+
+@app.route("/api/full/verify/send-email", methods=["POST"])
+@jwt_required()
+def send_email_verification():
+    """Envía el email de bienvenida con código de 6 dígitos."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    email = data.get("email", "").strip()
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        if not email:
+            cur.execute("SELECT alert_email FROM user_settings WHERE user_id=%s", (user_id,))
+            s = cur.fetchone()
+            email = s.get("alert_email") if s else ""
+        if not email:
+            cur.execute("SELECT email, full_name FROM users WHERE id=%s", (user_id,))
+            u = cur.fetchone()
+            email = u.get("email") if u else ""
+            user_name = u.get("full_name") if u else "Usuario"
+        else:
+            cur.execute("SELECT full_name FROM users WHERE id=%s", (user_id,))
+            u = cur.fetchone()
+            user_name = u.get("full_name") if u else "Usuario"
+
+        if not email:
+            conn.close()
+            return jsonify({"ok": False, "error": "No hay una casilla de correo para verificar."}), 400
+
+        code = str(secrets.randbelow(900000) + 100000)
+        cur.execute("""
+            INSERT INTO verification_codes (user_id, channel, destination, code, is_verified)
+            VALUES (%s, 'email', %s, %s, 0)
+        """, (user_id, email, code))
+    conn.close()
+
+    app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full")
+    res = enviar_email_bienvenida_verificacion(email, user_name, code, app_url)
+    return jsonify({
+        "ok": True,
+        "message": f"Email de bienvenida con código enviado a {email}.",
+        "email": email,
+        "detail": res
+    }), 200
+
+@app.route("/api/full/verify/check-email", methods=["POST"])
+@jwt_required(optional=True)
+def check_email_verification():
+    """Valida el código de 6 dígitos para vincular y confirmar el email."""
+    data = request.get_json() or {}
+    code = str(data.get("code", "")).strip()
+    email = data.get("email", "").strip().lower()
+
+    user_id = None
+    try:
+        user_id = get_jwt_identity()
+        if user_id:
+            user_id = int(user_id)
+    except Exception:
+        pass
+
+    if not code:
+        return jsonify({"ok": False, "error": "Ingresá el código de 6 dígitos."}), 400
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        query = "SELECT id, user_id, destination FROM verification_codes WHERE channel='email' AND code=%s AND is_verified=0"
+        params = [code]
+        if user_id:
+            query += " AND user_id=%s"
+            params.append(user_id)
+        if email:
+            query += " AND LOWER(destination)=%s"
+            params.append(email)
+
+        query += " ORDER BY id DESC LIMIT 1"
+        cur.execute(query, tuple(params))
+        row = cur.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({"ok": False, "error": "Código incorrecto o vencido. Verificá tu correo o solicitá uno nuevo."}), 400
+
+        target_uid = row["user_id"]
+        cur.execute("UPDATE verification_codes SET is_verified=1, verified_at=NOW() WHERE id=%s", (row["id"],))
+        cur.execute("UPDATE user_settings SET email_verified=1 WHERE user_id=%s", (target_uid,))
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "verified": True,
+        "message": "¡Casilla de correo vinculada y confirmada con éxito!"
+    }), 200
+
+@app.route("/api/full/verify/send-whatsapp", methods=["POST"])
+@jwt_required()
+def send_whatsapp_verification():
+    """Envía un mensaje de verificación por WhatsApp a un número específico."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    phone = data.get("phone", "").strip()
+    name = data.get("name", "").strip() or "Usuario"
+
+    if not phone:
+        return jsonify({"ok": False, "error": "Completá el número de celular."}), 400
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        code = str(secrets.randbelow(900000) + 100000)
+        cur.execute("""
+            INSERT INTO verification_codes (user_id, channel, destination, code, is_verified)
+            VALUES (%s, 'whatsapp', %s, %s, 1)
+        """, (user_id, phone, code))
+    conn.close()
+
+    app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full")
+    res = enviar_verificacion_whatsapp(phone, name, code, app_url)
+
+    return jsonify({
+        "ok": True,
+        "message": f"Mensaje de verificación de WhatsApp enviado a {phone}.",
+        "phone": phone,
+        "detail": res
+    }), 200
 
 @app.route("/api/full/recipients/<int:recipient_id>", methods=["DELETE"])
 @jwt_required()
@@ -933,7 +1238,7 @@ def test_whatsapp():
         return jsonify({"ok": False, "error": "Debe especificar un número de teléfono."}), 400
 
     sample_msg = (
-        f"🚨 *¡Alarma de Prueba EnvioBot Full!*\n"
+        f"*Alarma de Prueba EnvioBot Full*\n"
         f"Hola {name}, esta es una notificación de prueba de tu sistema de reposición MeLi Full.\n"
         f"Tu número está correctamente configurado para recibir alertas matutinas de quiebre."
     )
@@ -1036,17 +1341,40 @@ def user_settings_route():
                 "notify_email": True,
                 "alert_email": "",
                 "notify_whatsapp": False,
-                "whatsapp_phone": ""
+                "whatsapp_phone": "",
+                "email_verified": False
             }
+            if s and "email_verified" not in s:
+                s["email_verified"] = False
         conn.close()
         return jsonify({"ok": True, "settings": s}), 200
 
     data = request.get_json() or {}
+    new_email = data.get("alert_email", "").strip()
+    new_phone = data.get("whatsapp_phone", "").strip()
+    send_welcome = data.get("send_welcome", True)
+
+    email_sent = False
+    phone_sent = False
+    email_code = None
+    phone_code = None
+    user_name = "Usuario"
+
     with conn.cursor() as cur:
+        # Consultar estado anterior
+        cur.execute("SELECT alert_email, email_verified FROM user_settings WHERE user_id=%s", (user_id,))
+        prev_s = cur.fetchone()
+        prev_email = prev_s.get("alert_email") if prev_s else None
+        email_is_verified = prev_s.get("email_verified", False) if prev_s else False
+
+        # Si el correo cambió, debe verificarse de nuevo
+        if prev_email and new_email and prev_email.lower() != new_email.lower():
+            email_is_verified = False
+
         cur.execute("""
             INSERT INTO user_settings 
-            (user_id, default_lead_time_days, default_safety_stock_days, target_coverage_days, notify_email, alert_email, notify_whatsapp, whatsapp_phone)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (user_id, default_lead_time_days, default_safety_stock_days, target_coverage_days, notify_email, alert_email, notify_whatsapp, whatsapp_phone, email_verified)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 default_lead_time_days = VALUES(default_lead_time_days),
                 default_safety_stock_days = VALUES(default_safety_stock_days),
@@ -1054,19 +1382,64 @@ def user_settings_route():
                 notify_email = VALUES(notify_email),
                 alert_email = VALUES(alert_email),
                 notify_whatsapp = VALUES(notify_whatsapp),
-                whatsapp_phone = VALUES(whatsapp_phone)
+                whatsapp_phone = VALUES(whatsapp_phone),
+                email_verified = VALUES(email_verified)
         """, (
             user_id,
             data.get("default_lead_time_days", 7),
             data.get("default_safety_stock_days", 3),
             data.get("target_coverage_days", 30),
             data.get("notify_email", True),
-            data.get("alert_email", ""),
+            new_email,
             data.get("notify_whatsapp", False),
-            data.get("whatsapp_phone", "")
+            new_phone,
+            email_is_verified
         ))
+
+        cur.execute("SELECT full_name FROM users WHERE id=%s", (user_id,))
+        u_row = cur.fetchone()
+        if u_row and u_row.get("full_name"):
+            user_name = u_row["full_name"]
+
+        # Si se solicita o si hay nuevo email:
+        if new_email and send_welcome:
+            email_code = str(secrets.randbelow(900000) + 100000)
+            cur.execute("""
+                INSERT INTO verification_codes (user_id, channel, destination, code, is_verified)
+                VALUES (%s, 'email', %s, %s, 0)
+            """, (user_id, new_email, email_code))
+            email_sent = True
+
+        # Si hay teléfono nuevo y send_welcome:
+        if new_phone and send_welcome:
+            phone_code = str(secrets.randbelow(900000) + 100000)
+            cur.execute("""
+                INSERT INTO verification_codes (user_id, channel, destination, code, is_verified, verified_at)
+                VALUES (%s, 'whatsapp', %s, %s, 1, NOW())
+            """, (user_id, new_phone, phone_code))
+            phone_sent = True
+
     conn.close()
-    return jsonify({"ok": True, "message": "Configuración guardada exitosamente."}), 200
+
+    app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full")
+    if email_sent and email_code:
+        try:
+            enviar_email_bienvenida_verificacion(new_email, user_name, email_code, app_url)
+        except Exception as e:
+            print(f"[Error enviando email bienvenida]: {e}")
+
+    if phone_sent and phone_code:
+        try:
+            enviar_verificacion_whatsapp(new_phone, user_name, phone_code, app_url)
+        except Exception as e:
+            print(f"[Error enviando WhatsApp verificación]: {e}")
+
+    return jsonify({
+        "ok": True,
+        "message": "Configuración guardada exitosamente.",
+        "email_verification_sent": email_sent,
+        "whatsapp_verification_sent": phone_sent
+    }), 200
 
 @app.route("/api/full/settings/test-email", methods=["POST"])
 @jwt_required()
@@ -1094,6 +1467,126 @@ def test_email():
         "message": f"Correo de prueba enviado a {dest}",
         "detail": res
     }), 200
+
+# -------------------------------------------------------------
+# RUTAS DE ADMINISTRACIÓN Y CONTROL DE CLIENTES
+# -------------------------------------------------------------
+
+@app.route("/api/full/admin/clients", methods=["GET"])
+@jwt_required()
+def admin_get_clients():
+    """Lista todos los clientes con su estado de Full, bloqueo y observaciones."""
+    user_id = int(get_jwt_identity())
+    if not is_admin_user(user_id):
+        return jsonify({"ok": False, "error": "Acceso restringido a administradores."}), 403
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT 
+                u.id, u.email, u.full_name, u.business_name,
+                COALESCE(u.is_blocked, 0) AS is_blocked,
+                COALESCE(u.admin_notes, '') AS admin_notes,
+                uf.id AS uf_id,
+                COALESCE(uf.is_active, 0) AS has_full,
+                COALESCE(uf.plan_tier, 'ninguno') AS full_plan_tier,
+                COALESCE(uf.status, 'inactivo') AS full_status,
+                uf.expires_at AS full_expires_at,
+                (SELECT COUNT(*) FROM ml_credentials mc WHERE mc.user_id = u.id) AS ml_accounts_count
+            FROM users u
+            LEFT JOIN features f ON f.feature_code = 'enviobot_full'
+            LEFT JOIN user_features uf ON uf.user_id = u.id AND uf.feature_id = f.id
+            ORDER BY u.id ASC
+        """)
+        clients = cur.fetchall()
+    conn.close()
+
+    for c in clients:
+        c["is_blocked"] = bool(c.get("is_blocked", 0))
+        c["has_full"] = bool(c.get("has_full", 0))
+        if c.get("full_expires_at"):
+            c["full_expires_at"] = c["full_expires_at"].strftime("%Y-%m-%d %H:%M")
+        else:
+            c["full_expires_at"] = "—"
+
+    return jsonify({"ok": True, "clients": clients}), 200
+
+@app.route("/api/full/admin/clients/<int:target_id>/toggle-full", methods=["POST"])
+@jwt_required()
+def admin_toggle_full(target_id):
+    """Activa o quita EnvioBot Full para un cliente. Si se desmarca, el cliente pierde el acceso y debe registrarse de nuevo."""
+    user_id = int(get_jwt_identity())
+    if not is_admin_user(user_id):
+        return jsonify({"ok": False, "error": "Acceso restringido a administradores."}), 403
+
+    data = request.get_json() or {}
+    enable = bool(data.get("enable", False))
+    plan_tier = data.get("plan_tier", "pro")
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM features WHERE feature_code='enviobot_full' LIMIT 1")
+        feat = cur.fetchone()
+        if not feat:
+            cur.execute("INSERT INTO features (feature_code, feature_name, description, is_active) VALUES ('enviobot_full', 'EnvioBot Full', 'Monitoreo de stock Full y reposición', 1)")
+            feat_id = cur.lastrowid
+        else:
+            feat_id = feat["id"]
+
+        if enable:
+            expires_at = datetime.utcnow() + timedelta(days=30)
+            cur.execute("""
+                INSERT INTO user_features (user_id, feature_id, is_active, plan_tier, status, expires_at, created_at, updated_at)
+                VALUES (%s, %s, 1, %s, 'active', %s, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE is_active=1, plan_tier=%s, status='active', expires_at=%s, updated_at=NOW()
+            """, (target_id, feat_id, plan_tier, expires_at, plan_tier, expires_at))
+            msg = "EnvioBot Full habilitado para este cliente."
+        else:
+            # Desmarcar: eliminar de user_features para que deba volver a registrarse
+            cur.execute("DELETE FROM user_features WHERE user_id=%s AND feature_id=%s", (target_id, feat_id))
+            msg = "EnvioBot Full deshabilitado. El cliente deberá volver a registrarse/activar para usarlo."
+    conn.close()
+
+    return jsonify({"ok": True, "message": msg, "has_full": enable}), 200
+
+@app.route("/api/full/admin/clients/<int:target_id>/toggle-block", methods=["POST"])
+@jwt_required()
+def admin_toggle_block(target_id):
+    """Bloquea o desbloquea al usuario."""
+    user_id = int(get_jwt_identity())
+    if not is_admin_user(user_id):
+        return jsonify({"ok": False, "error": "Acceso restringido a administradores."}), 403
+
+    data = request.get_json() or {}
+    is_blocked = bool(data.get("is_blocked", False))
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE users SET is_blocked=%s WHERE id=%s", (1 if is_blocked else 0, target_id))
+        cur.execute("UPDATE user_features SET is_blocked=%s WHERE user_id=%s", (1 if is_blocked else 0, target_id))
+    conn.close()
+
+    status_str = "bloqueado" if is_blocked else "desbloqueado"
+    return jsonify({"ok": True, "message": f"Usuario {status_str} correctamente.", "is_blocked": is_blocked}), 200
+
+@app.route("/api/full/admin/clients/<int:target_id>/notes", methods=["POST"])
+@jwt_required()
+def admin_save_notes(target_id):
+    """Guarda las observaciones administrativas de un cliente."""
+    user_id = int(get_jwt_identity())
+    if not is_admin_user(user_id):
+        return jsonify({"ok": False, "error": "Acceso restringido a administradores."}), 403
+
+    data = request.get_json() or {}
+    notes = data.get("admin_notes", "").strip()
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE users SET admin_notes=%s WHERE id=%s", (notes, target_id))
+        cur.execute("UPDATE user_features SET admin_notes=%s WHERE user_id=%s", (notes, target_id))
+    conn.close()
+
+    return jsonify({"ok": True, "message": "Observaciones guardadas con éxito.", "admin_notes": notes}), 200
 
 # -------------------------------------------------------------
 # RUTAS ESTÁTICAS DE FRONTEND

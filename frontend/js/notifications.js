@@ -107,14 +107,14 @@
 
         if (criticals.length > 0) {
             mostrarNotificacion(
-                '🚨 Alarma Crítica de Quiebre — EnvioBot Full',
-                `Tenés ${criticals.length} publicación(es) en riesgo inminente de quedarse sin stock. ¡Prepará el flete!`,
+                'Alarma Crítica de Quiebre — EnvioBot Full',
+                `Tenés ${criticals.length} publicación(es) en riesgo inminente de quedarse sin stock. Prepará la colecta.`,
                 { url: '/#colecta' }
             );
             localStorage.setItem(LAST_NOTIF_KEY, now.toString());
         } else if (warnings.length > 0) {
             mostrarNotificacion(
-                '🚛 Momento de Pedir Colecta — EnvioBot Full',
+                'Momento de Pedir Colecta — EnvioBot Full',
                 `Tenés ${warnings.length} publicación(es) en fecha límite para Mercado Envíos Full. Pedí el turno hoy.`,
                 { url: '/#colecta' }
             );
@@ -131,15 +131,15 @@
         const status = getNotificationStatus();
         if (status === 'granted') {
             btn.classList.add('active');
-            btn.innerHTML = '<span>🔔 Notificaciones Activas</span>';
+            btn.innerHTML = '<span>Notificaciones Activas</span>';
             if (statusText) statusText.textContent = 'Este equipo recibirá alertas nativas en pantalla.';
         } else if (status === 'denied') {
             btn.classList.remove('active');
-            btn.innerHTML = '<span>🔕 Notificaciones Bloqueadas</span>';
+            btn.innerHTML = '<span>Notificaciones Bloqueadas</span>';
             if (statusText) statusText.textContent = 'Bloqueadas en la configuración del navegador.';
         } else {
             btn.classList.remove('active');
-            btn.innerHTML = '<span>🔔 Activar Notificaciones de Pantalla</span>';
+            btn.innerHTML = '<span>Activar en este equipo</span>';
             if (statusText) statusText.textContent = 'Permite recibir avisos automáticos aunque la pestaña esté minimizada.';
         }
     }

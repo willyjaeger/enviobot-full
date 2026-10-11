@@ -105,11 +105,30 @@ function cambiarDeposito(depotId) {
 async function cargarDatos() {
     const token = getToken();
     const tbody = document.getElementById('stockTableBody');
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--text2);">Consultando stock en ' + WAREHOUSES[currentWarehouse].name + '...</td></tr>';
+    if (!tbody) return;
+
+    // Si no hay sesión o no hay MeLi, no cargar nada
+    if (!token || !currentUser || !currentUser.ml_accounts || currentUser.ml_accounts.length === 0) {
+        itemsData = [];
+        return;
+    }
+
+    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="8" style="text-align: center; padding: 42px 20px; color: var(--text2);">
+                <div style="margin-bottom: 8px;">
+                    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6; animation: spin 1s linear infinite;">
+                        <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"></circle>
+                    </svg>
+                </div>
+                <strong style="color: var(--text); font-size: 14px;">Consultando stock real en ${wh.name}...</strong><br>
+                <span style="font-size: 12px;">Sincronizando inventario y ritmo de ventas con Mercado Libre.</span>
+            </td>
+        </tr>
+    `;
 
     try {
-        if (!token) throw new Error("Sin sesión activa");
-
         let url = `${API_BASE}/full/items?warehouse=${currentWarehouse}`;
         if (currentAccount && currentAccount !== 'all') {
             url += `&account_id=${currentAccount}`;
@@ -137,31 +156,52 @@ async function cargarDatos() {
                 itemsData = data.items.map(it => adaptarItemDesdeBackend(it));
                 recalcularTodo();
                 return;
+            } else {
+                itemsData = [];
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" style="text-align: center; padding: 50px 20px; color: var(--text2);">
+                            <div style="margin-bottom: 12px;">
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6;">
+                                    <path d="M13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+                                    <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+                                    <line x1="12" y1="21.1" x2="12" y2="12"></line>
+                                </svg>
+                            </div>
+                            <strong style="font-size: 15px; color: var(--text);">No se encontraron publicaciones activas en Mercado Envíos Full</strong>
+                            <p style="font-size: 12.5px; margin-top: 8px; max-width: 520px; margin-left: auto; margin-right: auto; line-height: 1.5;">
+                                Tu cuenta de Mercado Libre está vinculada correctamente. En cuanto tengas publicaciones con stock activo en el centro de Full o cargues tu primer envío, figurarán aquí automáticamente.
+                            </p>
+                            <button onclick="sincronizarAhora()" class="btn btn-secondary btn-sm" style="margin-top: 14px;">
+                                Sincronizar Catálogo Ahora
+                            </button>
+                        </td>
+                    </tr>
+                `;
+                actualizarDashboardSummary();
+                return;
             }
         }
     } catch (err) {
-        // Modo demo interactivo
+        console.warn("Error cargando inventario real:", err);
+        itemsData = [];
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align: center; padding: 40px; color: var(--text2);">
+                    <div style="margin-bottom: 8px;">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6;">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                    </div>
+                    <strong style="color: var(--text);">No se pudo conectar con el servidor</strong><br>
+                    <span style="font-size: 12px;">Verificá tu conexión o volvé a iniciar sesión.</span>
+                </td>
+            </tr>
+        `;
+        actualizarDashboardSummary();
     }
-
-    // Cargar datos demo del depósito seleccionado
-    itemsData = BASE_ITEMS_CATALOG.map(it => {
-        const depotConf = it.depots[currentWarehouse] || { stock: 0, transit_days: 4, target_days: 30, buffer: 2, vpd: 2.0 };
-        return {
-            id: it.id,
-            item_id: it.item_id,
-            sku: it.sku,
-            title: it.title,
-            thumbnail: it.thumbnail,
-            permalink: it.permalink,
-            current_stock: depotConf.stock,
-            transit_delay_days: depotConf.transit_days,
-            target_stock_days: depotConf.target_days,
-            buffer_days: depotConf.buffer,
-            vpd: depotConf.vpd
-        };
-    });
-
-    recalcularTodo();
 }
 
 function adaptarItemDesdeBackend(raw) {
@@ -809,8 +849,8 @@ function confirmarDespachoColecta() {
 
 // ── Modal de Configuración General y Pestañas ───────────────────────
 let recipientsData = [
-    { id: 1, name: "Guillermo (Dueño)", phone: "+54 9 11 5555-0001", role: "admin", warehouse_filter: "all" },
-    { id: 2, name: "Marcos (Depósito)", phone: "+54 9 11 4444-0002", role: "deposito", warehouse_filter: "meli_full" }
+    { id: 1, name: "Guillermo (Dueño)", phone: "+54 9 11 5555-0001", role: "admin", warehouse_filter: "all", is_verified: 1 },
+    { id: 2, name: "Marcos (Depósito)", phone: "+54 9 11 4444-0002", role: "deposito", warehouse_filter: "meli_full", is_verified: 1 }
 ];
 let currentPlanTier = 'pro'; // trial: 1, pro: 2, enterprise: 10
 const PLAN_LIMITS = { trial: 1, pro: 2, enterprise: 10 };
@@ -819,11 +859,159 @@ function abrirConfiguracion() {
     document.getElementById('configModal').style.display = 'flex';
     switchConfigTab('general');
     renderizarTablaConfiguracionDepositos();
-    renderizarDestinatariosWA();
+    cargarSettingsBackend();
+    cargarDestinatariosBackend();
 }
 
 function cerrarConfiguracion() {
     document.getElementById('configModal').style.display = 'none';
+}
+
+async function cargarSettingsBackend() {
+    const token = getToken();
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/settings`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.ok && data.settings) {
+            const s = data.settings;
+            const safetyEl = document.getElementById('cfgSafetyStock');
+            if (safetyEl && s.default_safety_stock_days !== undefined) {
+                safetyEl.value = s.default_safety_stock_days;
+            }
+            const emailEl = document.getElementById('cfgEmail');
+            if (emailEl && s.alert_email) {
+                emailEl.value = s.alert_email;
+            }
+            actualizarEstadoVerificacionEmail(s.email_verified);
+        }
+    } catch (e) {
+        console.error("Error cargando settings:", e);
+    }
+}
+
+async function cargarDestinatariosBackend() {
+    const token = getToken();
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/recipients`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.recipients)) {
+            recipientsData = data.recipients;
+            if (data.plan_tier) currentPlanTier = data.plan_tier;
+            renderizarDestinatariosWA();
+        }
+    } catch (e) {
+        console.error("Error cargando destinatarios:", e);
+    }
+}
+
+function actualizarEstadoVerificacionEmail(isVerified) {
+    const badge = document.getElementById('cfgEmailVerifiedBadge');
+    const btnConfirm = document.getElementById('btnVerifyEmailModal');
+    if (!badge) return;
+
+    if (isVerified) {
+        badge.className = 'badge badge-ok';
+        badge.textContent = 'Verificado';
+        if (btnConfirm) btnConfirm.style.display = 'none';
+    } else {
+        badge.className = 'badge badge-warn';
+        badge.textContent = 'Pendiente';
+        if (btnConfirm) btnConfirm.style.display = 'inline-flex';
+    }
+}
+
+function abrirModalVerificarEmail() {
+    const emailInput = document.getElementById('cfgEmail');
+    const email = emailInput ? emailInput.value.trim() : '';
+    if (!email) {
+        alert("Por favor indicá tu casilla de correo antes de verificar.");
+        return;
+    }
+    const target = document.getElementById('verifyPromptEmailText');
+    if (target) target.textContent = email;
+    const codeInput = document.getElementById('verifyPromptCodeInput');
+    if (codeInput) {
+        codeInput.value = '';
+        setTimeout(() => codeInput.focus(), 150);
+    }
+    const modal = document.getElementById('modalVerificarEmailPrompt');
+    if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalVerificarEmail() {
+    const modal = document.getElementById('modalVerificarEmailPrompt');
+    if (modal) modal.style.display = 'none';
+}
+
+async function confirmarCodigoEmailManual() {
+    const emailInput = document.getElementById('cfgEmail');
+    const email = emailInput ? emailInput.value.trim() : '';
+    const codeInput = document.getElementById('verifyPromptCodeInput');
+    const code = codeInput ? codeInput.value.trim() : '';
+
+    if (!code || code.length !== 6) {
+        alert("Por favor ingresá el código de 6 dígitos que enviamos a tu correo.");
+        if (codeInput) codeInput.focus();
+        return;
+    }
+
+    const token = getToken();
+    try {
+        let headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`${API_BASE}/full/verify/check-email`, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ code: code, email: email })
+        });
+        const data = await res.json();
+        if (data.ok && data.verified) {
+            actualizarEstadoVerificacionEmail(true);
+            cerrarModalVerificarEmail();
+            alert("¡Casilla de correo vinculada y confirmada con éxito!");
+        } else {
+            alert(data.error || "Código incorrecto o vencido.");
+        }
+    } catch (e) {
+        alert("Error de conexión: " + e.message);
+    }
+}
+
+async function solicitarReenvioCodigoEmail(e) {
+    if (e) e.preventDefault();
+    const emailInput = document.getElementById('cfgEmail');
+    const email = emailInput ? emailInput.value.trim() : '';
+    if (!email) {
+        alert("Completá tu correo electrónico primero.");
+        return;
+    }
+
+    const token = getToken();
+    try {
+        let headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`${API_BASE}/full/verify/send-email`, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ email: email })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            alert(`Código de vinculación reenviado a ${email}.\nRevisá tu bandeja de entrada o spam.`);
+        } else {
+            alert(data.error || "No se pudo reenviar el código.");
+        }
+    } catch (e) {
+        alert("Error de conexión: " + e.message);
+    }
 }
 
 function renderizarTablaConfiguracionDepositos() {
@@ -895,9 +1083,12 @@ function renderizarDestinatariosWA() {
     tbody.innerHTML = '';
 
     const maxAllowed = PLAN_LIMITS[currentPlanTier] || 2;
-    document.getElementById('waPlanBadge').textContent = `Plan ${currentPlanTier.toUpperCase()}`;
-    document.getElementById('waCountUsed').textContent = recipientsData.length;
-    document.getElementById('waMaxAllowed').textContent = maxAllowed;
+    const badgeTier = document.getElementById('waPlanBadge');
+    if (badgeTier) badgeTier.textContent = `Plan ${currentPlanTier.toUpperCase()}`;
+    const countUsedEl = document.getElementById('waCountUsed');
+    if (countUsedEl) countUsedEl.textContent = recipientsData.length;
+    const maxAllowedEl = document.getElementById('waMaxAllowed');
+    if (maxAllowedEl) maxAllowedEl.textContent = maxAllowed;
 
     const limitMsg = document.getElementById('waLimitReachedMsg');
     const addBox = document.getElementById('addRecipientBox');
@@ -924,8 +1115,16 @@ function renderizarDestinatariosWA() {
 
         const whName = r.warehouse_filter === 'all' ? 'Todos' : (WAREHOUSES[r.warehouse_filter]?.name || r.warehouse_filter);
 
+        const isVerified = (r.is_verified === 1 || r.is_verified === true || r.is_verified === '1');
+        const verifBadge = isVerified 
+            ? `<span class="badge badge-ok" style="font-size: 10px; margin-left: 6px;">Verificado</span>`
+            : `<span class="badge badge-warn" style="font-size: 10px; margin-left: 6px;">Pendiente</span>`;
+
         tr.innerHTML = `
-            <td><strong>${r.name}</strong></td>
+            <td>
+                <strong>${r.name}</strong>
+                ${verifBadge}
+            </td>
             <td style="font-family: monospace; color: var(--text);">${r.phone}</td>
             <td><span class="role-badge ${roleBadgeClass}">${roleLabel}</span></td>
             <td style="color: var(--text2); font-size: 11px;">${whName}</td>
@@ -944,7 +1143,7 @@ function renderizarDestinatariosWA() {
     });
 }
 
-function agregarDestinatarioWA() {
+async function agregarDestinatarioWA() {
     const maxAllowed = PLAN_LIMITS[currentPlanTier] || 2;
     if (recipientsData.length >= maxAllowed) {
         alert(`Alcanzaste el límite de ${maxAllowed} números de tu Plan ${currentPlanTier.toUpperCase()}.\n\nPara agregar más integrantes de tu equipo (depósito, fleteros), mejorá al Plan Enterprise.`);
@@ -961,12 +1160,41 @@ function agregarDestinatarioWA() {
         return;
     }
 
+    const token = getToken();
+    if (token) {
+        try {
+            const resp = await fetch(`${API_BASE}/full/recipients`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    name: name,
+                    phone: phone,
+                    role: role,
+                    warehouse_filter: depot
+                })
+            });
+            const data = await resp.json();
+            if (!data.ok) {
+                alert(data.error || "No se pudo agregar el destinatario.");
+                return;
+            }
+            alert(`Destinatario ${name} agregado con éxito.\nSe envió un mensaje de bienvenida y verificación por WhatsApp a ${phone}.`);
+            await cargarDestinatariosBackend();
+            document.getElementById('newRecipName').value = '';
+            document.getElementById('newRecipPhone').value = '';
+            return;
+        } catch (e) {
+            console.error("Error agregando destinatario en backend:", e);
+        }
+    }
+
     const nuevo = {
         id: Date.now(),
         name: name,
         phone: phone,
         role: role,
-        warehouse_filter: depot
+        warehouse_filter: depot,
+        is_verified: 1
     };
 
     recipientsData.push(nuevo);
@@ -977,8 +1205,19 @@ function agregarDestinatarioWA() {
     alert(`Número de WhatsApp de ${name} agregado con éxito.`);
 }
 
-function eliminarDestinatarioWA(id) {
+async function eliminarDestinatarioWA(id) {
     if (confirm("¿Seguro que deseás quitar este número de las alertas de WhatsApp?")) {
+        const token = getToken();
+        if (token) {
+            try {
+                await fetch(`${API_BASE}/full/recipients/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            } catch (e) {
+                console.error("Error eliminando destinatario:", e);
+            }
+        }
         recipientsData = recipientsData.filter(x => x.id !== id);
         renderizarDestinatariosWA();
     }
@@ -1034,15 +1273,15 @@ async function probarEmailSaliente() {
             });
             const data = await resp.json();
             if (data.ok) {
-                alert(`✓ Correo de prueba enviado con éxito a: ${email}\n\nDetalle del servidor:\n${data.detail?.subject || 'Reporte de prueba enviado'}`);
+                alert(`Correo de prueba enviado con éxito a: ${email}\n\nDetalle del servidor:\n${data.detail?.subject || 'Reporte de prueba enviado'}`);
                 return;
             } else {
-                alert(`✗ Error al enviar correo de prueba a ${email}:\n\n${data.error || data.detail?.error || 'Verifique la configuración SMTP de DonWeb en backend/.env'}`);
+                alert(`Error al enviar correo de prueba a ${email}:\n\n${data.error || data.detail?.error || 'Verifique la configuración SMTP de DonWeb en backend/.env'}`);
                 return;
             }
         } catch (e) {
             console.error('Error probando email:', e);
-            alert(`✗ Error de conexión con el servidor: ${e.message}`);
+            alert(`Error de conexión con el servidor: ${e.message}`);
             return;
         } finally {
             if (btn) {
@@ -1058,7 +1297,7 @@ async function probarEmailSaliente() {
             btn.disabled = false;
             btn.textContent = 'Probar Envío';
         }
-        alert(`✓ [Modo Demo] Correo de prueba simulado hacia ${email}.\n\nRemitente configurado: alertas@enviobot.com.ar (DonWeb SMTP: smtp.donweb.com:465)`);
+        alert(`[Modo Demo] Correo de prueba simulado hacia ${email}.\n\nRemitente configurado: alertas@enviobot.com.ar (DonWeb SMTP: smtp.donweb.com:465)`);
     }, 400);
 }
 
@@ -1424,11 +1663,11 @@ function actualizarBadgePlan(planInfo) {
     if (planInfo.has_full_access === false) {
         if (planInfo.can_start_trial) {
             badge.className = 'plan-badge trial';
-            badge.textContent = '⚡ Activar 30d gratis';
+            badge.textContent = 'Activar 30d gratis';
             badge.onclick = () => abrirModalActivarFull(currentUser);
         } else {
             badge.className = 'plan-badge';
-            badge.textContent = '🔒 Requiere suscripción';
+            badge.textContent = 'Requiere suscripción';
             badge.onclick = () => abrirModalSuscripcionVencida(currentUser);
         }
         return;
@@ -1438,10 +1677,10 @@ function actualizarBadgePlan(planInfo) {
     if (planInfo.plan_tier === 'trial') {
         const days = planInfo.trial_days_left !== undefined ? planInfo.trial_days_left : 30;
         badge.className = 'plan-badge trial';
-        badge.textContent = `🗓️ Prueba Gratis (${days}d restantes)`;
+        badge.textContent = `Prueba Gratis (${days}d restantes)`;
     } else {
         badge.className = 'plan-badge';
-        badge.textContent = `⭐ Plan ${planInfo.plan_name || planInfo.plan_tier}`;
+        badge.textContent = `Plan ${planInfo.plan_name || planInfo.plan_tier}`;
     }
 }
 
@@ -1460,7 +1699,7 @@ function abrirModalActivarFull(user) {
     if (actionArea) {
         actionArea.innerHTML = `
             <button id="btnStartTrialFull" onclick="activarPruebaFull()" class="btn btn-block" style="padding: 13px; font-size: 14px; font-weight: 700; background: var(--accent); color: #111; justify-content: center; cursor: pointer;">
-                🚀 Activar 30 días de prueba gratis
+                Activar 30 días de prueba gratis
             </button>
         `;
     }
@@ -1476,12 +1715,12 @@ function abrirModalSuscripcionVencida(user) {
 
     if (title) title.textContent = 'Tu período de prueba de 30 días ha finalizado';
     if (msg) {
-        msg.innerHTML = `Completaste tus 30 días de prueba gratuita en EnvioBot Full.<br><br>Para continuar monitoreando tu inventario Full y evitar que tus publicaciones quiebren stock, activá tu suscripción o registrá tu cuenta definitiva en <strong>admin.enviobot.com.ar</strong>.<br><br><span style="color: #ff7676; font-size: 12.5px; font-weight: 600;">⚠️ Si no activás tu suscripción, los datos temporales de la prueba serán eliminados para liberar espacio.</span>`;
+        msg.innerHTML = `Completaste tus 30 días de prueba gratuita en EnvioBot Full.<br><br>Para continuar monitoreando tu inventario Full y evitar que tus publicaciones quiebren stock, activá tu suscripción o registrá tu cuenta definitiva en <strong>admin.enviobot.com.ar</strong>.<br><br><span style="color: #ff7676; font-size: 12.5px; font-weight: 600;">Atención: Si no activás tu suscripción, los datos temporales de la prueba serán eliminados para liberar espacio.</span>`;
     }
     if (actionArea) {
         actionArea.innerHTML = `
             <a href="https://wa.me/5491155550000?text=Hola,%20finalizo%20mi%20prueba%20de%2030%20dias%20de%20EnvioBot%20Full%20y%20quiero%20suscribirme" target="_blank" class="btn btn-block" style="padding: 13px; font-size: 14px; font-weight: 700; background: var(--accent); color: #111; justify-content: center; text-decoration: none;">
-                ⭐ Suscribirme y Activar Plan
+                Suscribirme y Activar Plan
             </a>
             <button onclick="abrirModalAuth('register')" class="btn btn-secondary btn-block" style="margin-top: 8px; font-size: 13px;">
                 Registrar cuenta definitiva
@@ -1535,7 +1774,7 @@ async function activarPruebaFull() {
     } finally {
         if (btn) {
             btn.disabled = false;
-            btn.textContent = '🚀 Activar 30 días de prueba gratis';
+            btn.textContent = 'Activar 30 días de prueba gratis';
         }
     }
 }
@@ -1580,33 +1819,32 @@ function mostrarInfoUpgrade() {
     abrirModalPlan();
 }
 
-// ── Chequeo de Sesión al Arrancar ──────────────────────────────────
+// ── Chequeo de Sesión al Arrancar y Manejo de Vistas ───────────────
 async function checkUserSession() {
     const token = getToken();
     const userEmailEl = document.getElementById('userEmailText');
     const btnLogout = document.getElementById('btnLogoutBtn');
     const btnLoginHeader = document.getElementById('btnLoginHeader');
-    const banner = document.getElementById('trialWelcomeBanner');
+    const planBadge = document.getElementById('planBadge');
+    const mlAccountSelect = document.getElementById('mlAccountSelect');
+    const btnConnectHeader = document.getElementById('btnConnectMeLiHeader');
+    const btnAdmin = document.getElementById('btnAdminClientesTop');
+    const viewWelcome = document.getElementById('viewOnboardingWelcome');
+    const viewDash = document.getElementById('viewMainDashboard');
 
     if (!token) {
-        // Modo Prueba Libre / Cliente Nuevo sin registro
-        if (userEmailEl) userEmailEl.textContent = 'Prueba 30 días';
+        // CLIENTE NUEVO / PRIMERA VEZ:
+        // Ocultar completamente dashboard, tablas y cualquier dato de demo
+        if (viewWelcome) viewWelcome.style.display = 'flex';
+        if (viewDash) viewDash.style.display = 'none';
+
+        if (userEmailEl) userEmailEl.textContent = 'Cliente Nuevo';
         if (btnLogout) btnLogout.style.display = 'none';
         if (btnLoginHeader) btnLoginHeader.style.display = 'inline-flex';
-        if (banner) banner.style.display = 'flex';
-
-        const badge = document.getElementById('planBadge');
-        if (badge) {
-            badge.className = 'plan-badge trial';
-            badge.textContent = '🚀 Probar 30 días gratis';
-            badge.onclick = () => iniciarConexionMeLi();
-        }
-
-        const btnConnect = document.getElementById('btnConnectMeLiHeader');
-        if (btnConnect) {
-            btnConnect.style.display = 'inline-block';
-            btnConnect.textContent = '🚀 Conectar MercadoLibre (30d gratis)';
-        }
+        if (btnConnectHeader) btnConnectHeader.style.display = 'none';
+        if (btnAdmin) btnAdmin.style.display = 'none';
+        if (planBadge) planBadge.style.display = 'none';
+        if (mlAccountSelect) mlAccountSelect.style.display = 'none';
         return false;
     }
 
@@ -1622,6 +1860,11 @@ async function checkUserSession() {
 
         if (res.status === 401) {
             localStorage.removeItem('enviobot_full_token');
+            if (viewWelcome) viewWelcome.style.display = 'flex';
+            if (viewDash) viewDash.style.display = 'none';
+            if (btnLoginHeader) btnLoginHeader.style.display = 'inline-flex';
+            if (btnLogout) btnLogout.style.display = 'none';
+            if (btnAdmin) btnAdmin.style.display = 'none';
             return false;
         }
 
@@ -1631,7 +1874,16 @@ async function checkUserSession() {
             if (userEmailEl) userEmailEl.textContent = data.user.email || data.user.full_name;
             if (btnLogout) btnLogout.style.display = 'inline-flex';
             if (btnLoginHeader) btnLoginHeader.style.display = 'none';
-            if (banner) banner.style.display = 'none';
+
+            // Visibilidad de Administración para Guillermo
+            const isAdmin = Boolean(
+                data.user.is_admin ||
+                (data.user.email && (
+                    data.user.email.toLowerCase() === 'guillermo.jaeger@gmail.com' ||
+                    data.user.email.toLowerCase() === 'admin@enviobot.com.ar'
+                ))
+            );
+            if (btnAdmin) btnAdmin.style.display = isAdmin ? 'inline-flex' : 'none';
 
             actualizarBadgePlan(data.user);
             renderMeLiAccounts(data.user.ml_accounts);
@@ -1642,16 +1894,359 @@ async function checkUserSession() {
                 return false;
             }
 
-            // Si tiene Full activo pero no conectó cuentas de MeLi aún
+            // SI EL USUARIO NO TIENE CUENTA DE MERCADOLIBRE CONECTADA AÚN:
             if (!data.user.ml_accounts || data.user.ml_accounts.length === 0) {
-                abrirOnboardingMeLi();
+                if (viewWelcome) viewWelcome.style.display = 'flex';
+                if (viewDash) viewDash.style.display = 'none';
+                return false;
             }
+
+            // SI TIENE CUENTA DE MERCADOLIBRE CONECTADA:
+            if (viewWelcome) viewWelcome.style.display = 'none';
+            if (viewDash) viewDash.style.display = 'block';
+
+            // Verificar si debe mostrar el Wizard de Configuración Inicial
+            const wizCompleted = localStorage.getItem('enviobot_wizard_completed_' + currentUser.id) || localStorage.getItem('enviobot_wizard_completed');
+            if (!wizCompleted) {
+                abrirWizardOnboarding();
+            }
+
             return true;
         }
     } catch (err) {
         console.error("Error verificando sesión:", err);
     }
     return false;
+}
+
+// ── WIZARD DE CONFIGURACIÓN INICIAL (POST-VINCULACIÓN MELI) ───────
+function abrirWizardOnboarding() {
+    const modal = document.getElementById('modalWizardOnboarding');
+    if (!modal) return;
+
+    // Pre-llenar email si está disponible
+    const emailInput = document.getElementById('wizAlertEmail');
+    if (emailInput && currentUser && currentUser.email) {
+        if (!emailInput.value || emailInput.value.includes('meli_')) {
+            if (!currentUser.email.includes('meli_')) {
+                emailInput.value = currentUser.email;
+            }
+        }
+    }
+
+    // Reset a paso 1
+    retrocederWizardPaso1();
+
+    modal.style.display = 'flex';
+}
+
+function cerrarWizardOnboarding() {
+    const modal = document.getElementById('modalWizardOnboarding');
+    if (modal) modal.style.display = 'none';
+}
+
+function avanzarWizardPaso2() {
+    const step1 = document.getElementById('wizardStep1');
+    const step2 = document.getElementById('wizardStep2');
+    const step3 = document.getElementById('wizardStep3');
+    const b1 = document.getElementById('wizBullet1');
+    const b2 = document.getElementById('wizBullet2');
+    const b3 = document.getElementById('wizBullet3');
+    const tag = document.getElementById('wizardStepTag');
+    const title = document.getElementById('wizardStepTitle');
+
+    if (step1) step1.style.display = 'none';
+    if (step2) step2.style.display = 'block';
+    if (step3) step3.style.display = 'none';
+
+    if (b1) b1.classList.add('active');
+    if (b2) b2.classList.add('active');
+    if (b3) b3.classList.remove('active');
+
+    if (tag) tag.textContent = 'Paso 2 de 3 · Alertas de WhatsApp y Email';
+    if (title) title.textContent = 'Destinatarios de Alertas';
+
+    // Pre-llenar email si está vacío
+    const emailInput = document.getElementById('wizAlertEmail');
+    if (emailInput && (!emailInput.value || emailInput.value.includes('meli_'))) {
+        if (currentUser && currentUser.email && !currentUser.email.includes('meli_')) {
+            emailInput.value = currentUser.email;
+        }
+    }
+    // Pre-llenar nombre
+    const nameInput = document.getElementById('wizWaName');
+    if (nameInput && !nameInput.value && currentUser && currentUser.full_name) {
+        nameInput.value = currentUser.full_name;
+    }
+}
+
+function retrocederWizardPaso1() {
+    const step1 = document.getElementById('wizardStep1');
+    const step2 = document.getElementById('wizardStep2');
+    const step3 = document.getElementById('wizardStep3');
+    const b1 = document.getElementById('wizBullet1');
+    const b2 = document.getElementById('wizBullet2');
+    const b3 = document.getElementById('wizBullet3');
+    const tag = document.getElementById('wizardStepTag');
+    const title = document.getElementById('wizardStepTitle');
+
+    if (step1) step1.style.display = 'block';
+    if (step2) step2.style.display = 'none';
+    if (step3) step3.style.display = 'none';
+
+    if (b1) b1.classList.add('active');
+    if (b2) b2.classList.remove('active');
+    if (b3) b3.classList.remove('active');
+
+    if (tag) tag.textContent = 'Paso 1 de 3 · Depósito y Reposición';
+    if (title) title.textContent = 'Parámetros del Depósito Full';
+}
+
+function retrocederWizardPaso2() {
+    avanzarWizardPaso2();
+}
+
+async function avanzarWizardPaso3() {
+    const email = document.getElementById('wizAlertEmail').value.trim();
+    const phone = document.getElementById('wizWaPhone').value.trim();
+    const name = document.getElementById('wizWaName').value.trim() || (currentUser?.full_name || 'Encargado');
+    const days = document.getElementById('wizWaDays').value;
+    const time = document.getElementById('wizWaTime').value;
+    const transitDays = parseInt(document.getElementById('wizTransitDays')?.value, 10) || 3;
+    const safetyStock = parseInt(document.getElementById('wizSafetyStock').value, 10) || 2;
+    const targetDays = parseInt(document.getElementById('wizTargetDays').value, 10) || 30;
+
+    if (!email) {
+        alert("Por favor completá un correo electrónico para recibir el resumen matutino.");
+        document.getElementById('wizAlertEmail').focus();
+        return;
+    }
+
+    if (!phone) {
+        alert("Por favor completá un celular de WhatsApp para las alertas urgentes.");
+        document.getElementById('wizWaPhone').focus();
+        return;
+    }
+
+    const btn = document.getElementById('btnWizFinish');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Guardando y enviando verificación...';
+    }
+
+    const token = getToken();
+    try {
+        if (token) {
+            // 1. Guardar parámetros en user_settings con send_welcome: true (dispara email con código y WhatsApp)
+            await fetch(`${API_BASE}/full/settings`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    default_lead_time_days: transitDays,
+                    default_safety_stock_days: safetyStock,
+                    target_coverage_days: targetDays,
+                    notify_email: true,
+                    alert_email: email,
+                    notify_whatsapp: true,
+                    whatsapp_phone: phone,
+                    send_welcome: true
+                })
+            });
+
+            // 2. Guardar depósito 1 (Mercado Envíos Full)
+            await fetch(`${API_BASE}/full/warehouses`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    code: 'meli_full',
+                    name: 'Mercado Envíos Full (Bs As)',
+                    city: 'Buenos Aires',
+                    transit_days: transitDays,
+                    target_stock_days: targetDays
+                })
+            });
+
+            // 3. Guardar destinatario de WhatsApp
+            await fetch(`${API_BASE}/full/recipients`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    name: name,
+                    phone: phone,
+                    role: 'admin',
+                    warehouse_filter: 'all',
+                    alert_days: days,
+                    alert_time: time
+                })
+            });
+
+            // 4. Disparar sincronización de MeLi en segundo plano
+            fetch(`${API_BASE}/full/sync`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            }).catch(e => console.warn("Sync bg:", e));
+        }
+
+        // Actualizar variables en memoria
+        if (WAREHOUSES.meli_full) {
+            WAREHOUSES.meli_full.defaultTransit = transitDays;
+            WAREHOUSES.meli_full.defaultTarget = targetDays;
+        }
+
+        // Pasar visualmente al Paso 3 de verificación
+        const step1 = document.getElementById('wizardStep1');
+        const step2 = document.getElementById('wizardStep2');
+        const step3 = document.getElementById('wizardStep3');
+        const b1 = document.getElementById('wizBullet1');
+        const b2 = document.getElementById('wizBullet2');
+        const b3 = document.getElementById('wizBullet3');
+        const tag = document.getElementById('wizardStepTag');
+        const title = document.getElementById('wizardStepTitle');
+
+        if (step1) step1.style.display = 'none';
+        if (step2) step2.style.display = 'none';
+        if (step3) step3.style.display = 'block';
+
+        if (b1) b1.classList.add('active');
+        if (b2) b2.classList.add('active');
+        if (b3) b3.classList.add('active');
+
+        if (tag) tag.textContent = 'Paso 3 de 3 · Verificación de Canales';
+        if (title) title.textContent = 'Confirmación de Contacto';
+
+        const emailTarget = document.getElementById('wizConfirmEmailTarget');
+        if (emailTarget) emailTarget.textContent = email;
+
+        const phoneTarget = document.getElementById('wizConfirmPhoneTarget');
+        if (phoneTarget) phoneTarget.textContent = phone;
+
+        const codeInput = document.getElementById('wizEmailCodeInput');
+        if (codeInput) {
+            codeInput.value = '';
+            setTimeout(() => codeInput.focus(), 150);
+        }
+
+    } catch (err) {
+        console.error("Error guardando paso 2:", err);
+        alert("Ocurrió un error guardando la configuración: " + err.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Guardar y Enviar Verificación';
+        }
+    }
+}
+
+async function confirmarCodigoWizard() {
+    const codeInput = document.getElementById('wizEmailCodeInput');
+    const code = codeInput ? codeInput.value.trim() : '';
+    const email = document.getElementById('wizAlertEmail')?.value.trim() || (currentUser?.email || '');
+
+    if (!code || code.length !== 6) {
+        alert("Por favor ingresá el código de 6 dígitos que te enviamos por correo.");
+        if (codeInput) codeInput.focus();
+        return;
+    }
+
+    const btn = document.getElementById('btnWizVerifyConfirm');
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Validando código...';
+    }
+
+    const token = getToken();
+    try {
+        let headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`${API_BASE}/full/verify/check-email`, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ code: code, email: email })
+        });
+        const data = await res.json();
+
+        if (data.ok && data.verified) {
+            // Marcar wizard como completado
+            if (currentUser && currentUser.id) {
+                localStorage.setItem('enviobot_wizard_completed_' + currentUser.id, 'true');
+            } else {
+                localStorage.setItem('enviobot_wizard_completed', 'true');
+            }
+
+            cerrarWizardOnboarding();
+
+            // Mostrar dashboard principal y consultar datos reales
+            const viewWelcome = document.getElementById('viewOnboardingWelcome');
+            const viewDash = document.getElementById('viewMainDashboard');
+            if (viewWelcome) viewWelcome.style.display = 'none';
+            if (viewDash) viewDash.style.display = 'block';
+
+            alert("Casilla de correo y número de WhatsApp vinculados correctamente. Tus canales de alerta quedaron activos.\n\nCargando tus publicaciones reales...");
+
+            await cargarDatos();
+        } else {
+            alert(data.error || "Código incorrecto o expirado. Verificá tu correo o hacé clic en 'Reenviar código'.");
+        }
+    } catch (e) {
+        console.error("Error verificando código:", e);
+        alert("Error de conexión: " + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Confirmar y Ver Publicaciones';
+        }
+    }
+}
+
+async function reenviarCodigoWizard(e) {
+    if (e) e.preventDefault();
+    const email = document.getElementById('wizAlertEmail')?.value.trim() || (currentUser?.email || '');
+    if (!email) {
+        alert("No se encontró la casilla de correo.");
+        return;
+    }
+
+    const token = getToken();
+    try {
+        let headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`${API_BASE}/full/verify/send-email`, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify({ email: email })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            alert(`Código de verificación reenviado a ${email}.\nRevisá tu bandeja de entrada o spam.`);
+        } else {
+            alert(data.error || "No se pudo reenviar el código.");
+        }
+    } catch (e) {
+        alert("Error de conexión: " + e.message);
+    }
+}
+
+function saltarVerificacionWizard(e) {
+    if (e) e.preventDefault();
+    // Marcar wizard como completado
+    if (currentUser && currentUser.id) {
+        localStorage.setItem('enviobot_wizard_completed_' + currentUser.id, 'true');
+    } else {
+        localStorage.setItem('enviobot_wizard_completed', 'true');
+    }
+
+    cerrarWizardOnboarding();
+
+    const viewWelcome = document.getElementById('viewOnboardingWelcome');
+    const viewDash = document.getElementById('viewMainDashboard');
+    if (viewWelcome) viewWelcome.style.display = 'none';
+    if (viewDash) viewDash.style.display = 'block';
+
+    alert("Configuración inicial guardada.\n\nPodrás confirmar la vinculación de tu correo más adelante desde el botón de Configuración en el panel.");
+
+    cargarDatos();
 }
 
 // ── Inicialización ─────────────────────────────────────────────────
@@ -1664,21 +2259,321 @@ document.addEventListener('DOMContentLoaded', async () => {
         localStorage.setItem('token', tokenFromUrl);
     }
 
-    if (params.get('ml') === 'ok') {
+    const hasMlOk = params.get('ml') === 'ok';
+    if (hasMlOk) {
         const nickname = params.get('nickname') || '';
-        alert(`✓ ¡Cuenta de MercadoLibre ${nickname} conectada con éxito! Tu prueba gratuita de 30 días está activa. Sincronizando tu stock Full...`);
         window.history.replaceState({}, document.title, window.location.pathname);
     } else if (params.get('ml') === 'error') {
         const msg = params.get('msg') || 'Error en la autorización de MercadoLibre';
-        alert(`✗ ${msg}`);
+        alert(`Error: ${msg}`);
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    // 2. Verificar sesión
-    await checkUserSession();
+    // 2. Verificar código de vinculación por email desde link de correo (?verify_code=...&email=...)
+    const verifyCode = params.get('verify_code');
+    if (verifyCode) {
+        const verifyEmail = params.get('email') || '';
+        try {
+            const token = getToken();
+            let headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    // 3. Cargar datos
-    cargarDatos();
+            const vRes = await fetch(`${API_BASE}/full/verify/check-email`, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ code: verifyCode, email: verifyEmail })
+            });
+            const vData = await vRes.json();
+            if (vData.ok && vData.verified) {
+                alert("¡Casilla de correo vinculada y confirmada con éxito!\nTus reportes y alertas matutinas de stock se enviarán a esta dirección.");
+                actualizarEstadoVerificacionEmail(true);
+            } else {
+                alert("No se pudo verificar el correo: " + (vData.error || "código inválido."));
+            }
+        } catch (err) {
+            console.error("Error verificando código desde URL:", err);
+        }
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // 3. Verificar sesión y estado de vinculación
+    const hasActiveSession = await checkUserSession();
+
+    // 4. Si acaba de vincular MeLi o es un usuario nuevo sin wizard, abrir el wizard
+    if (hasMlOk && currentUser) {
+        abrirWizardOnboarding();
+        return;
+    }
+
+    // 5. Si la sesión está activa y ya completó el wizard, cargar datos reales de MeLi
+    if (hasActiveSession) {
+        cargarDatos();
+    }
 });
+
+// -------------------------------------------------------------
+// PANEL DE ADMINISTRACIÓN Y CONTROL MANUAL DE CLIENTES
+// -------------------------------------------------------------
+
+let adminClientsData = [];
+
+function abrirModalAdminClientes() {
+    const modal = document.getElementById('modalAdminClientes');
+    if (modal) {
+        modal.style.display = 'flex';
+        cargarClientesAdmin();
+    }
+}
+
+function cerrarModalAdminClientes() {
+    const modal = document.getElementById('modalAdminClientes');
+    if (modal) modal.style.display = 'none';
+}
+
+async function cargarClientesAdmin() {
+    const token = getToken();
+    const tbody = document.getElementById('adminClientsTableBody');
+    const statsEl = document.getElementById('adminClientsStats');
+    if (!tbody || !token) return;
+
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="5" style="text-align: center; padding: 24px; color: var(--text2);">
+                Cargando clientes desde la base de datos...
+            </td>
+        </tr>
+    `;
+
+    try {
+        const res = await fetch(`${API_BASE}/full/admin/clients`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+
+        if (!data.ok) {
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 18px;">${data.error || 'No se pudo cargar la lista.'}</td></tr>`;
+            return;
+        }
+
+        adminClientsData = data.clients || [];
+        renderClientesAdmin(adminClientsData);
+
+        const conFull = adminClientsData.filter(c => c.has_full).length;
+        const bloqueados = adminClientsData.filter(c => c.is_blocked).length;
+        if (statsEl) {
+            statsEl.textContent = `Total: ${adminClientsData.length} clientes · Con Full: ${conFull} · Bloqueados: ${bloqueados}`;
+        }
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #ef4444; padding: 18px;">Error: ${err.message}</td></tr>`;
+    }
+}
+
+function filtrarClientesAdmin() {
+    const query = (document.getElementById('adminClientSearchInput')?.value || '').trim().toLowerCase();
+    if (!query) {
+        renderClientesAdmin(adminClientsData);
+        return;
+    }
+
+    const filtered = adminClientsData.filter(c => {
+        const email = (c.email || '').toLowerCase();
+        const name = (c.full_name || '').toLowerCase();
+        const biz = (c.business_name || '').toLowerCase();
+        const notes = (c.admin_notes || '').toLowerCase();
+        return email.includes(query) || name.includes(query) || biz.includes(query) || notes.includes(query);
+    });
+
+    renderClientesAdmin(filtered);
+}
+
+function renderClientesAdmin(clients) {
+    const tbody = document.getElementById('adminClientsTableBody');
+    if (!tbody) return;
+
+    if (!clients || clients.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 24px; color: var(--text2);">
+                    No se encontraron clientes con ese criterio de búsqueda.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = '';
+    clients.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--border)';
+        tr.id = `adminRowClient_${c.id}`;
+
+        const fullBadge = c.has_full 
+            ? `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Habilitado</span>`
+            : `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Sin acceso</span>`;
+
+        const blockBadge = c.is_blocked
+            ? `<span style="color: #ef4444; font-weight: 700; font-size: 11px;">Bloqueado</span>`
+            : `<span style="color: var(--text2); font-size: 11px;">Activo</span>`;
+
+        tr.innerHTML = `
+            <td style="padding: 10px 12px; vertical-align: middle;">
+                <div style="font-weight: 700; color: var(--text);">${c.email}</div>
+                <div style="font-size: 11.5px; color: var(--text2); margin-top: 2px;">
+                    ${c.full_name || 'Sin nombre'} · ID #${c.id} · ${c.ml_accounts_count} cta(s) MeLi
+                    ${c.business_name ? ` · <span style="color: var(--accent);">${c.business_name}</span>` : ''}
+                </div>
+            </td>
+            <td style="padding: 10px 12px; text-align: center; vertical-align: middle;">
+                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="chkAdminFull_${c.id}" ${c.has_full ? 'checked' : ''} onchange="adminToggleFull(${c.id}, this.checked)" style="cursor: pointer; width: 16px; height: 16px;">
+                    <span id="badgeAdminFull_${c.id}">${fullBadge}</span>
+                </label>
+            </td>
+            <td style="padding: 10px 12px; text-align: center; vertical-align: middle;">
+                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="chkAdminBlock_${c.id}" ${c.is_blocked ? 'checked' : ''} onchange="adminToggleBlock(${c.id}, this.checked)" style="cursor: pointer; width: 16px; height: 16px;">
+                    <span id="badgeAdminBlock_${c.id}">${blockBadge}</span>
+                </label>
+            </td>
+            <td style="padding: 10px 12px; vertical-align: middle;">
+                <input type="text" id="adminNote_${c.id}" value="${(c.admin_notes || '').replace(/"/g, '&quot;')}" placeholder="Anotaciones administrativas..." class="auth-input" style="padding: 6px 10px; font-size: 12px; margin: 0; width: 100%;">
+            </td>
+            <td style="padding: 10px 12px; text-align: right; vertical-align: middle;">
+                <button type="button" id="btnAdminSaveNote_${c.id}" onclick="adminGuardarNotas(${c.id})" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 5px 12px; white-space: nowrap;">
+                    Guardar
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+async function adminToggleFull(userId, enable) {
+    const token = getToken();
+    const chk = document.getElementById(`chkAdminFull_${userId}`);
+    const badge = document.getElementById(`badgeAdminFull_${userId}`);
+    if (!token) return;
+
+    if (chk) chk.disabled = true;
+
+    try {
+        const res = await fetch(`${API_BASE}/full/admin/clients/${userId}/toggle-full`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enable })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const c = adminClientsData.find(item => item.id === userId);
+            if (c) c.has_full = enable;
+
+            if (badge) {
+                badge.innerHTML = enable
+                    ? `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Habilitado</span>`
+                    : `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Sin acceso</span>`;
+            }
+        } else {
+            alert(data.error || 'No se pudo actualizar el estado de Full.');
+            if (chk) chk.checked = !enable;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        if (chk) chk.checked = !enable;
+    } finally {
+        if (chk) chk.disabled = false;
+    }
+}
+
+async function adminToggleBlock(userId, isBlocked) {
+    const token = getToken();
+    const chk = document.getElementById(`chkAdminBlock_${userId}`);
+    const badge = document.getElementById(`badgeAdminBlock_${userId}`);
+    if (!token) return;
+
+    if (chk) chk.disabled = true;
+
+    try {
+        const res = await fetch(`${API_BASE}/full/admin/clients/${userId}/toggle-block`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ is_blocked: isBlocked })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const c = adminClientsData.find(item => item.id === userId);
+            if (c) c.is_blocked = isBlocked;
+
+            if (badge) {
+                badge.innerHTML = isBlocked
+                    ? `<span style="color: #ef4444; font-weight: 700; font-size: 11px;">Bloqueado</span>`
+                    : `<span style="color: var(--text2); font-size: 11px;">Activo</span>`;
+            }
+        } else {
+            alert(data.error || 'No se pudo actualizar el bloqueo.');
+            if (chk) chk.checked = !isBlocked;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        if (chk) chk.checked = !isBlocked;
+    } finally {
+        if (chk) chk.disabled = false;
+    }
+}
+
+async function adminGuardarNotas(userId) {
+    const token = getToken();
+    const noteInput = document.getElementById(`adminNote_${userId}`);
+    const btn = document.getElementById(`btnAdminSaveNote_${userId}`);
+    if (!token || !noteInput) return;
+
+    const notes = noteInput.value.trim();
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Guardando...';
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/full/admin/clients/${userId}/notes`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ admin_notes: notes })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const c = adminClientsData.find(item => item.id === userId);
+            if (c) c.admin_notes = notes;
+            if (btn) {
+                btn.textContent = 'Guardado';
+                setTimeout(() => {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Guardar';
+                    }
+                }, 1400);
+            }
+        } else {
+            alert(data.error || 'No se pudieron guardar las notas.');
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Guardar';
+            }
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Guardar';
+        }
+    }
+}
 
 

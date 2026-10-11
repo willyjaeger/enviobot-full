@@ -213,15 +213,15 @@ def enviar_email(destinatario: str, asunto: str, cuerpo_texto: str, cuerpo_html:
 def enviar_alerta_stock_email(destinatario: str, nombre_usuario: str, deposito_nombre: str, items: list, nivel: str) -> dict:
     """Envía la alerta estructurada con la plantilla HTML correspondiente."""
     if nivel == "critical":
-        asunto = f"🚨 EnvioBot Full: Alerta Crítica de Quiebre de Stock ({deposito_nombre})"
+        asunto = f"EnvioBot Full: Alerta Crítica de Quiebre de Stock ({deposito_nombre})"
         titulo = "Riesgo Inminente de Quiebre de Stock"
         subtitulo = "Las siguientes publicaciones se quedarán sin inventario antes de que arribe un flete habitual. Se requiere despacho urgente."
     elif nivel == "warning":
-        asunto = f"🚛 EnvioBot Full: Pedir Colecta Hoy en MercadoLibre ({deposito_nombre})"
+        asunto = f"EnvioBot Full: Pedir Colecta Hoy en MercadoLibre ({deposito_nombre})"
         titulo = "Fecha Límite de Colecta Alcanzada"
         subtitulo = "Hoy es la fecha óptima para pedir turno en MercadoLibre. Si solicitás el turno hoy, el flete llegará antes del agotamiento."
     else:
-        asunto = f"📦 EnvioBot Full: Planificación Preventiva de Colecta ({deposito_nombre})"
+        asunto = f"EnvioBot Full: Planificación Preventiva de Colecta ({deposito_nombre})"
         titulo = "Aviso Preventivo de Producción"
         subtitulo = "Tus ventas registran buen ritmo. En los próximos días alcanzarás la fecha límite de reposición para estos artículos."
 
@@ -239,7 +239,7 @@ def enviar_alerta_stock_email(destinatario: str, nombre_usuario: str, deposito_n
 
 def enviar_email_prueba(destinatario: str, nombre_usuario: str = "Usuario") -> dict:
     """Envía un correo de verificación para testear credenciales SMTP de DonWeb."""
-    asunto = "✓ EnvioBot Full: Verificación de Correo Saliente Exitosa"
+    asunto = "EnvioBot Full: Verificación de Correo Saliente Exitosa"
     items_demo = [
         {"sku": "DEMO-001", "title": "Producto de Prueba para Verificación de Alertas", "current_stock_full": 15, "days_left": 4.5, "stockout_date": datetime.now().strftime("%d/%m"), "suggested_restock_units": 40}
     ]
@@ -249,6 +249,117 @@ def enviar_email_prueba(destinatario: str, nombre_usuario: str = "Usuario") -> d
     texto_plano = f"EnvioBot Full - Prueba de Correo Saliente\nHola {nombre_usuario}, tu casilla {destinatario} está correctamente vinculada.\n"
     html = _generar_plantilla_html(titulo, subtitulo, nombre_usuario, "Mercado Envíos Full (Bs As)", items_demo, "ok")
 
+    return enviar_email(destinatario, asunto, texto_plano, html)
+
+
+def enviar_email_bienvenida_verificacion(destinatario: str, nombre_usuario: str, codigo_verificacion: str, app_url: str = APP_URL) -> dict:
+    """
+    Envía el email de bienvenida y vinculación con código de 6 dígitos.
+    Garantiza que el cliente reciba los avisos y quede confirmada la casilla.
+    """
+    asunto = f"EnvioBot Full: Codigo de Vinculacion de Correo [{codigo_verificacion}]"
+    enlace_confirmacion = f"{app_url}/?verify_code={codigo_verificacion}&channel=email&email={destinatario}"
+    
+    texto_plano = (
+        f"EnvioBot Full - Bienvenida y Vinculacion de Correo\n\n"
+        f"Hola {nombre_usuario}:\n"
+        f"Te damos la bienvenida a EnvioBot Full.\n\n"
+        f"Para asegurar que recibas los reportes matutinos y avisos de quiebre de stock a tiempo, "
+        f"tu codigo de vinculacion es: {codigo_verificacion}\n\n"
+        f"Tambien podes confirmar tu cuenta con 1 clic en este enlace:\n"
+        f"{enlace_confirmacion}\n\n"
+        f"EnvioBot Full - enviobot.com.ar/full\n"
+    )
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Bienvenida a EnvioBot Full</title>
+    </head>
+    <body style="margin: 0; padding: 0; background-color: #0c0e12; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #e1e4ea;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #0c0e12; padding: 25px 10px;">
+            <tr>
+                <td align="center">
+                    <table width="580" cellpadding="0" cellspacing="0" style="max-width: 580px; width: 100%; background-color: #171b22; border: 1px solid #2b303c; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                        <!-- Encabezado -->
+                        <tr>
+                            <td style="background-color: #11141a; padding: 20px 28px; border-bottom: 2px solid #f5a623;">
+                                <table width="100%">
+                                    <tr>
+                                        <td>
+                                            <span style="font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: -0.5px;">
+                                                EnvioBot <span style="color: #f5a623;">Full</span>
+                                            </span>
+                                        </td>
+                                        <td align="right">
+                                            <span style="background-color: rgba(245, 166, 35, 0.15); color: #f5a623; border: 1px solid #f5a623; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase;">
+                                                VINCULACION DE CASILLA
+                                            </span>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+
+                        <!-- Cuerpo Principal -->
+                        <tr>
+                            <td style="padding: 28px;">
+                                <h2 style="margin: 0 0 10px 0; font-size: 19px; color: #ffffff; font-weight: 800;">
+                                    ¡Te damos la bienvenida a EnvioBot Full!
+                                </h2>
+                                <p style="margin: 0 0 20px 0; font-size: 14px; color: #8a8d9a; line-height: 1.6;">
+                                    Hola <strong>{nombre_usuario}</strong>, vinculamos tu cuenta de Mercado Libre para monitorear tu stock en el centro de distribución de Mercado Envíos Full.<br><br>
+                                    Para asegurarnos de que esta casilla reciba sin inconvenientes los <strong>reportes matutinos y avisos de quiebre de stock</strong>, ingresá el siguiente código de confirmación:
+                                </p>
+
+                                <!-- Código en caja destacada -->
+                                <table width="100%" cellpadding="0" cellspacing="0" style="margin: 22px 0;">
+                                    <tr>
+                                        <td align="center" style="background-color: #12151c; border: 2px dashed #f5a623; border-radius: 8px; padding: 18px 20px;">
+                                            <div style="font-size: 11px; text-transform: uppercase; color: #8a8d9a; letter-spacing: 1.2px; font-weight: 700; margin-bottom: 6px;">
+                                                Codigo de Vinculacion
+                                            </div>
+                                            <div style="font-size: 34px; font-weight: 900; letter-spacing: 8px; color: #f5a623; font-family: 'Courier New', Courier, monospace;">
+                                                {codigo_verificacion}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <!-- Botón de 1 Clic Directo -->
+                                <table width="100%" cellpadding="0" cellspacing="0" style="margin: 16px 0 24px 0;">
+                                    <tr>
+                                        <td align="center">
+                                            <a href="{enlace_confirmacion}" target="_blank" style="display: inline-block; background-color: #f5a623; color: #111111; font-size: 14px; font-weight: 800; text-decoration: none; padding: 12px 28px; border-radius: 6px; box-shadow: 0 4px 14px rgba(245, 166, 35, 0.3);">
+                                                Confirmar Casilla con 1 Clic
+                                            </a>
+                                        </td>
+                                    </tr>
+                                </table>
+
+                                <p style="font-size: 12px; color: #6b7280; text-align: center; margin: 0; line-height: 1.5;">
+                                    Una vez confirmada, tu cuenta quedará vinculada para recibir las alertas automáticas matutinas antes de cada quiebre.
+                                </p>
+                            </td>
+                        </tr>
+
+                        <!-- Pie de Correo -->
+                        <tr>
+                            <td style="background-color: #11141a; padding: 18px 28px; border-top: 1px solid #2b303c; font-size: 11.5px; color: #6b7280; text-align: center; line-height: 1.5;">
+                                EnvioBot Full · Control de Stock y Reposición en Mercado Envíos Full<br>
+                                <a href="{app_url}" style="color: #f5a623; text-decoration: none;">enviobot.com.ar/full</a>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
     return enviar_email(destinatario, asunto, texto_plano, html)
 
 

@@ -152,19 +152,19 @@ def formatear_alerta_preventiva(nombre_usuario: str, deposito_nombre: str, items
     Permite al vendedor preparar mercadería en fábrica o taller.
     """
     texto = (
-        f"📦 *EnvioBot Full — Planificación Semanal*\n"
+        f"*EnvioBot Full — Planificación Semanal*\n"
         f"Hola {nombre_usuario}, tus ventas en MercadoLibre vienen a buen ritmo. Dentro de los próximos días vas a tener que pedir colecta para tu stock en *{deposito_nombre}*:\n\n"
     )
     for it in items[:6]:
         sku_str = f"[{it.get('sku')}] " if it.get("sku") else ""
         dias = it.get('days_left', 0)
         sug = it.get('suggested_restock_units', 0)
-        texto += f"• *{sku_str}{it.get('title')[:35]}*\n  ⏳ Quedan ~{dias}d de stock · Sugerido preparar: *{sug} un.*\n"
+        texto += f"• *{sku_str}{it.get('title')[:35]}*\n  Quedan ~{dias}d de stock · Sugerido preparar: *{sug} un.*\n"
 
     if len(items) > 6:
         texto += f"\n_... y {len(items) - 6} artículos más._\n"
 
-    texto += f"\n💡 *Acción recomendada:* Andá empaquetando o fabricando estas unidades para tenerlas listas en tu galpón.\n👉 Panel: {url_panel}"
+    texto += f"\n*Acción recomendada:* Andá empaquetando o fabricando estas unidades para tenerlas listas en tu galpón.\nPanel: {url_panel}"
     return texto
 
 
@@ -174,9 +174,9 @@ def formatear_alerta_colecta_hoy(nombre_usuario: str, deposito_nombre: str, item
     El camión debe pedirse hoy en MeLi para no quebrar.
     """
     texto = (
-        f"🚛 *EnvioBot Full — PEDIR COLECTA HOY EN MERCADOLIBRE*\n"
-        f"Hola {nombre_usuario}, hoy es la fecha óptima para pedir turno a MeLi con destino a *{deposito_nombre}*.\n\n"
-        f"📊 *Resumen a despachar:* {len(items)} publicaciones · *{total_bultos} bultos totales*\n\n"
+        f"*EnvioBot Full — PEDIR COLECTA HOY EN MERCADOLIBRE*\n"
+        f"Hola {nombre_usuario}, hoy es la fecha límite para pedir turno a MeLi con destino a *{deposito_nombre}*.\n\n"
+        f"*Resumen a despachar:* {len(items)} publicaciones · *{total_bultos} bultos totales*\n\n"
     )
     for it in items[:6]:
         sku_str = f"[{it.get('sku')}] " if it.get("sku") else ""
@@ -188,8 +188,8 @@ def formatear_alerta_colecta_hoy(nombre_usuario: str, deposito_nombre: str, item
         texto += f"\n_... y {len(items) - 6} artículos más en la lista._\n"
 
     texto += (
-        f"\n⚠️ *Importante:* Si solicitás la colecta hoy en MeLi, el flete llega a tiempo antes de quebrar stock.\n"
-        f"👉 *Descargar Remito / Copiar Lista:* {url_panel}"
+        f"\n*Importante:* Si solicitás la colecta hoy en MeLi, el flete llega a tiempo antes de quebrar stock.\n"
+        f"*Descargar Remito / Copiar Lista:* {url_panel}"
     )
     return texto
 
@@ -200,20 +200,42 @@ def formatear_alerta_critica(nombre_usuario: str, deposito_nombre: str, items: l
     El stock se terminará antes de que llegue cualquier camión habitual.
     """
     texto = (
-        f"🚨 *EnvioBot Full — ALARMA DE QUIEBRE CRÍTICO*\n"
+        f"*EnvioBot Full — ALARMA DE QUIEBRE CRÍTICO*\n"
         f"¡Atención {nombre_usuario}! Registramos artículos con riesgo inminente de quiebre en *{deposito_nombre}*:\n\n"
     )
     for it in items[:5]:
         sku_str = f"[{it.get('sku')}] " if it.get("sku") else ""
         stock = it.get('current_stock_full', 0)
         dias = it.get('days_left', 0)
-        texto += f"• ⚠️ *{sku_str}{it.get('title')[:35]}*\n  Stock actual: *{stock} un.* ({dias}d de cobertura)\n"
+        texto += f"• *{sku_str}{it.get('title')[:35]}*\n  Stock actual: *{stock} un.* ({dias}d de cobertura)\n"
 
     if len(items) > 5:
         texto += f"\n_... y {len(items) - 5} artículos más en estado crítico._\n"
 
     texto += (
-        f"\n🛑 *Peligro:* Tu publicación quedará pausada por MercadoLibre si no despachás mercadería de inmediato.\n"
-        f"👉 Entrá urgente al panel: {url_panel}"
+        f"\n*Aviso urgente:* Tu publicación puede quedar pausada por MercadoLibre si no despachás mercadería cuanto antes.\n"
+        f"Accedé al panel: {url_panel}"
     )
     return texto
+
+
+def formatear_alerta_verificacion_whatsapp(nombre_usuario: str, codigo_verificacion: str, app_url: str = "https://enviobot.com.ar/full") -> str:
+    """
+    Mensaje de bienvenida y verificación del número de WhatsApp.
+    Permite confirmar que el teléfono es correcto y puede recibir alertas.
+    """
+    return (
+        f"*EnvioBot Full — Verificación de WhatsApp*\n"
+        f"Hola {nombre_usuario}, este número fue registrado en tu cuenta de EnvioBot Full para recibir las alertas de reposición y fecha límite de colecta en Mercado Envíos Full.\n\n"
+        f"Tu código de validación es: *{codigo_verificacion}*\n\n"
+        f"Con este aviso comprobamos que tu línea está activa y vinculada correctamente a tu depósito.\n"
+        f"Acceso al panel: {app_url}"
+    )
+
+
+def enviar_verificacion_whatsapp(telefono: str, nombre_usuario: str, codigo_verificacion: str, app_url: str = "https://enviobot.com.ar/full") -> dict:
+    """
+    Despacha el mensaje de verificación de WhatsApp al número especificado.
+    """
+    msg = formatear_alerta_verificacion_whatsapp(nombre_usuario, codigo_verificacion, app_url)
+    return enviar_mensaje_whatsapp(telefono, msg)

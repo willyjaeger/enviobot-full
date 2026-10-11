@@ -209,7 +209,7 @@ def procesar_alertas_usuario(user_id: int) -> dict:
         # Seleccionar el nivel prioritario para el mensaje consolidado de hoy
         if criticos:
             nivel_alerta = "critical"
-            asunto_tipo = "🚨 ALARMA CRÍTICA: Quiebre de Stock Inminente"
+            asunto_tipo = "ALARMA CRITICA: Quiebre de Stock Inminente"
             texto_wa = formatear_alerta_critica(
                 user["full_name"],
                 wh_list[0]["name"],
@@ -218,7 +218,7 @@ def procesar_alertas_usuario(user_id: int) -> dict:
             )
         elif colecta_hoy:
             nivel_alerta = "warning"
-            asunto_tipo = "🚛 Pedir Colecta Hoy en MercadoLibre"
+            asunto_tipo = "Pedir Colecta Hoy en MercadoLibre"
             total_bultos = sum(x.get("suggested_restock_units", 0) for x in colecta_hoy)
             texto_wa = formatear_alerta_colecta_hoy(
                 user["full_name"],
@@ -229,7 +229,7 @@ def procesar_alertas_usuario(user_id: int) -> dict:
             )
         else:
             nivel_alerta = "preventive"
-            asunto_tipo = "📦 Aviso Preventivo de Producción"
+            asunto_tipo = "Aviso Preventivo de Producción"
             texto_wa = formatear_alerta_preventiva(
                 user["full_name"],
                 wh_list[0]["name"],
