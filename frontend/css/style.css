@@ -1104,24 +1104,26 @@ table.stock-table tr:hover td {
 }
 
 .plan-badge.trial {
-    background: rgba(52, 199, 89, 0.15);
-    color: #34c759;
-    border-color: rgba(52, 199, 89, 0.35);
+    background: var(--surf2);
+    color: var(--text2);
+    border-color: var(--border);
 }
 
 .btn-meli {
-    background: #ffe600 !important;
-    color: #2d3277 !important;
-    font-weight: 800 !important;
-    border: none !important;
+    background: var(--surf2) !important;
+    color: var(--text) !important;
+    font-weight: 600 !important;
+    border: 1px solid var(--border) !important;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    transition: opacity 0.2s ease;
+    border-radius: 6px;
+    transition: all 0.2s ease;
 }
 
 .btn-meli:hover {
-    opacity: 0.92;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
 }
 
 .auth-tabs {
@@ -1261,25 +1263,24 @@ table.stock-table tr:hover td {
 }
 
 .btn-welcome-meli {
-    background: #ffe600;
-    color: #111111;
-    border: none;
-    padding: 14px 28px;
-    font-size: 15px;
-    font-weight: 800;
+    background: var(--surf2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 12px 24px;
+    font-size: 14px;
+    font-weight: 600;
     border-radius: 8px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    box-shadow: 0 6px 20px rgba(255, 230, 0, 0.3);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    transition: all 0.2s ease;
     text-decoration: none;
 }
 
 .btn-welcome-meli:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(255, 230, 0, 0.45);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 /* ── Wizard de Configuración Inicial (Post-MeLi) ── */

@@ -19,7 +19,7 @@
             } catch (e) {}
         })();
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261011_6">
+    <link rel="stylesheet" href="css/style.css?v=20261011_7">
 </head>
 <body>
 
@@ -56,15 +56,7 @@
                             </svg>
                             <span>Configuración</span>
                         </button>
-                        <button onclick="instalarAppEscritorio()" class="icon-btn" id="btnInstallDesktopApp" title="Instalar acceso directo en el escritorio" style="display: none; color: var(--accent); border-color: rgba(245, 166, 35, 0.4);">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                                <line x1="8" y1="21" x2="16" y2="21"></line>
-                                <line x1="12" y1="17" x2="12" y2="21"></line>
-                            </svg>
-                            <span>Instalar en Escritorio</span>
-                        </button>
-                        <button onclick="abrirModalAdminClientes()" class="icon-btn" id="btnAdminClientesTop" title="Panel de Clientes" style="display: none; border-color: rgba(245, 166, 35, 0.4); color: var(--accent);">
+                        <button onclick="abrirModalAdminClientes()" class="icon-btn" id="btnAdminClientesTop" title="Panel de Clientes" style="display: none; color: var(--text2);">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
                                 <circle cx="9" cy="7" r="4"></circle>
@@ -145,14 +137,14 @@
         <!-- VISTA 2: DASHBOARD PRINCIPAL (DATOS REALES DE MELI)      -->
         <!-- ======================================================== -->
         <div id="viewMainDashboard" style="display: none;">
-            <!-- Banner destacado de Bienvenida a la Prueba de 30 días -->
-            <div id="trialWelcomeBanner" style="display: none; background: linear-gradient(90deg, rgba(245, 166, 35, 0.15), rgba(45, 50, 119, 0.15)); border: 1px solid rgba(245, 166, 35, 0.4); border-radius: 8px; padding: 12px 18px; margin: 10px 0 14px 0; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <!-- Banner de Conexión de Mercado Libre -->
+            <div id="trialWelcomeBanner" style="display: none; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin: 10px 0 14px 0; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                 <div>
-                    <div style="font-weight: 800; font-size: 14px; color: var(--text);">EnvioBot Full: Período de Prueba Activo (30 días)</div>
-                    <div style="font-size: 12.5px; color: var(--text2); margin-top: 2px;">Conectá tu cuenta de Mercado Libre para sincronizar tu inventario real y predecir quiebres.</div>
+                    <div style="font-weight: 700; font-size: 13.5px; color: var(--text);">EnvioBot Full · Conectá tu cuenta de Mercado Libre</div>
+                    <div style="font-size: 12px; color: var(--text2); margin-top: 2px;">Vinculá tu tienda para consultar el stock en depósito Full y calcular automáticamente tus días de stock y fechas de quiebre.</div>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center;">
-                    <button onclick="iniciarConexionMeLi()" class="btn btn-meli" style="padding: 9px 18px; font-weight: 700; font-size: 13px;">
+                    <button onclick="iniciarConexionMeLi()" class="btn btn-secondary" style="padding: 8px 16px; font-weight: 600; font-size: 13px; cursor: pointer;">
                         Conectar Mercado Libre
                     </button>
                 </div>
@@ -957,8 +949,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261011_6"></script>
-    <script src="js/notifications.js?v=20261011_6"></script>
-    <script src="js/app.js?v=20261011_6"></script>
+    <script src="js/theme.js?v=20261011_7"></script>
+    <script src="js/notifications.js?v=20261011_7"></script>
+    <script src="js/app.js?v=20261011_7"></script>
 </body>
 </html>
