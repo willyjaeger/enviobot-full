@@ -700,22 +700,8 @@ def ml_auth_callback():
                         """, (meli_email, hash_pw(rnd_pwd), nickname, nickname))
                         user_id = cur.lastrowid
 
-                # ACTIVAR 30 DÍAS DE PRUEBA GRATIS
-                trial_ends_at = datetime.utcnow() + timedelta(days=30)
-                cur.execute("SELECT id FROM features WHERE feature_code='enviobot_full' LIMIT 1")
-                feat = cur.fetchone()
-                if not feat:
-                    cur.execute("INSERT INTO features (feature_code, feature_name, description, is_active) VALUES ('enviobot_full', 'EnvioBot Full', 'Monitoreo de stock Full y reposición', 1)")
-                    feat_id = cur.lastrowid
-                else:
-                    feat_id = feat["id"]
-
-                cur.execute("""
-                    INSERT INTO user_features (user_id, feature_id, is_active, plan_tier, status, expires_at, created_at, updated_at)
-                    VALUES (%s, %s, 1, 'trial', 'trial', %s, NOW(), NOW())
-                    ON DUPLICATE KEY UPDATE is_active=1, plan_tier='trial', status='trial', expires_at=%s, updated_at=NOW()
-                """, (user_id, feat_id, trial_ends_at, trial_ends_at))
-
+                # HABILITAR ACCESO A FULL
+                cur.execute("UPDATE users SET has_full = 1 WHERE id = %s", (user_id,))
                 cur.execute("INSERT IGNORE INTO user_settings (user_id) VALUES (%s)", (user_id,))
 
             # Guardar o actualizar credenciales MeLi
