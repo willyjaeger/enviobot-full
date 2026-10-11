@@ -2449,6 +2449,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (hasActiveSession) {
         cargarDatos();
     }
+
+    // 6. Verificar visibilidad del botón de instalación de aplicación en escritorio
+    checkPwaInstallState();
 });
 
 // -------------------------------------------------------------
@@ -2766,39 +2769,58 @@ async function adminGuardarNotas(userId) {
 }
 
 // -------------------------------------------------------------
-// PWA & INSTALACIÓN DE ACCESO DIRECTO EN ESCRITORIO (WINDOWS)
+// PWA & INSTALACIÓN AUTOMÁTICA EN ESCRITORIO (WINDOWS / CHROME / EDGE)
 // -------------------------------------------------------------
 let deferredPrompt = null;
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
+    window.deferredPrompt = e;
     deferredPrompt = e;
     const btnTop = document.getElementById('btnInstallDesktopApp');
     if (btnTop) btnTop.style.display = 'inline-flex';
-    const btnCfg = document.getElementById('btnInstallDesktopPwaConfig');
-    if (btnCfg) btnCfg.style.display = 'inline-flex';
 });
 
 window.addEventListener('appinstalled', () => {
+    window.deferredPrompt = null;
     deferredPrompt = null;
     const btnTop = document.getElementById('btnInstallDesktopApp');
     if (btnTop) btnTop.style.display = 'none';
-    alert('¡EnvioBot Full instalado en tu escritorio con éxito!');
+    alert('EnvioBot Full se instaló en tu escritorio con éxito.');
 });
 
+function checkPwaInstallState() {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const btnTop = document.getElementById('btnInstallDesktopApp');
+    if (!btnTop) return;
+    if (isStandalone) {
+        btnTop.style.display = 'none';
+    } else {
+        btnTop.style.display = 'inline-flex';
+    }
+}
+
 async function instalarAppEscritorio() {
-    if (deferredPrompt) {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
+    const promptEvent = window.deferredPrompt || deferredPrompt;
+    if (promptEvent) {
+        promptEvent.prompt();
+        const { outcome } = await promptEvent.userChoice;
         if (outcome === 'accepted') {
+            window.deferredPrompt = null;
             deferredPrompt = null;
             const btnTop = document.getElementById('btnInstallDesktopApp');
             if (btnTop) btnTop.style.display = 'none';
         }
     } else {
+        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+        if (isStandalone) {
+            alert('EnvioBot Full ya se encuentra instalado y ejecutándose como aplicación en tu equipo.');
+            return;
+        }
+
         const esEdge = navigator.userAgent.includes('Edg/');
         const nav = esEdge ? 'Microsoft Edge' : 'Google Chrome';
-        alert(`Para crear el acceso directo en tu escritorio con ${nav}:\n\n1. Hacé clic en el menú (tres puntos arriba a la derecha de ${nav}).\n2. Seleccioná "Instalar EnvioBot Full" (o "Transmitir, guardar y compartir" -> "Crear acceso directo...").\n3. Marcá la casilla "Abrir como ventana" y hacé clic en "Crear".\n\nListo, te quedará el ícono en tu escritorio de Windows listo para usar.`);
+        alert(`Para instalar EnvioBot Full automáticamente en tu escritorio con ${nav}:\n\n1. Hacé clic en el ícono de instalación (computadora o "+") que aparece a la derecha en la barra de direcciones de ${nav}.\n2. O desde el menú de opciones (tres puntos arriba a la derecha), hacé clic en "Instalar EnvioBot Full".\n\nEl sistema colocará de inmediato el ícono en tu escritorio de Windows.`);
     }
 }
 

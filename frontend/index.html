@@ -18,8 +18,17 @@
                 }
             } catch (e) {}
         })();
+
+        // Captura inmediata de evento de instalacion PWA
+        window.deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window.deferredPrompt = e;
+            const btn = document.getElementById('btnInstallDesktopApp');
+            if (btn) btn.style.display = 'inline-flex';
+        });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261011_7">
+    <link rel="stylesheet" href="css/style.css?v=20261011_8">
 </head>
 <body>
 
@@ -55,6 +64,14 @@
                                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                             </svg>
                             <span>Configuración</span>
+                        </button>
+                        <button onclick="instalarAppEscritorio()" class="icon-btn" id="btnInstallDesktopApp" title="Instalar EnvioBot Full en el escritorio de Windows" style="display: none; color: var(--text2);">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                                <line x1="8" y1="21" x2="16" y2="21"></line>
+                                <line x1="12" y1="17" x2="12" y2="21"></line>
+                            </svg>
+                            <span>Instalar App</span>
                         </button>
                         <button onclick="abrirModalAdminClientes()" class="icon-btn" id="btnAdminClientesTop" title="Panel de Clientes" style="display: none; color: var(--text2);">
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -949,8 +966,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261011_7"></script>
-    <script src="js/notifications.js?v=20261011_7"></script>
-    <script src="js/app.js?v=20261011_7"></script>
+    <script src="js/theme.js?v=20261011_8"></script>
+    <script src="js/notifications.js?v=20261011_8"></script>
+    <script src="js/app.js?v=20261011_8"></script>
 </body>
 </html>

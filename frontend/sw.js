@@ -3,7 +3,7 @@
 // Gestiona notificaciones nativas de escritorio y eventos en segundo plano
 // ==============================================================================
 
-const CACHE_NAME = 'enviobot-full-v7';
+const CACHE_NAME = 'enviobot-full-v8';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const ASSETS_TO_CACHE = [
   './js/theme.js',
   './js/notifications.js',
   './img/icon.png',
+  './img/icon_192.png',
   './img/icon_512.png',
   './manifest.json'
 ];
@@ -27,6 +28,13 @@ self.addEventListener('activate', (event) => {
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
       );
     }).then(() => self.clients.claim())
+  );
+});
+
+// Manejo de peticiones de red (requerido por Chromium para instalación automática de PWA)
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });
 
