@@ -2629,4 +2629,41 @@ async function adminGuardarNotas(userId) {
     }
 }
 
+// -------------------------------------------------------------
+// PWA & INSTALACIÓN DE ACCESO DIRECTO EN ESCRITORIO (WINDOWS)
+// -------------------------------------------------------------
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const btnTop = document.getElementById('btnInstallDesktopApp');
+    if (btnTop) btnTop.style.display = 'inline-flex';
+    const btnCfg = document.getElementById('btnInstallDesktopPwaConfig');
+    if (btnCfg) btnCfg.style.display = 'inline-flex';
+});
+
+window.addEventListener('appinstalled', () => {
+    deferredPrompt = null;
+    const btnTop = document.getElementById('btnInstallDesktopApp');
+    if (btnTop) btnTop.style.display = 'none';
+    alert('¡EnvioBot Full instalado en tu escritorio con éxito!');
+});
+
+async function instalarAppEscritorio() {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+            deferredPrompt = null;
+            const btnTop = document.getElementById('btnInstallDesktopApp');
+            if (btnTop) btnTop.style.display = 'none';
+        }
+    } else {
+        const esEdge = navigator.userAgent.includes('Edg/');
+        const nav = esEdge ? 'Microsoft Edge' : 'Google Chrome';
+        alert(`Para crear el acceso directo en tu escritorio con ${nav}:\n\n1. Hacé clic en el menú (tres puntos arriba a la derecha de ${nav}).\n2. Seleccioná "Instalar EnvioBot Full" (o "Transmitir, guardar y compartir" -> "Crear acceso directo...").\n3. Marcá la casilla "Abrir como ventana" y hacé clic en "Crear".\n\nListo, te quedará el ícono en tu escritorio de Windows listo para usar.`);
+    }
+}
+
 

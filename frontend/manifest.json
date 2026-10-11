@@ -1,0 +1,25 @@
+{
+  "name": "EnvioBot Full - Control de Stock",
+  "short_name": "EnvioBot Full",
+  "description": "Control de inventario en bodega MeLi Full y alertas preventivas de reposición",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#f5a623",
+  "icons": [
+    {
+      "src": "img/icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "img/icon_512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

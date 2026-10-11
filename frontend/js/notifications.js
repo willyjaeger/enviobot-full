@@ -11,13 +11,13 @@
     // Inicializar Service Worker
     function initServiceWorker() {
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js')
+            navigator.serviceWorker.register('sw.js')
                 .then(reg => {
                     swRegistration = reg;
                     console.log('[EnvioBot] Service Worker registrado con éxito.');
                 })
                 .catch(err => {
-                    console.warn('[EnvioBot] No se pudo registrar Service Worker (modo local sin HTTPS o servidor):', err);
+                    console.warn('[EnvioBot] No se pudo registrar Service Worker:', err);
                 });
         }
     }
@@ -64,8 +64,8 @@
 
         const options = {
             body: cuerpo,
-            icon: '/img/enviobot_app_icon.png',
-            badge: '/img/enviobot_app_icon.png',
+            icon: 'img/icon_512.png',
+            badge: 'img/icon.png',
             tag: 'enviobot-colecta-alerta',
             renotify: true,
             data: datos

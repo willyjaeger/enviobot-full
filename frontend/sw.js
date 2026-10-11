@@ -5,14 +5,15 @@
 
 const CACHE_NAME = 'enviobot-full-v1';
 const ASSETS_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/css/style.css',
-  '/js/app.js',
-  '/js/theme.js',
-  '/js/notifications.js',
-  '/img/enviobot_app_icon.png',
-  '/img/cajita_esquematica.svg'
+  './',
+  './index.html',
+  './css/style.css',
+  './js/app.js',
+  './js/theme.js',
+  './js/notifications.js',
+  './img/icon.png',
+  './img/icon_512.png',
+  './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
@@ -36,7 +37,7 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
       if (clients.openWindow) {
-        return clients.openWindow('/#colecta');
+        return clients.openWindow('./#colecta');
       }
     })
   );
@@ -47,8 +48,8 @@ self.addEventListener('push', (event) => {
   let data = {
     title: 'EnvioBot Full — Alerta de Stock',
     body: 'Tenés publicaciones en fecha límite de reposición.',
-    icon: '/img/enviobot_app_icon.png',
-    badge: '/img/enviobot_app_icon.png'
+    icon: 'img/icon_512.png',
+    badge: 'img/icon.png'
   };
 
   if (event.data) {
