@@ -1590,7 +1590,7 @@ async function handleAuthSubmit(e) {
         }
     } finally {
         btnSubmit.disabled = false;
-        cambiarAuthTab(currentAuthTab);
+        btnSubmit.textContent = currentAuthTab === 'login' ? 'Ingresar' : 'Crear Cuenta (30d gratis)';
     }
 }
 
@@ -1716,7 +1716,7 @@ async function handleMainAuthSubmit(e) {
         }
     } finally {
         btnSubmit.disabled = false;
-        cambiarAuthMain(currentMainAuthTab);
+        btnSubmit.textContent = currentMainAuthTab === 'login' ? 'Ingresar a EnvioBot Full' : 'Crear cuenta (30 días de prueba gratis)';
     }
 }
 
