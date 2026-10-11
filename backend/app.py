@@ -1401,7 +1401,8 @@ def test_email():
     if not dest:
         return jsonify({"ok": False, "error": "Debe especificar una casilla de correo."}), 400
 
-    res = enviar_email_prueba(dest, name)
+    tipo = data.get("account", data.get("tipo", "welcome"))
+    res = enviar_email_prueba(dest, name, tipo=tipo)
     return jsonify({
         "ok": res.get("ok", False),
         "message": f"Correo de prueba enviado a {dest}",

@@ -22,7 +22,7 @@ from whatsapp_service import (
     formatear_alerta_colecta_hoy,
     formatear_alerta_critica
 )
-from email_service import enviar_alerta_stock_email
+from email_service import enviar_alerta_stock_email, enviar_email
 
 load_dotenv()
 
@@ -89,35 +89,10 @@ def registrar_alerta_en_log(conn, user_id: int, item_id: str, alert_type: str, m
 
 
 def enviar_email_alerta(destinatario: str, asunto: str, cuerpo_texto: str, cuerpo_html: str = None):
-    """Envía un email transaccional vía SMTP (DonWeb u otro)."""
-    if not destinatario or not SMTP_USER or not SMTP_PASSWORD:
-        logger.info(f"[Email Simulado] Para {destinatario}: {asunto}")
-        return False
+    """Envía un email transaccional vía SMTP usando la cuenta de alertas configurada."""
+    res = enviar_email(destinatario, asunto, cuerpo_texto, cuerpo_html)
+    return bool(res.get("ok", False))
 
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = asunto
-        msg["From"] = f"EnvioBot Full <{ALERT_SENDER_EMAIL}>"
-        msg["To"] = destinatario
-
-        msg.attach(MIMEText(cuerpo_texto, "plain", "utf-8"))
-        if cuerpo_html:
-            msg.attach(MIMEText(cuerpo_html, "html", "utf-8"))
-
-        if SMTP_PORT == 465:
-            server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=12)
-        else:
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=12)
-            server.starttls()
-
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(ALERT_SENDER_EMAIL, [destinatario], msg.as_string())
-        server.quit()
-        logger.info(f"[Email Enviado] Exitoso a {destinatario}")
-        return True
-    except Exception as e:
-        logger.error(f"[Email Error] No se pudo enviar a {destinatario}: {e}")
-        return False
 
 
 def procesar_alertas_usuario(user_id: int) -> dict:
@@ -295,7 +270,17 @@ def ejecutar_motor_alertas_global():
     logger.info("=== INICIANDO MOTOR DE ALERTAS GLOBAL ENVIOBOT FULL ===")
     conn = get_db()
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM users WHERE is_active=1")
+        cur.execute("SHOW COLUMNS FROM users LIKE 'is_blocked'")
+        has_blocked = bool(cur.fetchone())
+        cur.execute("SHOW COLUMNS FROM users LIKE 'active'")
+        has_active = bool(cur.fetchone())
+        conds = []
+        if has_active:
+            conds.append("active=1")
+        if has_blocked:
+            conds.append("is_blocked=0")
+        where_clause = " AND ".join(conds) if conds else "1=1"
+        cur.execute(f"SELECT id FROM users WHERE {where_clause}")
         usuarios = cur.fetchall()
     conn.close()
 

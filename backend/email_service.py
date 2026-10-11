@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 """
-email_service.py - Servicio Profesional de Correo Saliente (SMTP DonWeb)
+email_service.py - Servicio Profesional de Correo Saliente (SMTP Ferozo / DonWeb)
 Envía alertas transaccionales por email con plantillas HTML responsivas
 y diseño corporativo de EnvioBot Full.
+
+Soporta cuentas diferenciadas administradas centralizadamente desde admin.enviobot.com.ar:
+- Cuenta de Bienvenida y Envío de Códigos: hola@enviobot.com.ar
+- Cuenta de Alertas de Stock Full: alertafull@enviobot.com.ar
 """
 
 import os
 import smtplib
+import ssl
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.utils import formatdate, make_msgid
+from email.utils import formatdate, make_msgid, formataddr
 from datetime import datetime
 from dotenv import load_dotenv
+import pymysql
+import pymysql.cursors
 
 load_dotenv()
 
@@ -20,18 +27,109 @@ logger = logging.getLogger("email_service")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s [%(name)s]: %(message)s")
 
-# Configuración SMTP DonWeb
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.donweb.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 465))
-SMTP_USER = os.getenv("SMTP_USER", "alertas@enviobot.com.ar")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-ALERT_SENDER_EMAIL = os.getenv("ALERT_SENDER_EMAIL", "alertas@enviobot.com.ar")
-SENDER_DISPLAY_NAME = os.getenv("SENDER_DISPLAY_NAME", "EnvioBot Full")
+# Variables de entorno por defecto (fallback)
+DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
+DB_USER = os.getenv("DB_USER", "enviobot" if os.path.exists("/var/www") else "root")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "5DI1LCoeuFEzJpLznuJudFfq" if os.path.exists("/var/www") else "")
+DB_NAME = os.getenv("DB_NAME", "enviobot_web")
+DB_PORT = int(os.getenv("DB_PORT", 3306))
+
+DEFAULT_SMTP_HOST = os.getenv("SMTP_HOST", "po000380.ferozo.com")
+DEFAULT_SMTP_PORT = int(os.getenv("SMTP_PORT", 465))
 REPLY_TO_EMAIL = os.getenv("REPLY_TO_EMAIL", "soporte@enviobot.com.ar")
 APP_URL = os.getenv("APP_URL", "https://enviobot.com.ar/full")
 
-# Modo simulación si falta contraseña de SMTP
-EMAIL_SIMULATION_MODE = os.getenv("EMAIL_SIMULATION_MODE", "").lower() in ("true", "1", "yes") or not SMTP_PASSWORD
+
+def get_db():
+    """Conexión a la base de datos MySQL unificada para leer configuraciones de admin."""
+    try:
+        return pymysql.connect(
+            host=DB_HOST,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            database=DB_NAME,
+            port=DB_PORT,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True
+        )
+    except Exception as e:
+        logger.warning(f"[email_service] No se pudo conectar a la base de datos: {e}")
+        return None
+
+
+def _get_settings_from_db(keys: list) -> dict:
+    """Obtiene los settings desde la tabla site_settings de admin.enviobot."""
+    conn = get_db()
+    res = {}
+    if not conn:
+        return res
+    try:
+        with conn.cursor() as cur:
+            format_strings = ','.join(['%s'] * len(keys))
+            cur.execute(f"SELECT setting_key, setting_value FROM site_settings WHERE setting_key IN ({format_strings})", tuple(keys))
+            for row in cur.fetchall():
+                res[row["setting_key"]] = row["setting_value"]
+    except Exception as e:
+        logger.warning(f"[email_service] Error consultando site_settings: {e}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    return res
+
+
+def get_welcome_smtp_config() -> dict:
+    """
+    Configuración de la cuenta de Bienvenida y Envío de Códigos (hola@enviobot.com.ar).
+    Prioriza los valores guardados en admin.enviobot.com.ar (site_settings).
+    """
+    db_cfg = _get_settings_from_db([
+        "smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_sender_name"
+    ])
+    port = db_cfg.get("smtp_port") or os.getenv("WELCOME_SMTP_PORT", str(DEFAULT_SMTP_PORT))
+    try:
+        port = int(port)
+    except (ValueError, TypeError):
+        port = 465
+
+    user = (db_cfg.get("smtp_user") or os.getenv("WELCOME_SENDER_EMAIL", "hola@enviobot.com.ar")).strip()
+    return {
+        "host": (db_cfg.get("smtp_host") or os.getenv("WELCOME_SMTP_HOST", DEFAULT_SMTP_HOST)).strip(),
+        "port": port,
+        "user": user,
+        "password": db_cfg.get("smtp_password") or os.getenv("WELCOME_SMTP_PASSWORD", "Willy/48462800"),
+        "sender_name": (db_cfg.get("smtp_sender_name") or os.getenv("WELCOME_SENDER_NAME", "EnvioBot")).strip(),
+        "sender_email": user,
+        "reply_to": REPLY_TO_EMAIL
+    }
+
+
+def get_alert_smtp_config() -> dict:
+    """
+    Configuración de la cuenta de Alertas de Stock de Full (alertafull@enviobot.com.ar).
+    Prioriza los valores guardados en admin.enviobot.com.ar (site_settings).
+    """
+    db_cfg = _get_settings_from_db([
+        "smtp_alertafull_host", "smtp_alertafull_port", "smtp_alertafull_user",
+        "smtp_alertafull_password", "smtp_alertafull_sender_name"
+    ])
+    port = db_cfg.get("smtp_alertafull_port") or os.getenv("ALERT_SMTP_PORT", str(DEFAULT_SMTP_PORT))
+    try:
+        port = int(port)
+    except (ValueError, TypeError):
+        port = 465
+
+    user = (db_cfg.get("smtp_alertafull_user") or os.getenv("ALERT_SENDER_EMAIL", "alertafull@enviobot.com.ar")).strip()
+    return {
+        "host": (db_cfg.get("smtp_alertafull_host") or os.getenv("ALERT_SMTP_HOST", DEFAULT_SMTP_HOST)).strip(),
+        "port": port,
+        "user": user,
+        "password": db_cfg.get("smtp_alertafull_password") or os.getenv("ALERT_SMTP_PASSWORD", os.getenv("SMTP_PASSWORD", "")),
+        "sender_name": (db_cfg.get("smtp_alertafull_sender_name") or os.getenv("ALERT_SENDER_NAME", "EnvioBot Full")).strip(),
+        "sender_email": user,
+        "reply_to": REPLY_TO_EMAIL
+    }
 
 
 def _generar_plantilla_html(titulo_banner: str, subtitulo: str, nombre_usuario: str, deposito_nombre: str, items: list, nivel: str) -> str:
@@ -148,7 +246,7 @@ def _generar_plantilla_html(titulo_banner: str, subtitulo: str, nombre_usuario: 
                         <tr>
                             <td style="background-color: #11141a; padding: 18px 28px; border-top: 1px solid #2b303c; font-size: 11.5px; color: #6b7280; text-align: center; line-height: 1.5;">
                                 EnvioBot Full · Monitoreo y Pronóstico de Stock en Mercado Envíos Full<br>
-                                Servidor de Notificaciones DonWeb · <a href="{APP_URL}" style="color: #f5a623; text-decoration: none;">enviobot.com.ar/full</a>
+                                Notificaciones Oficiales · <a href="{APP_URL}" style="color: #f5a623; text-decoration: none;">enviobot.com.ar/full</a>
                             </td>
                         </tr>
                     </table>
@@ -161,57 +259,72 @@ def _generar_plantilla_html(titulo_banner: str, subtitulo: str, nombre_usuario: 
     return html
 
 
-def enviar_email(destinatario: str, asunto: str, cuerpo_texto: str, cuerpo_html: str = None) -> dict:
+def enviar_email(destinatario: str, asunto: str, cuerpo_texto: str, cuerpo_html: str = None, smtp_cfg: dict = None) -> dict:
     """
-    Función de bajo nivel para despachar correo a través de DonWeb SMTP.
+    Función de despacho a través de SMTP SSL/TLS usando la configuración indicada.
+    Si no se especifica smtp_cfg, utiliza por defecto la cuenta de alertas de Full.
     """
     if not destinatario:
         return {"ok": False, "error": "Destinatario vacío"}
 
-    # Modo simulación si no hay credenciales SMTP cargadas
-    if EMAIL_SIMULATION_MODE:
-        logger.info(f"[SIMULACIÓN EMAIL DONWEB]\nDe: {ALERT_SENDER_EMAIL}\nPara: {destinatario}\nAsunto: {asunto}\n{cuerpo_texto[:200]}...")
+    cfg = smtp_cfg or get_alert_smtp_config()
+    sender_email = cfg.get("sender_email") or cfg.get("user")
+    sender_name = cfg.get("sender_name", "EnvioBot")
+    host = cfg.get("host")
+    port = cfg.get("port", 465)
+    password = cfg.get("password", "")
+
+    # Modo simulación si falta la contraseña
+    if not password:
+        logger.info(f"[SIMULACIÓN EMAIL]\nDe: {sender_name} <{sender_email}>\nPara: {destinatario}\nAsunto: {asunto}\n{cuerpo_texto[:180]}...")
         return {
             "ok": True,
             "simulated": True,
             "to": destinatario,
             "subject": asunto,
-            "message": "Email procesado en modo simulación (configurar SMTP_PASSWORD en .env para salida real)."
+            "message": f"Email en modo simulación (configurar contraseña para {sender_email} en admin.enviobot.com.ar)."
         }
 
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = asunto
-        msg["From"] = f"{SENDER_DISPLAY_NAME} <{ALERT_SENDER_EMAIL}>"
+        msg["From"] = formataddr((sender_name, sender_email))
         msg["To"] = destinatario
-        msg["Reply-To"] = REPLY_TO_EMAIL
+        if cfg.get("reply_to"):
+            msg["Reply-To"] = cfg.get("reply_to")
         msg["Date"] = formatdate(localtime=True)
         msg["Message-ID"] = make_msgid(domain="enviobot.com.ar")
-        msg["X-Mailer"] = "EnvioBot Full Alerts Engine"
+        msg["X-Mailer"] = "EnvioBot Notification Service"
 
         msg.attach(MIMEText(cuerpo_texto, "plain", "utf-8"))
         if cuerpo_html:
             msg.attach(MIMEText(cuerpo_html, "html", "utf-8"))
 
-        if SMTP_PORT == 465:
-            server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=14)
+        contexto = ssl.create_default_context()
+        if port == 465:
+            server = smtplib.SMTP_SSL(host, port, timeout=14, context=contexto)
         else:
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=14)
-            server.starttls()
+            server = smtplib.SMTP(host, port, timeout=14)
+            server.ehlo()
+            server.starttls(context=contexto)
+            server.ehlo()
 
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.sendmail(ALERT_SENDER_EMAIL, [destinatario], msg.as_string())
+        server.login(cfg["user"], password)
+        server.sendmail(sender_email, [destinatario], msg.as_string())
         server.quit()
 
-        logger.info(f"[SMTP DonWeb] Correo enviado exitosamente a {destinatario}")
-        return {"ok": True, "to": destinatario, "subject": asunto}
+        logger.info(f"[SMTP {sender_email}] Correo enviado exitosamente a {destinatario}")
+        return {"ok": True, "to": destinatario, "subject": asunto, "from": sender_email}
     except Exception as e:
-        logger.error(f"[SMTP DonWeb Error] No se pudo enviar a {destinatario}: {e}")
-        return {"ok": False, "error": str(e), "to": destinatario}
+        logger.error(f"[SMTP Error ({sender_email})] No se pudo enviar a {destinatario}: {e}")
+        return {"ok": False, "error": str(e), "to": destinatario, "from": sender_email}
 
 
 def enviar_alerta_stock_email(destinatario: str, nombre_usuario: str, deposito_nombre: str, items: list, nivel: str) -> dict:
-    """Envía la alerta estructurada con la plantilla HTML correspondiente."""
+    """
+    Envía la alerta de stock estructurada usando la cuenta oficial de alertas:
+    alertafull@enviobot.com.ar
+    """
     if nivel == "critical":
         asunto = f"EnvioBot Full: Alerta Crítica de Quiebre de Stock ({deposito_nombre})"
         titulo = "Riesgo Inminente de Quiebre de Stock"
@@ -234,28 +347,14 @@ def enviar_alerta_stock_email(destinatario: str, nombre_usuario: str, deposito_n
     # HTML enriquecido
     html = _generar_plantilla_html(titulo, subtitulo, nombre_usuario, deposito_nombre, items, nivel)
 
-    return enviar_email(destinatario, asunto, texto_plano, html)
-
-
-def enviar_email_prueba(destinatario: str, nombre_usuario: str = "Usuario") -> dict:
-    """Envía un correo de verificación para testear credenciales SMTP de DonWeb."""
-    asunto = "EnvioBot Full: Verificación de Correo Saliente Exitosa"
-    items_demo = [
-        {"sku": "DEMO-001", "title": "Producto de Prueba para Verificación de Alertas", "current_stock_full": 15, "days_left": 4.5, "stockout_date": datetime.now().strftime("%d/%m"), "suggested_restock_units": 40}
-    ]
-    titulo = "Tu correo de alertas está correctamente configurado"
-    subtitulo = "Esta es una confirmación de que el servidor SMTP de DonWeb puede enviar reportes matutinos a esta casilla."
-
-    texto_plano = f"EnvioBot Full - Prueba de Correo Saliente\nHola {nombre_usuario}, tu casilla {destinatario} está correctamente vinculada.\n"
-    html = _generar_plantilla_html(titulo, subtitulo, nombre_usuario, "Mercado Envíos Full (Bs As)", items_demo, "ok")
-
-    return enviar_email(destinatario, asunto, texto_plano, html)
+    # Usa cuenta de alertas Full: alertafull@enviobot.com.ar
+    return enviar_email(destinatario, asunto, texto_plano, html, smtp_cfg=get_alert_smtp_config())
 
 
 def enviar_email_bienvenida_verificacion(destinatario: str, nombre_usuario: str, codigo_verificacion: str, app_url: str = APP_URL) -> dict:
     """
-    Envía el email de bienvenida y vinculación con código de 6 dígitos.
-    Garantiza que el cliente reciba los avisos y quede confirmada la casilla.
+    Envía el email de bienvenida y vinculación con código de 6 dígitos usando la cuenta:
+    hola@enviobot.com.ar
     """
     asunto = f"EnvioBot Full: Codigo de Vinculacion de Correo [{codigo_verificacion}]"
     enlace_confirmacion = f"{app_url}/?verify_code={codigo_verificacion}&channel=email&email={destinatario}"
@@ -360,7 +459,24 @@ def enviar_email_bienvenida_verificacion(destinatario: str, nombre_usuario: str,
     </body>
     </html>
     """
-    return enviar_email(destinatario, asunto, texto_plano, html)
+    # Usa cuenta de bienvenida: hola@enviobot.com.ar
+    return enviar_email(destinatario, asunto, texto_plano, html, smtp_cfg=get_welcome_smtp_config())
+
+
+def enviar_email_prueba(destinatario: str, nombre_usuario: str = "Usuario", tipo: str = "welcome") -> dict:
+    """Envía un correo de verificación para testear credenciales SMTP (welcome o alertafull)."""
+    cfg = get_welcome_smtp_config() if tipo == "welcome" else get_alert_smtp_config()
+    asunto = f"EnvioBot Full: Verificación de Correo Saliente ({cfg['user']})"
+    items_demo = [
+        {"sku": "DEMO-001", "title": "Producto de Prueba para Verificación de Alertas", "current_stock_full": 15, "days_left": 4.5, "stockout_date": datetime.now().strftime("%d/%m"), "suggested_restock_units": 40}
+    ]
+    titulo = f"Correo configurado correctamente ({cfg['user']})"
+    subtitulo = f"Esta es una confirmación de que la casilla {cfg['user']} puede enviar correos a través de {cfg['host']}."
+
+    texto_plano = f"EnvioBot Full - Prueba de Correo Saliente\nHola {nombre_usuario}, tu casilla {destinatario} está correctamente vinculada.\n"
+    html = _generar_plantilla_html(titulo, subtitulo, nombre_usuario, "Mercado Envíos Full", items_demo, "ok")
+
+    return enviar_email(destinatario, asunto, texto_plano, html, smtp_cfg=cfg)
 
 
 if __name__ == "__main__":
@@ -368,10 +484,13 @@ if __name__ == "__main__":
     if "--test" in sys.argv:
         try:
             target = sys.argv[sys.argv.index("--test") + 1]
-            print(f"Probando envío SMTP a {target}...")
-            res = enviar_email_prueba(target, "Administrador")
+            tipo = "welcome"
+            if "--tipo" in sys.argv:
+                tipo = sys.argv[sys.argv.index("--tipo") + 1]
+            print(f"Probando envío SMTP ({tipo}) a {target}...")
+            res = enviar_email_prueba(target, "Administrador", tipo=tipo)
             print("Resultado:", res)
         except IndexError:
-            print("Uso: python email_service.py --test <tu_email>")
+            print("Uso: python email_service.py --test <tu_email> [--tipo welcome|alertafull]")
     else:
         print("Módulo email_service.py cargado. Ejecutar con --test <email> para verificar.")
