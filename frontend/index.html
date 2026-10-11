@@ -99,33 +99,29 @@
                 <div class="welcome-steps-grid">
                     <div class="welcome-step-card">
                         <div style="font-size: 11px; font-weight: 800; color: var(--accent); margin-bottom: 6px; text-transform: uppercase;">Paso 1</div>
-                        <div class="welcome-step-title">Vinculá Mercado Libre</div>
-                        <div class="welcome-step-desc">Autorizás a EnvioBot con 1 clic a consultar tus publicaciones y stock activo en Full.</div>
+                        <div class="welcome-step-title">Creá tu cuenta</div>
+                        <div class="welcome-step-desc">Registrate con tu email o ingresá con tu usuario de EnvioBot para activar tu prueba de 30 días.</div>
                     </div>
                     <div class="welcome-step-card">
                         <div style="font-size: 11px; font-weight: 800; color: var(--accent); margin-bottom: 6px; text-transform: uppercase;">Paso 2</div>
-                        <div class="welcome-step-title">Configurá tus Alertas</div>
-                        <div class="welcome-step-desc">Definí los días de anticipación de colecta, tu email y WhatsApps de aviso.</div>
+                        <div class="welcome-step-title">Vinculá Mercado Libre</div>
+                        <div class="welcome-step-desc">Autorizás con 1 clic la consulta de tu inventario activo en bodega Full.</div>
                     </div>
                     <div class="welcome-step-card">
                         <div style="font-size: 11px; font-weight: 800; color: var(--accent); margin-bottom: 6px; text-transform: uppercase;">Paso 3</div>
-                        <div class="welcome-step-title">Monitoreo Automático</div>
-                        <div class="welcome-step-desc">El sistema calcula el ritmo de venta y te avisa la fecha límite para pedir colecta.</div>
+                        <div class="welcome-step-title">Alertas y Monitoreo</div>
+                        <div class="welcome-step-desc">Configurá WhatsApp y email para recibir el cálculo diario de quiebre y sugerencia de colecta.</div>
                     </div>
                 </div>
 
-                <!-- Botón Principal Sobrio -->
-                <div style="margin-top: 28px;">
-                    <button type="button" onclick="iniciarConexionMeLi()" class="btn-welcome-meli">
-                        Conectar cuenta de Mercado Libre
+                <!-- Botones Principales: Registro / Ingreso -->
+                <div style="margin-top: 28px; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+                    <button type="button" onclick="abrirModalAuth('register')" class="btn-welcome-meli" style="background: var(--accent); color: #111; font-weight: 800; cursor: pointer;">
+                        Crear cuenta (30 días de prueba gratis)
                     </button>
-                    <div style="font-size: 12px; color: var(--text2); margin-top: 10px;">
-                        Conexión directa mediante la API oficial de Mercado Libre.
+                    <div style="font-size: 13px; color: var(--text2); margin-top: 6px;">
+                        ¿Ya tenés una cuenta registrada? <a href="#" onclick="abrirModalAuth('login')" style="color: var(--accent); font-weight: 700; text-decoration: none;">Iniciar sesión aquí</a>
                     </div>
-                </div>
-
-                <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text2);">
-                    ¿Ya tenés una cuenta registrada? <a href="#" onclick="abrirModalAuth('login')" style="color: var(--accent); font-weight: 700; text-decoration: none;">Iniciar sesión aquí</a>
                 </div>
             </div>
         </div>
