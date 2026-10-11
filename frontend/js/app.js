@@ -1549,6 +1549,10 @@ async function handleAuthSubmit(e) {
         localStorage.setItem('token', data.token);
         cerrarModalAuth();
 
+        if (data.existing_user_linked) {
+            alert(data.message || 'Detectamos tu cuenta de EnvioBot Pedidos. Se habilitó EnvioBot Full con tu contraseña habitual.');
+        }
+
         // Si es un usuario existente pero NO tiene suscripción a EnvioBot Full:
         if (data.user && data.user.has_full_access === false) {
             currentUser = data.user;
@@ -2407,6 +2411,10 @@ function renderClientesAdmin(clients) {
         tr.style.borderBottom = '1px solid var(--border)';
         tr.id = `adminRowClient_${c.id}`;
 
+        const pedidosBadge = c.has_pedidos 
+            ? `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Habilitado</span>`
+            : `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Sin acceso</span>`;
+
         const fullBadge = c.has_full 
             ? `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Habilitado</span>`
             : `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Sin acceso</span>`;
@@ -2422,6 +2430,12 @@ function renderClientesAdmin(clients) {
                     ${c.full_name || 'Sin nombre'} · ID #${c.id} · ${c.ml_accounts_count} cta(s) MeLi
                     ${c.business_name ? ` · <span style="color: var(--accent);">${c.business_name}</span>` : ''}
                 </div>
+            </td>
+            <td style="padding: 10px 12px; text-align: center; vertical-align: middle;">
+                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="chkAdminPedidos_${c.id}" ${c.has_pedidos ? 'checked' : ''} onchange="adminTogglePedidos(${c.id}, this.checked)" style="cursor: pointer; width: 16px; height: 16px;">
+                    <span id="badgeAdminPedidos_${c.id}">${pedidosBadge}</span>
+                </label>
             </td>
             <td style="padding: 10px 12px; text-align: center; vertical-align: middle;">
                 <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
@@ -2446,6 +2460,45 @@ function renderClientesAdmin(clients) {
         `;
         tbody.appendChild(tr);
     });
+}
+
+async function adminTogglePedidos(userId, enable) {
+    const token = getToken();
+    const chk = document.getElementById(`chkAdminPedidos_${userId}`);
+    const badge = document.getElementById(`badgeAdminPedidos_${userId}`);
+    if (!token) return;
+
+    if (chk) chk.disabled = true;
+
+    try {
+        const res = await fetch(`${API_BASE}/full/admin/clients/${userId}/toggle-pedidos`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enable })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const c = adminClientsData.find(item => item.id === userId);
+            if (c) c.has_pedidos = enable;
+
+            if (badge) {
+                badge.innerHTML = enable
+                    ? `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Habilitado</span>`
+                    : `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Sin acceso</span>`;
+            }
+        } else {
+            alert(data.error || 'No se pudo actualizar el estado de Pedidos.');
+            if (chk) chk.checked = !enable;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        if (chk) chk.checked = !enable;
+    } finally {
+        if (chk) chk.disabled = false;
+    }
 }
 
 async function adminToggleFull(userId, enable) {

@@ -186,151 +186,77 @@ def verify_pw(password_input: str, password_hash: str) -> bool:
 
 def get_user_full_subscription(user_id, conn):
     """
-    Verifica suscripción o trial a EnvioBot Full independientemente de EnvioBot Pedidos.
-    Consulta la tabla user_features (utilizada por admin.enviobot.com.ar) y features.
-    Retorna si el usuario tiene acceso efectivo a Full y cuántos días le quedan.
+    Verifica suscripción a EnvioBot Full consultando directamente los campos de la tabla users:
+    - has_full: TINYINT(1) -> 1 si tiene acceso a Full, 0 si no.
+    - has_pedidos: TINYINT(1) -> 1 si tiene acceso a Pedidos, 0 si no.
+    - is_blocked: TINYINT(1) -> 1 si está bloqueado.
+    - admin_notes: TEXT -> Observaciones.
     """
     with conn.cursor() as cur:
-        # 0. Verificar si el usuario está bloqueado globalmente
-        is_user_blocked = False
-        user_notes = ""
-        try:
-            cur.execute("SELECT is_blocked, admin_notes FROM users WHERE id=%s", (user_id,))
-            u_row = cur.fetchone()
-            if u_row:
-                is_user_blocked = bool(u_row.get("is_blocked", 0))
-                user_notes = u_row.get("admin_notes") or ""
-        except Exception:
-            pass
+        cur.execute("""
+            SELECT id, email, 
+                   COALESCE(has_full, 0) AS has_full,
+                   COALESCE(has_pedidos, 1) AS has_pedidos,
+                   COALESCE(is_blocked, 0) AS is_blocked,
+                   COALESCE(admin_notes, '') AS admin_notes
+            FROM users WHERE id=%s
+        """, (user_id,))
+        u = cur.fetchone()
 
-        if is_user_blocked:
-            return {
-                "has_full_access": False,
-                "is_active": False,
-                "is_blocked": True,
-                "is_expired": False,
-                "subscription_status": "blocked",
-                "plan_tier": "none",
-                "plan_name": "Usuario Bloqueado",
-                "can_start_trial": False,
-                "trial_days_left": 0,
-                "trial_ends_at": None,
-                "admin_notes": user_notes,
-                "limits": PLAN_LIMITS["trial"]
-            }
-
-        # 1. Buscar en user_features vinculada con features (estándar de admin.enviobot.com.ar)
-        uf = None
-        try:
-            cur.execute("""
-                SELECT uf.*, f.feature_code, f.feature_name
-                FROM user_features uf
-                JOIN features f ON uf.feature_id = f.id
-                WHERE uf.user_id = %s AND f.feature_code = 'enviobot_full'
-                LIMIT 1
-            """, (user_id,))
-            uf = cur.fetchone()
-        except Exception:
-            pass
-
-        # 1b. Si no se encontró por join, buscar por feature_code directo si la tabla lo tiene
-        if not uf:
-            try:
-                cur.execute("""
-                    SELECT * FROM user_features
-                    WHERE user_id = %s AND (feature_id = 'enviobot_full' OR feature_code = 'enviobot_full')
-                    LIMIT 1
-                """, (user_id,))
-                uf = cur.fetchone()
-            except Exception:
-                pass
-
-        # 1c. Si no existe en user_features, buscar en user_config
-        if not uf:
-            try:
-                cur.execute("""
-                    SELECT plan_tier, subscription_status, trial_ends_at
-                    FROM user_config
-                    WHERE user_id = %s
-                """, (user_id,))
-                cfg = cur.fetchone()
-                # Solo si tiene explícitamente configurado full o trial activo
-                if cfg and cfg.get("subscription_status"):
-                    uf = cfg
-            except Exception:
-                pass
-
-        # Si el usuario NO tiene ningún registro asignado a EnvioBot Full:
-        if not uf:
-            return {
-                "has_full_access": False,
-                "is_active": False,
-                "is_blocked": False,
-                "is_expired": False,
-                "subscription_status": "not_subscribed",
-                "plan_tier": "none",
-                "plan_name": "Sin suscripción a Full",
-                "can_start_trial": True,
-                "trial_days_left": 0,
-                "trial_ends_at": None,
-                "admin_notes": user_notes,
-                "limits": PLAN_LIMITS["trial"]
-            }
-
-        # Verificar bloqueo a nivel de servicio
-        if bool(uf.get("is_blocked", 0)):
-            return {
-                "has_full_access": False,
-                "is_active": False,
-                "is_blocked": True,
-                "is_expired": False,
-                "subscription_status": "blocked",
-                "plan_tier": uf.get("plan_tier") or "trial",
-                "plan_name": "Acceso a Full Bloqueado",
-                "can_start_trial": False,
-                "trial_days_left": 0,
-                "trial_ends_at": None,
-                "admin_notes": uf.get("admin_notes") or user_notes,
-                "limits": PLAN_LIMITS["trial"]
-            }
-
-        # El usuario tiene registro de EnvioBot Full
-        is_active = bool(uf.get("is_active", 1))
-        status = (uf.get("status") or uf.get("subscription_status") or "trial").lower()
-        plan_tier = (uf.get("plan_tier") or "trial").lower()
-        limits = PLAN_LIMITS.get(plan_tier, PLAN_LIMITS["trial"])
-
-        expires_at = uf.get("expires_at") or uf.get("trial_ends_at")
-        trial_days_left = 0
-        is_expired = False
-
-        if expires_at:
-            delta = expires_at - datetime.utcnow()
-            trial_days_left = max(0, delta.days)
-            if delta.total_seconds() <= 0:
-                is_expired = True
-                is_active = False
-
-        # Si está explícitamente suspendido o cancelado
-        if status in ("cancelled", "suspended", "expired"):
-            is_active = False
-
-        has_access = bool(is_active and not is_expired)
-
+    if not u:
         return {
-            "has_full_access": has_access,
-            "is_active": is_active,
+            "has_full_access": False,
+            "is_active": False,
             "is_blocked": False,
-            "is_expired": is_expired,
-            "subscription_status": "expired" if is_expired else status,
-            "plan_tier": plan_tier,
-            "plan_name": limits["name"],
-            "trial_days_left": trial_days_left,
-            "trial_ends_at": expires_at.isoformat() if expires_at else None,
-            "can_start_trial": False,  # ya utilizó o tiene asignado registro
-            "admin_notes": uf.get("admin_notes") or user_notes,
-            "limits": limits
+            "is_expired": False,
+            "subscription_status": "not_found",
+            "plan_tier": "none",
+            "plan_name": "Usuario no encontrado",
+            "can_start_trial": True,
+            "trial_days_left": 0,
+            "trial_ends_at": None,
+            "admin_notes": "",
+            "has_pedidos": False,
+            "has_full": False,
+            "limits": PLAN_LIMITS["trial"]
         }
+
+    is_blocked = bool(u.get("is_blocked", 0))
+    if is_blocked:
+        return {
+            "has_full_access": False,
+            "is_active": False,
+            "is_blocked": True,
+            "is_expired": False,
+            "subscription_status": "blocked",
+            "plan_tier": "none",
+            "plan_name": "Usuario Bloqueado",
+            "can_start_trial": False,
+            "trial_days_left": 0,
+            "trial_ends_at": None,
+            "admin_notes": u.get("admin_notes", ""),
+            "has_pedidos": bool(u.get("has_pedidos", 1)),
+            "has_full": False,
+            "limits": PLAN_LIMITS["trial"]
+        }
+
+    has_full = bool(u.get("has_full", 0))
+    return {
+        "has_full_access": has_full,
+        "is_active": has_full,
+        "is_blocked": False,
+        "is_expired": False,
+        "subscription_status": "active" if has_full else "not_subscribed",
+        "plan_tier": "pro" if has_full else "none",
+        "plan_name": "EnvioBot Full" if has_full else "Sin acceso a Full",
+        "can_start_trial": not has_full,
+        "trial_days_left": 30 if has_full else 0,
+        "trial_ends_at": None,
+        "admin_notes": u.get("admin_notes", ""),
+        "has_pedidos": bool(u.get("has_pedidos", 1)),
+        "has_full": has_full,
+        "limits": PLAN_LIMITS["pro"] if has_full else PLAN_LIMITS["trial"]
+    }
 
 def get_user_plan_info(user_id, conn):
     """Alias compatible con llamadas previas."""
@@ -369,38 +295,76 @@ def register():
 
     conn = get_db()
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM users WHERE email=%s", (email,))
-        if cur.fetchone():
-            conn.close()
-            return jsonify({"ok": False, "error": "El email ya está registrado. Podés iniciar sesión directamente."}), 400
-
-        # Crear usuario
         cur.execute("""
-            INSERT INTO users (email, password_hash, full_name, business_name, platform)
-            VALUES (%s, %s, %s, %s, 'ml')
+            SELECT id, email, password_hash, full_name, business_name, 
+                   COALESCE(is_blocked, 0) AS is_blocked,
+                   COALESCE(has_pedidos, 1) AS has_pedidos,
+                   COALESCE(has_full, 0) AS has_full
+            FROM users WHERE email=%s LIMIT 1
+        """, (email,))
+        existing_user = cur.fetchone()
+
+        if existing_user:
+            # El email ya existe en EnvioBot (por ejemplo, cliente de Pedidos)
+            if existing_user.get("is_blocked"):
+                conn.close()
+                return jsonify({"ok": False, "blocked": True, "error": "Tu cuenta se encuentra bloqueada por la administración. Comunicate con soporte."}), 403
+
+            # Validar si usó la misma contraseña
+            if verify_pw(password, existing_user["password_hash"]):
+                user_id = existing_user["id"]
+                # Habilitar Full con un tilde
+                cur.execute("UPDATE users SET has_full = 1 WHERE id = %s", (user_id,))
+                
+                # Cuentas MeLi vinculadas
+                cur.execute("""
+                    SELECT id, ml_user_id, ml_nickname,
+                           (ml_token_expires_at > UNIX_TIMESTAMP()) AS is_valid
+                    FROM ml_credentials WHERE user_id = %s ORDER BY id ASC
+                """, (user_id,))
+                ml_accounts = cur.fetchall() or []
+
+                conn.close()
+                token = create_access_token(identity=str(user_id))
+                return jsonify({
+                    "ok": True,
+                    "token": token,
+                    "existing_user_linked": True,
+                    "message": "Detectamos tu cuenta existente de EnvioBot. Se habilitó EnvioBot Full con tu contraseña habitual.",
+                    "user": {
+                        "id": user_id,
+                        "email": existing_user["email"],
+                        "full_name": existing_user["full_name"],
+                        "business_name": existing_user["business_name"],
+                        "is_admin": is_admin_user(user_id),
+                        "is_blocked": False,
+                        "has_full_access": True,
+                        "has_pedidos": bool(existing_user.get("has_pedidos", 1)),
+                        "has_full": True,
+                        "subscription_status": "active",
+                        "can_start_trial": False,
+                        "plan_tier": "full",
+                        "plan_name": "EnvioBot Full",
+                        "trial_days_left": 30,
+                        "ml_accounts": ml_accounts
+                    },
+                    "requires_ml_connect": len(ml_accounts) == 0
+                }), 200
+            else:
+                conn.close()
+                return jsonify({
+                    "ok": False,
+                    "already_registered": True,
+                    "error": "Ya tenés una cuenta en EnvioBot con este correo. Ingresá la misma contraseña que usás en EnvioBot Pedidos para activar Full."
+                }), 400
+
+        # Crear nuevo usuario si no existía previamente
+        cur.execute("""
+            INSERT INTO users (email, password_hash, full_name, business_name, platform, has_pedidos, has_full)
+            VALUES (%s, %s, %s, %s, 'ml', 0, 1)
         """, (email, hash_pw(password), full_name, business_name))
         user_id = cur.lastrowid
 
-        # 30 DÍAS DE PRUEBA GRATIS DE ENVIOBOT FULL
-        trial_ends_at = datetime.utcnow() + timedelta(days=30)
-        try:
-            cur.execute("SELECT id FROM features WHERE feature_code='enviobot_full' LIMIT 1")
-            feat = cur.fetchone()
-            if not feat:
-                cur.execute("INSERT INTO features (feature_code, feature_name, description, is_active) VALUES ('enviobot_full', 'EnvioBot Full', 'Monitoreo de stock Full y reposición', 1)")
-                feat_id = cur.lastrowid
-            else:
-                feat_id = feat["id"]
-
-            cur.execute("""
-                INSERT INTO user_features (user_id, feature_id, is_active, plan_tier, status, expires_at, created_at, updated_at)
-                VALUES (%s, %s, 1, 'trial', 'trial', %s, NOW(), NOW())
-                ON DUPLICATE KEY UPDATE is_active=1, plan_tier='trial', status='trial', expires_at=%s, updated_at=NOW()
-            """, (user_id, feat_id, trial_ends_at, trial_ends_at))
-        except Exception as e:
-            pass
-
-        # Configuración por defecto de stock
         cur.execute("""
             INSERT IGNORE INTO user_settings (user_id, alert_email)
             VALUES (%s, %s)
@@ -411,15 +375,22 @@ def register():
     return jsonify({
         "ok": True,
         "token": token,
+        "existing_user_linked": False,
+        "message": "Cuenta creada con éxito. Activamos tu prueba en EnvioBot Full.",
         "user": {
             "id": user_id,
             "email": email,
             "full_name": full_name,
+            "business_name": business_name,
+            "is_admin": is_admin_user(user_id),
+            "is_blocked": False,
             "has_full_access": True,
-            "subscription_status": "trial",
+            "has_pedidos": False,
+            "has_full": True,
+            "subscription_status": "active",
             "can_start_trial": False,
-            "plan_tier": "trial",
-            "plan_name": "Prueba Gratis (30 días)",
+            "plan_tier": "full",
+            "plan_name": "EnvioBot Full",
             "trial_days_left": 30,
             "ml_accounts": []
         },
@@ -578,26 +549,9 @@ def activate_full_trial():
             "error": "Tu período de prueba de 30 días de EnvioBot Full ya venció. Contactate con nosotros o desde admin.enviobot.com.ar para activar tu plan."
         }), 400
 
-    trial_ends_at = datetime.utcnow() + timedelta(days=30)
     with conn.cursor() as cur:
-        # Asegurar feature 'enviobot_full'
-        cur.execute("SELECT id FROM features WHERE feature_code='enviobot_full' LIMIT 1")
-        feat = cur.fetchone()
-        if not feat:
-            cur.execute("INSERT INTO features (feature_code, feature_name, description, is_active) VALUES ('enviobot_full', 'EnvioBot Full', 'Monitoreo de stock Full y reposición', 1)")
-            feat_id = cur.lastrowid
-        else:
-            feat_id = feat["id"]
-
-        # Insertar o actualizar user_features
-        cur.execute("""
-            INSERT INTO user_features (user_id, feature_id, is_active, plan_tier, status, expires_at, created_at, updated_at)
-            VALUES (%s, %s, 1, 'trial', 'trial', %s, NOW(), NOW())
-            ON DUPLICATE KEY UPDATE is_active=1, plan_tier='trial', status='trial', expires_at=%s, updated_at=NOW()
-        """, (user_id, feat_id, trial_ends_at, trial_ends_at))
-
+        cur.execute("UPDATE users SET has_full = 1 WHERE id = %s", (user_id,))
         cur.execute("INSERT IGNORE INTO user_settings (user_id) VALUES (%s)", (user_id,))
-
     conn.close()
 
     conn2 = get_db()
@@ -606,7 +560,7 @@ def activate_full_trial():
 
     return jsonify({
         "ok": True,
-        "message": "¡Tus 30 días de prueba gratis en EnvioBot Full están activos!",
+        "message": "¡EnvioBot Full habilitado con éxito!",
         "requires_ml_connect": True,
         "plan_info": new_sub
     }), 200
@@ -1475,7 +1429,7 @@ def test_email():
 @app.route("/api/full/admin/clients", methods=["GET"])
 @jwt_required()
 def admin_get_clients():
-    """Lista todos los clientes con su estado de Full, bloqueo y observaciones."""
+    """Lista todos los clientes con su estado de Pedidos, Full, bloqueo y observaciones."""
     user_id = int(get_jwt_identity())
     if not is_admin_user(user_id):
         return jsonify({"ok": False, "error": "Acceso restringido a administradores."}), 403
@@ -1485,69 +1439,61 @@ def admin_get_clients():
         cur.execute("""
             SELECT 
                 u.id, u.email, u.full_name, u.business_name,
+                COALESCE(u.has_pedidos, 1) AS has_pedidos,
+                COALESCE(u.has_full, 0) AS has_full,
                 COALESCE(u.is_blocked, 0) AS is_blocked,
                 COALESCE(u.admin_notes, '') AS admin_notes,
-                uf.id AS uf_id,
-                COALESCE(uf.is_active, 0) AS has_full,
-                COALESCE(uf.plan_tier, 'ninguno') AS full_plan_tier,
-                COALESCE(uf.status, 'inactivo') AS full_status,
-                uf.expires_at AS full_expires_at,
                 (SELECT COUNT(*) FROM ml_credentials mc WHERE mc.user_id = u.id) AS ml_accounts_count
             FROM users u
-            LEFT JOIN features f ON f.feature_code = 'enviobot_full'
-            LEFT JOIN user_features uf ON uf.user_id = u.id AND uf.feature_id = f.id
             ORDER BY u.id ASC
         """)
         clients = cur.fetchall()
     conn.close()
 
     for c in clients:
-        c["is_blocked"] = bool(c.get("is_blocked", 0))
+        c["has_pedidos"] = bool(c.get("has_pedidos", 1))
         c["has_full"] = bool(c.get("has_full", 0))
-        if c.get("full_expires_at"):
-            c["full_expires_at"] = c["full_expires_at"].strftime("%Y-%m-%d %H:%M")
-        else:
-            c["full_expires_at"] = "—"
+        c["is_blocked"] = bool(c.get("is_blocked", 0))
 
     return jsonify({"ok": True, "clients": clients}), 200
 
 @app.route("/api/full/admin/clients/<int:target_id>/toggle-full", methods=["POST"])
 @jwt_required()
 def admin_toggle_full(target_id):
-    """Activa o quita EnvioBot Full para un cliente. Si se desmarca, el cliente pierde el acceso y debe registrarse de nuevo."""
+    """Activa o desactiva EnvioBot Full para un cliente."""
     user_id = int(get_jwt_identity())
     if not is_admin_user(user_id):
         return jsonify({"ok": False, "error": "Acceso restringido a administradores."}), 403
 
     data = request.get_json() or {}
     enable = bool(data.get("enable", False))
-    plan_tier = data.get("plan_tier", "pro")
 
     conn = get_db()
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM features WHERE feature_code='enviobot_full' LIMIT 1")
-        feat = cur.fetchone()
-        if not feat:
-            cur.execute("INSERT INTO features (feature_code, feature_name, description, is_active) VALUES ('enviobot_full', 'EnvioBot Full', 'Monitoreo de stock Full y reposición', 1)")
-            feat_id = cur.lastrowid
-        else:
-            feat_id = feat["id"]
-
-        if enable:
-            expires_at = datetime.utcnow() + timedelta(days=30)
-            cur.execute("""
-                INSERT INTO user_features (user_id, feature_id, is_active, plan_tier, status, expires_at, created_at, updated_at)
-                VALUES (%s, %s, 1, %s, 'active', %s, NOW(), NOW())
-                ON DUPLICATE KEY UPDATE is_active=1, plan_tier=%s, status='active', expires_at=%s, updated_at=NOW()
-            """, (target_id, feat_id, plan_tier, expires_at, plan_tier, expires_at))
-            msg = "EnvioBot Full habilitado para este cliente."
-        else:
-            # Desmarcar: eliminar de user_features para que deba volver a registrarse
-            cur.execute("DELETE FROM user_features WHERE user_id=%s AND feature_id=%s", (target_id, feat_id))
-            msg = "EnvioBot Full deshabilitado. El cliente deberá volver a registrarse/activar para usarlo."
+        cur.execute("UPDATE users SET has_full=%s WHERE id=%s", (1 if enable else 0, target_id))
     conn.close()
 
+    msg = "EnvioBot Full habilitado para este cliente." if enable else "EnvioBot Full deshabilitado para este cliente."
     return jsonify({"ok": True, "message": msg, "has_full": enable}), 200
+
+@app.route("/api/full/admin/clients/<int:target_id>/toggle-pedidos", methods=["POST"])
+@jwt_required()
+def admin_toggle_pedidos(target_id):
+    """Activa o desactiva EnvioBot Pedidos para un cliente."""
+    user_id = int(get_jwt_identity())
+    if not is_admin_user(user_id):
+        return jsonify({"ok": False, "error": "Acceso restringido a administradores."}), 403
+
+    data = request.get_json() or {}
+    enable = bool(data.get("enable", False))
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE users SET has_pedidos=%s WHERE id=%s", (1 if enable else 0, target_id))
+    conn.close()
+
+    msg = "EnvioBot Pedidos habilitado para este cliente." if enable else "EnvioBot Pedidos deshabilitado."
+    return jsonify({"ok": True, "message": msg, "has_pedidos": enable}), 200
 
 @app.route("/api/full/admin/clients/<int:target_id>/toggle-block", methods=["POST"])
 @jwt_required()
@@ -1563,7 +1509,6 @@ def admin_toggle_block(target_id):
     conn = get_db()
     with conn.cursor() as cur:
         cur.execute("UPDATE users SET is_blocked=%s WHERE id=%s", (1 if is_blocked else 0, target_id))
-        cur.execute("UPDATE user_features SET is_blocked=%s WHERE user_id=%s", (1 if is_blocked else 0, target_id))
     conn.close()
 
     status_str = "bloqueado" if is_blocked else "desbloqueado"
@@ -1583,7 +1528,6 @@ def admin_save_notes(target_id):
     conn = get_db()
     with conn.cursor() as cur:
         cur.execute("UPDATE users SET admin_notes=%s WHERE id=%s", (notes, target_id))
-        cur.execute("UPDATE user_features SET admin_notes=%s WHERE user_id=%s", (notes, target_id))
     conn.close()
 
     return jsonify({"ok": True, "message": "Observaciones guardadas con éxito.", "admin_notes": notes}), 200
