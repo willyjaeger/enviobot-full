@@ -1585,6 +1585,132 @@ async function handleAuthSubmit(e) {
     }
 }
 
+// ── Manejo de Login / Registro Directo en la Pantalla Principal ───
+let currentMainAuthTab = 'login';
+
+function cambiarAuthMain(tab) {
+    currentMainAuthTab = tab;
+    const tabLogin = document.getElementById('tabMainLogin');
+    const tabReg = document.getElementById('tabMainRegister');
+    const nameGroup = document.getElementById('mainNameGroup');
+    const btnSubmit = document.getElementById('btnMainAuthSubmit');
+    const toggleText = document.getElementById('mainAuthToggleText');
+    const toggleLink = document.getElementById('mainAuthToggleLink');
+    const errBox = document.getElementById('mainAuthErrorMsg');
+    if (errBox) errBox.style.display = 'none';
+
+    if (tab === 'login') {
+        if (tabLogin) {
+            tabLogin.style.color = 'var(--accent)';
+            tabLogin.style.fontWeight = '700';
+            tabLogin.style.borderBottom = '2px solid var(--accent)';
+        }
+        if (tabReg) {
+            tabReg.style.color = 'var(--text2)';
+            tabReg.style.fontWeight = '600';
+            tabReg.style.borderBottom = 'none';
+        }
+        if (nameGroup) nameGroup.style.display = 'none';
+        if (btnSubmit) btnSubmit.textContent = 'Ingresar a EnvioBot Full';
+        if (toggleText) toggleText.textContent = '¿No tenés cuenta todavía?';
+        if (toggleLink) toggleLink.textContent = 'Crear cuenta (30 días gratis)';
+    } else {
+        if (tabReg) {
+            tabReg.style.color = 'var(--accent)';
+            tabReg.style.fontWeight = '700';
+            tabReg.style.borderBottom = '2px solid var(--accent)';
+        }
+        if (tabLogin) {
+            tabLogin.style.color = 'var(--text2)';
+            tabLogin.style.fontWeight = '600';
+            tabLogin.style.borderBottom = 'none';
+        }
+        if (nameGroup) nameGroup.style.display = 'block';
+        if (btnSubmit) btnSubmit.textContent = 'Crear cuenta (30 días de prueba gratis)';
+        if (toggleText) toggleText.textContent = '¿Ya tenés una cuenta registrada?';
+        if (toggleLink) toggleLink.textContent = 'Iniciar sesión aquí';
+    }
+}
+
+function toggleMainAuthMode(e) {
+    if (e) e.preventDefault();
+    cambiarAuthMain(currentMainAuthTab === 'login' ? 'register' : 'login');
+}
+
+async function handleMainAuthSubmit(e) {
+    e.preventDefault();
+    const email = document.getElementById('mainAuthEmail').value.trim();
+    const password = document.getElementById('mainAuthPassword').value.trim();
+    const name = document.getElementById('mainAuthName') ? document.getElementById('mainAuthName').value.trim() : '';
+    const errBox = document.getElementById('mainAuthErrorMsg');
+    const btnSubmit = document.getElementById('btnMainAuthSubmit');
+
+    btnSubmit.disabled = true;
+    btnSubmit.textContent = 'Procesando...';
+    if (errBox) errBox.style.display = 'none';
+
+    try {
+        const endpoint = currentMainAuthTab === 'login' ? `${API_BASE}/full/auth/login` : `${API_BASE}/full/auth/register`;
+        const payload = currentMainAuthTab === 'login' ? { email, password } : { email, password, full_name: name };
+
+        let res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.status === 404) {
+            const fallbackEndpoint = currentMainAuthTab === 'login' ? `${API_BASE}/auth/login` : `${API_BASE}/auth/register`;
+            res = await fetch(fallbackEndpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        }
+
+        const data = await res.json();
+        if (!data.ok) {
+            throw new Error(data.error || 'Ocurrió un error al autenticar.');
+        }
+
+        localStorage.setItem('enviobot_full_token', data.token);
+        localStorage.setItem('token', data.token);
+
+        if (data.existing_user_linked) {
+            alert(data.message || 'Detectamos tu cuenta de EnvioBot Pedidos. Se habilitó EnvioBot Full con tu contraseña habitual.');
+        }
+
+        if (data.user && data.user.has_full_access === false) {
+            currentUser = data.user;
+            actualizarBadgePlan(data.user);
+            if (data.user.can_start_trial) {
+                abrirModalActivarFull(data.user);
+            } else {
+                abrirModalSuscripcionVencida(data.user);
+            }
+            return;
+        }
+
+        if (data.requires_ml_connect || (data.user && (!data.user.ml_accounts || data.user.ml_accounts.length === 0))) {
+            abrirOnboardingMeLi();
+        }
+
+        await checkUserSession();
+        cargarDatos();
+
+    } catch (err) {
+        if (errBox) {
+            errBox.textContent = err.message;
+            errBox.style.display = 'block';
+        } else {
+            alert(err.message);
+        }
+    } finally {
+        btnSubmit.disabled = false;
+        cambiarAuthMain(currentMainAuthTab);
+    }
+}
+
 function entrarModoDemo(e) {
     if (e) e.preventDefault();
     cerrarModalAuth();
@@ -1837,14 +1963,13 @@ async function checkUserSession() {
     const viewDash = document.getElementById('viewMainDashboard');
 
     if (!token) {
-        // CLIENTE NUEVO / PRIMERA VEZ:
-        // Ocultar completamente dashboard, tablas y cualquier dato de demo
+        // MOSTRAR DIRECTAMENTE EL FORMULARIO DE LOGIN
         if (viewWelcome) viewWelcome.style.display = 'flex';
         if (viewDash) viewDash.style.display = 'none';
 
-        if (userEmailEl) userEmailEl.textContent = 'Cliente Nuevo';
+        if (userEmailEl) userEmailEl.textContent = 'Iniciar sesión';
         if (btnLogout) btnLogout.style.display = 'none';
-        if (btnLoginHeader) btnLoginHeader.style.display = 'inline-flex';
+        if (btnLoginHeader) btnLoginHeader.style.display = 'none';
         if (btnConnectHeader) btnConnectHeader.style.display = 'none';
         if (btnAdmin) btnAdmin.style.display = 'none';
         if (planBadge) planBadge.style.display = 'none';
@@ -1866,7 +1991,8 @@ async function checkUserSession() {
             localStorage.removeItem('enviobot_full_token');
             if (viewWelcome) viewWelcome.style.display = 'flex';
             if (viewDash) viewDash.style.display = 'none';
-            if (btnLoginHeader) btnLoginHeader.style.display = 'inline-flex';
+            if (userEmailEl) userEmailEl.textContent = 'Iniciar sesión';
+            if (btnLoginHeader) btnLoginHeader.style.display = 'none';
             if (btnLogout) btnLogout.style.display = 'none';
             if (btnAdmin) btnAdmin.style.display = 'none';
             return false;
