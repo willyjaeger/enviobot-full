@@ -107,9 +107,18 @@ async function cargarDatos() {
     const tbody = document.getElementById('stockTableBody');
     if (!tbody) return;
 
-    // Si no hay sesión o no hay MeLi, no cargar nada
+    // Si no hay sesión o no hay MeLi, mostrar estado para conectar cuenta
     if (!token || !currentUser || !currentUser.ml_accounts || currentUser.ml_accounts.length === 0) {
         itemsData = [];
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align: center; padding: 48px 20px; color: var(--text2);">
+                    <div style="font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 8px;">Conectá tu cuenta de Mercado Libre</div>
+                    <div style="font-size: 13px; max-width: 460px; margin: 0 auto 18px auto; line-height: 1.5;">Para consultar tu inventario real en depósito Full y calcular automáticamente tus días de stock y fechas de quiebre, vinculá tu cuenta de vendedor.</div>
+                    <button onclick="iniciarConexionMeLi()" class="btn btn-meli" style="padding: 10px 22px; font-weight: 700; font-size: 13px; cursor: pointer;">Conectar Mercado Libre</button>
+                </td>
+            </tr>
+        `;
         return;
     }
 
@@ -2024,21 +2033,22 @@ async function checkUserSession() {
                 return false;
             }
 
-            // SI EL USUARIO NO TIENE CUENTA DE MERCADOLIBRE CONECTADA AÚN:
-            if (!data.user.ml_accounts || data.user.ml_accounts.length === 0) {
-                if (viewWelcome) viewWelcome.style.display = 'flex';
-                if (viewDash) viewDash.style.display = 'none';
-                return false;
-            }
-
-            // SI TIENE CUENTA DE MERCADOLIBRE CONECTADA:
+            // Usuario con sesión iniciada: ocultar pantalla de login y mostrar dashboard
             if (viewWelcome) viewWelcome.style.display = 'none';
             if (viewDash) viewDash.style.display = 'block';
 
-            // Verificar si debe mostrar el Wizard de Configuración Inicial
-            const wizCompleted = localStorage.getItem('enviobot_wizard_completed_' + currentUser.id) || localStorage.getItem('enviobot_wizard_completed');
-            if (!wizCompleted) {
-                abrirWizardOnboarding();
+            const trialBanner = document.getElementById('trialWelcomeBanner');
+            if (!data.user.ml_accounts || data.user.ml_accounts.length === 0) {
+                if (trialBanner) trialBanner.style.display = 'flex';
+                if (btnConnectHeader) btnConnectHeader.style.display = 'inline-flex';
+            } else {
+                if (trialBanner) trialBanner.style.display = 'none';
+                if (btnConnectHeader) btnConnectHeader.style.display = 'inline-flex';
+                // Verificar si debe mostrar el Wizard de Configuración Inicial
+                const wizCompleted = localStorage.getItem('enviobot_wizard_completed_' + currentUser.id) || localStorage.getItem('enviobot_wizard_completed');
+                if (!wizCompleted) {
+                    abrirWizardOnboarding();
+                }
             }
 
             return true;
