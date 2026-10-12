@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EnvioBot Full · Control de Stock</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#f5a623">
+    <meta name="theme-color" content="#111318">
     <link rel="icon" type="image/svg+xml" href="img/cajita_icono.svg">
     <link rel="icon" type="image/png" href="img/icon.png">
     <link rel="apple-touch-icon" href="img/icon.png">
@@ -28,7 +28,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261011_8">
+    <link rel="stylesheet" href="css/style.css?v=20261011_9">
 </head>
 <body>
 
@@ -275,13 +275,14 @@
                     <div class="nested-box">
                         <div class="nested-title">
                             <span>Estado de Conexión</span>
-                            <span class="badge badge-ok">Activo</span>
+                            <span id="sidebarConnStatusBadge" class="badge badge-ok">Activo</span>
                         </div>
                         <div style="font-size: 13.5px; color: var(--text2); line-height: 1.8;">
-                            <div>Cuenta: <strong style="color: var(--text);">TIENDA_OFICIAL_AR</strong></div>
+                            <div>Cuenta: <strong id="sidebarAccountName" style="color: var(--text);">Cargando...</strong></div>
                             <div>Depósito: <strong id="sidebarDepotName" style="color: var(--text);">Mercado Envíos Full (Bs As)</strong></div>
-                            <div>Último chequeo: <span id="lastSyncText">Hace 12 min</span></div>
+                            <div>Último chequeo: <span id="lastSyncText">Al instante</span></div>
                         </div>
+
 
                         <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
                             <button id="btnCheckStockNow" onclick="sincronizarAhora()" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; font-weight: 700; font-size: 13px;">
@@ -966,8 +967,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261011_8"></script>
-    <script src="js/notifications.js?v=20261011_8"></script>
-    <script src="js/app.js?v=20261011_8"></script>
+    <script src="js/theme.js?v=20261011_9"></script>
+    <script src="js/notifications.js?v=20261011_9"></script>
+    <script src="js/app.js?v=20261011_9"></script>
 </body>
 </html>

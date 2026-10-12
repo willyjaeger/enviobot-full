@@ -86,8 +86,9 @@ let selectedItem = null;
 let colectaSelectedItems = new Map(); // id -> units
 
 function getToken() {
-    return localStorage.getItem('enviobot_full_token') || '';
+    return localStorage.getItem('enviobot_full_token') || localStorage.getItem('token') || '';
 }
+
 
 // ── Cambiar depósito activo ─────────────────────────────────────────
 function cambiarDeposito(depotId) {
@@ -1771,26 +1772,55 @@ async function iniciarConexionMeLi() {
 function renderMeLiAccounts(accounts) {
     const select = document.getElementById('mlAccountSelect');
     const btnConnect = document.getElementById('btnConnectMeLiHeader');
-    if (!select) return;
+    const sidebarAcc = document.getElementById('sidebarAccountName');
+    const sidebarStatus = document.getElementById('sidebarConnStatusBadge');
 
-    select.innerHTML = '<option value="all">Todas las cuentas MeLi</option>';
-    if (accounts && accounts.length > 0) {
-        accounts.forEach(acc => {
-            const opt = document.createElement('option');
-            opt.value = acc.id;
-            opt.textContent = `Cuenta: ${acc.ml_nickname || acc.ml_user_id}`;
-            select.appendChild(opt);
-        });
-        select.style.display = accounts.length > 1 ? 'inline-block' : 'none';
-        if (btnConnect) btnConnect.style.display = 'inline-block';
-    } else {
-        select.style.display = 'none';
-        if (btnConnect) btnConnect.style.display = 'inline-block';
+    if (select) {
+        select.innerHTML = '<option value="all">Todas las cuentas MeLi</option>';
+        if (accounts && accounts.length > 0) {
+            accounts.forEach(acc => {
+                const opt = document.createElement('option');
+                opt.value = acc.id;
+                opt.textContent = `Cuenta: ${acc.ml_nickname || acc.ml_user_id}`;
+                select.appendChild(opt);
+            });
+            select.style.display = accounts.length > 1 ? 'inline-block' : 'none';
+            if (btnConnect) btnConnect.style.display = 'inline-block';
+        } else {
+            select.style.display = 'none';
+            if (btnConnect) btnConnect.style.display = 'inline-block';
+        }
+    }
+
+    if (sidebarAcc) {
+        if (!accounts || accounts.length === 0) {
+            sidebarAcc.textContent = 'Sin vincular';
+            if (sidebarStatus) {
+                sidebarStatus.className = 'badge badge-warn';
+                sidebarStatus.textContent = 'Sin vincular';
+            }
+        } else {
+            if (sidebarStatus) {
+                sidebarStatus.className = 'badge badge-ok';
+                sidebarStatus.textContent = 'Activo';
+            }
+            if (currentAccount && currentAccount !== 'all') {
+                const found = accounts.find(a => String(a.id) === String(currentAccount));
+                sidebarAcc.textContent = found ? (found.ml_nickname || found.ml_user_id) : (accounts[0].ml_nickname || accounts[0].ml_user_id);
+            } else if (accounts.length === 1) {
+                sidebarAcc.textContent = accounts[0].ml_nickname || accounts[0].ml_user_id;
+            } else {
+                sidebarAcc.textContent = accounts.map(a => a.ml_nickname || a.ml_user_id).join(', ');
+            }
+        }
     }
 }
 
 function cambiarCuentaMeLi(accId) {
     currentAccount = accId;
+    if (currentUser && currentUser.ml_accounts) {
+        renderMeLiAccounts(currentUser.ml_accounts);
+    }
     cargarDatos();
 }
 

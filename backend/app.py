@@ -38,7 +38,7 @@ app = Flask(__name__, static_folder="../frontend", static_url_path="")
 CORS(app)
 
 # Configuración JWT
-app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "enviobot_full_jwt_secret_unified_2026")
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "77efb414952adef4ecf2163c0f7935b2f44126c317cec0119f4d5e97f8c5f8d2")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=30)
 jwt = JWTManager(app)
 
@@ -568,8 +568,6 @@ def activate_full_trial():
 # -------------------------------------------------------------
 # MERCADOLIBRE OAUTH PKCE (MULTICUENTA Y CONEXIÓN AL REGISTRO)
 # -------------------------------------------------------------
-_pkce_store = {}
-
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b'=').decode('ascii')
 
@@ -578,7 +576,40 @@ def generate_pkce_pair():
     code_challenge = _b64url(hashlib.sha256(code_verifier.encode('ascii')).digest())
     return code_verifier, code_challenge
 
-@app.route("/api/ml/auth/login", methods=["GET"])
+def save_oauth_state(state: str, user_id, code_verifier: str):
+    """Guarda estado OAuth PKCE en MySQL para soportar múltiples workers de Gunicorn."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM oauth_states WHERE created_at < NOW() - INTERVAL 30 MINUTE")
+            cur.execute("""
+                INSERT INTO oauth_states (state, user_id, code_verifier)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), code_verifier=VALUES(code_verifier), created_at=NOW()
+            """, (state, user_id, code_verifier))
+    except Exception as e:
+        print(f"Error guardando oauth_state: {e}")
+    finally:
+        conn.close()
+
+def pop_oauth_state(state: str):
+    """Recupera y consume de forma atómica el estado OAuth PKCE."""
+    if not state:
+        return None
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id, code_verifier FROM oauth_states WHERE state=%s", (state,))
+            row = cur.fetchone()
+            if row:
+                cur.execute("DELETE FROM oauth_states WHERE state=%s", (state,))
+            return row
+    except Exception as e:
+        print(f"Error recuperando oauth_state: {e}")
+        return None
+    finally:
+        conn.close()
+
 @app.route("/api/ml/auth/login", methods=["GET"])
 @app.route("/api/full/ml/auth/login", methods=["GET"])
 def ml_auth_login():
@@ -610,11 +641,7 @@ def ml_auth_login():
     code_verifier, code_challenge = generate_pkce_pair()
     state = secrets.token_urlsafe(24)
 
-    _pkce_store[state] = {
-        'user_id': user_id,
-        'code_verifier': code_verifier,
-        'created_at': time.time()
-    }
+    save_oauth_state(state, user_id, code_verifier)
 
     params = {
         'response_type': 'code',
@@ -638,11 +665,12 @@ def ml_auth_callback():
     code = request.args.get('code') or (request.get_json() or {}).get('code')
     state = request.args.get('state') or (request.get_json() or {}).get('state')
 
-    pkce = _pkce_store.pop(state, None) if state else None
+    pkce = pop_oauth_state(state)
     if not code or not pkce:
         return redirect('/full/?ml=error&msg=sesion_expirada')
 
     user_id = pkce.get('user_id')
+    code_verifier = pkce.get('code_verifier')
     try:
         r = requests.post(
             f"{MELI_API}/oauth/token",
@@ -652,7 +680,7 @@ def ml_auth_callback():
                 "client_secret": ML_CLIENT_SECRET,
                 "code": code,
                 "redirect_uri": ML_REDIRECT_URI,
-                "code_verifier": pkce["code_verifier"]
+                "code_verifier": code_verifier
             },
             headers={"Accept": "application/json"},
             timeout=15

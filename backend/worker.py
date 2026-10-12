@@ -81,7 +81,7 @@ def fetch_full_publications(access_token, meli_user_id):
     offset = 0
 
     while True:
-        url = f"{MELI_API}/users/{meli_user_id}/items/search?shipping_modes=fulfillment&limit={limit}&offset={offset}"
+        url = f"{MELI_API}/users/{meli_user_id}/items/search?logistic_type=fulfillment&limit={limit}&offset={offset}"
         try:
             r = requests.get(url, headers=headers, timeout=12)
             if r.status_code == 401:
@@ -94,13 +94,16 @@ def fetch_full_publications(access_token, meli_user_id):
             if not item_ids:
                 break
 
-            ids_chunk = ",".join(item_ids)
-            multiget_url = f"{MELI_API}/items?ids={ids_chunk}"
-            m_resp = requests.get(multiget_url, headers=headers, timeout=12)
-            if m_resp.status_code == 200:
-                for entry in m_resp.json():
-                    if entry.get("code") == 200:
-                        all_items.append(entry.get("body"))
+            # MercadoLibre /items?ids= permite un máximo estricto de 20 IDs por llamada
+            for i in range(0, len(item_ids), 20):
+                chunk = item_ids[i:i + 20]
+                ids_chunk = ",".join(chunk)
+                multiget_url = f"{MELI_API}/items?ids={ids_chunk}"
+                m_resp = requests.get(multiget_url, headers=headers, timeout=12)
+                if m_resp.status_code == 200:
+                    for entry in m_resp.json():
+                        if entry.get("code") == 200:
+                            all_items.append(entry.get("body"))
 
             offset += limit
             if offset >= data.get("paging", {}).get("total", 0):
@@ -108,6 +111,7 @@ def fetch_full_publications(access_token, meli_user_id):
         except Exception as e:
             print(f"Error consultando items Full: {e}")
             break
+
 
     return all_items
 
