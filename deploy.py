@@ -23,7 +23,7 @@ def main():
     ssh.connect('179.43.123.220', port=5375, username='root', password='Willy.48462800')
 
     cmds = [
-        "cd /var/www/enviobot-full && git pull origin main",
+        "cd /var/www/enviobot-full && git fetch origin main && git reset --hard origin/main",
         "sed -i 's/^ML_SHARED_CLIENT_ID=.*/ML_SHARED_CLIENT_ID=1845856849463362/' /var/www/enviobot-full/.env 2>/dev/null || true",
         "sed -i 's/^ML_CLIENT_SECRET=.*/ML_CLIENT_SECRET=2f2cg8ZGY4X9pLOFxgPUOAQefHQePf6q/' /var/www/enviobot-full/.env 2>/dev/null || true",
         "grep -q 'ML_SHARED_CLIENT_ID' /var/www/enviobot-full/.env || echo 'ML_SHARED_CLIENT_ID=1845856849463362' >> /var/www/enviobot-full/.env",
