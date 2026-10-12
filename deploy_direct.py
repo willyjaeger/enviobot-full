@@ -29,6 +29,10 @@ def should_exclude(rel_path):
     filename = parts[-1]
     if filename in EXCLUDE_FILES:
         return True
+    if filename.startswith(("scratch_", "check_", "test_", "inspect_")):
+        return True
+    if filename.startswith("admin_index_") and not rel_path.startswith("frontend"):
+        return True
     _, ext = os.path.splitext(filename)
     if ext.lower() in EXCLUDE_EXTS:
         return True
@@ -110,17 +114,17 @@ def main():
     ]
 
     full_cmd = " && ".join(cmds)
-    stdin, stdout, stderr = ssh.exec_command(full_cmd)
+    stdin, stdout, stderr = ssh.exec_command(full_cmd, timeout=60)
     out = stdout.read().decode("utf-8", errors="ignore").strip()
     err = stderr.read().decode("utf-8", errors="ignore").strip()
     if err and "Warning" not in err:
         print(f"      Avisos/Salida: {err}")
 
     print("\n[5/5] Verificando salud del servicio y API...")
-    _, stdout_status, _ = ssh.exec_command("systemctl is-active enviobot-full")
+    _, stdout_status, _ = ssh.exec_command("systemctl is-active enviobot-full", timeout=5)
     service_status = stdout_status.read().decode("utf-8", errors="ignore").strip()
     
-    _, stdout_api, _ = ssh.exec_command("curl -s http://127.0.0.1:5001/api/full/items -H 'Accept: application/json' || true")
+    _, stdout_api, _ = ssh.exec_command("curl -s --max-time 3 http://127.0.0.1:5001/api/full/items -H 'Accept: application/json' || true", timeout=5)
     api_response = stdout_api.read().decode("utf-8", errors="ignore").strip()
     
     ssh.close()

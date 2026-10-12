@@ -124,6 +124,13 @@ def init_verification_tables():
                 pass
 
             try:
+                cur.execute("SHOW COLUMNS FROM users LIKE 'must_change_password'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE users ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 0")
+            except Exception:
+                pass
+
+            try:
                 cur.execute("SHOW COLUMNS FROM user_features LIKE 'is_blocked'")
                 if not cur.fetchone():
                     cur.execute("ALTER TABLE user_features ADD COLUMN is_blocked BOOLEAN NOT NULL DEFAULT FALSE")
@@ -527,6 +534,8 @@ def login():
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, email, password_hash, full_name, business_name, owner_id, employee_label,
+                   COALESCE(has_pedidos, 0) AS has_pedidos, COALESCE(has_full, 0) AS has_full,
+                   COALESCE(must_change_password, 0) AS must_change_password,
                    COALESCE(is_blocked, 0) AS is_blocked, admin_notes
             FROM users
             WHERE email = %s LIMIT 1
@@ -535,6 +544,13 @@ def login():
 
         if not user or not verify_pw(password, user["password_hash"]):
             conn.close()
+            # Si el usuario ya existe en EnvioBot Pedidos y prueba con 123456
+            if user and password == "123456" and user.get("has_pedidos"):
+                return jsonify({
+                    "ok": False,
+                    "is_pedidos_user": True,
+                    "error": "Detectamos que ya tenés cuenta en EnvioBot Pedidos. Para ingresar a EnvioBot Full debés usar la contraseña habitual que utilizás en la otra aplicación (no la clave inicial 123456)."
+                }), 401
             return jsonify({"ok": False, "error": "Email o contraseña incorrectos."}), 401
 
         if user.get("is_blocked"):
@@ -558,9 +574,12 @@ def login():
     conn.close()
 
     token = create_access_token(identity=str(user_id))
+    must_change = bool(user.get("must_change_password", 0)) or (password == "123456" and not user.get("has_pedidos"))
+
     return jsonify({
         "ok": True,
         "token": token,
+        "must_change_password": must_change,
         "user": {
             "id": user["id"],
             "email": user["email"],
@@ -579,9 +598,37 @@ def login():
             "subscription_status": plan_info["subscription_status"],
             "trial_days_left": plan_info["trial_days_left"],
             "trial_ends_at": plan_info["trial_ends_at"],
+            "must_change_password": must_change,
+            "has_pedidos": bool(user.get("has_pedidos", 0)),
+            "has_full": bool(user.get("has_full", 0)),
             "ml_accounts": ml_accounts or []
         }
     }), 200
+
+@app.route("/api/auth/change-password", methods=["POST"])
+@app.route("/api/full/auth/change-password", methods=["POST"])
+@jwt_required()
+def change_user_password():
+    """Permite al usuario (o colaborador que ingresó con clave temporal) establecer su nueva clave personal."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    new_password = data.get("new_password", "").strip()
+
+    if len(new_password) < 6:
+        return jsonify({"ok": False, "error": "La nueva contraseña debe tener al menos 6 caracteres."}), 400
+    if new_password == "123456":
+        return jsonify({"ok": False, "error": "Debés elegir una contraseña personal diferente a la clave inicial 123456."}), 400
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        p_hash = hash_pw(new_password)
+        cur.execute("""
+            UPDATE users
+            SET password_hash = %s, must_change_password = 0
+            WHERE id = %s
+        """, (p_hash, user_id))
+    conn.close()
+    return jsonify({"ok": True, "message": "Contraseña actualizada exitosamente."}), 200
 
 @app.route("/api/auth/me", methods=["GET"])
 @app.route("/api/full/auth/me", methods=["GET"])
@@ -1115,11 +1162,14 @@ def get_full_items():
             inv_key = (c_item.get("inventory_id") or "").strip()
             item_key = (c_item.get("item_id") or "").strip()
 
-            in_transit_units = transit_by_inv.get(inv_key, 0) or transit_by_sku.get(sku_key, 0) or transit_by_item.get(item_key, 0)
-            c_item["in_transit_stock"] = in_transit_units
+            raw_transit_units = transit_by_inv.get(inv_key, 0) or transit_by_sku.get(sku_key, 0) or transit_by_item.get(item_key, 0)
             in_process_units = c_item.get("not_available_stock_full", 0)
             c_item["in_process_stock"] = in_process_units
-            total_incoming = in_process_units + in_transit_units
+            
+            # Si el usuario despachó 130 un y MeLi ya recibió 60 un en muelle, lo remanente en camino son 70 un
+            remaining_transit = max(0, raw_transit_units - in_process_units) if raw_transit_units > 0 else 0
+            c_item["in_transit_stock"] = remaining_transit
+            total_incoming = in_process_units + remaining_transit
             c_item["total_incoming"] = total_incoming
             total_covered_stock = stock + total_incoming
 
@@ -1838,13 +1888,17 @@ def test_email():
 @app.route("/api/full/team/members", methods=["GET"])
 @jwt_required()
 def get_team_members():
-    """Lista los colaboradores pertenecientes a la cuenta principal."""
+    """Lista los colaboradores de la cuenta y los satélites detectados en EnvioBot Pedidos."""
     user_id = int(get_jwt_identity())
     conn = get_db()
     account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
+        # Colaboradores activos en EnvioBot Full
         cur.execute("""
-            SELECT id, email, full_name, employee_label, active, created_at
+            SELECT id, email, full_name, employee_label, active, created_at,
+                   COALESCE(has_pedidos, 0) AS has_pedidos,
+                   COALESCE(has_full, 0) AS has_full,
+                   COALESCE(must_change_password, 0) AS must_change_password
             FROM users
             WHERE owner_id = %s
             ORDER BY created_at DESC
@@ -1853,71 +1907,106 @@ def get_team_members():
         for m in members:
             if m.get("created_at"):
                 m["created_at"] = str(m["created_at"])
+
+        # Usuarios satélite asociados en EnvioBot Pedidos (abono_de = account_id) que aún no tengan owner_id = account_id
+        cur.execute("""
+            SELECT id, email, full_name, employee_label,
+                   COALESCE(has_pedidos, 1) AS has_pedidos,
+                   COALESCE(has_full, 0) AS has_full
+            FROM users
+            WHERE abono_de = %s AND (owner_id IS NULL OR owner_id != %s)
+            ORDER BY full_name ASC
+        """, (account_id, account_id))
+        satellites_pedidos = cur.fetchall() or []
+
     conn.close()
-    return jsonify({"ok": True, "members": members}), 200
+    return jsonify({
+        "ok": True,
+        "members": members,
+        "satellites_pedidos": satellites_pedidos
+    }), 200
 
 @app.route("/api/full/team/invite", methods=["POST"])
 @jwt_required()
 def invite_team_member():
     """
-    Crea un acceso directo para un colaborador (ej: Fran).
-    Hereda la cuenta principal y todas sus conexiones sin re-registrarse ni conectar MeLi.
+    Invita o habilita a un colaborador para operar en EnvioBot Full.
+    - Si ya es usuario de EnvioBot (por ejemplo Francisco Jaeger en Pedidos):
+      Conserva su contraseña habitual, no entra en conflicto y se le habilita Full.
+    - Si es un usuario nuevo (no registrado):
+      Se le asigna la clave inicial (123456 por defecto) y se lo obliga a definir una nueva contraseña.
     """
     current_user_id = int(get_jwt_identity())
     data = request.get_json() or {}
     email = data.get("email", "").strip().lower()
-    full_name = data.get("full_name", "").strip() or "Colaborador"
-    password = data.get("password", "").strip()
+    full_name = data.get("full_name", "").strip()
+    password = data.get("password", "").strip() or "123456"
 
     if not email:
         return jsonify({"ok": False, "error": "El email del colaborador es obligatorio."}), 400
 
-    if not password:
-        password = secrets.token_urlsafe(8)
-
     conn = get_db()
     account_id = get_account_user_id(current_user_id, conn)
     with conn.cursor() as cur:
-        # Verificar si el email ya existe
-        cur.execute("SELECT id, owner_id FROM users WHERE email = %s", (email,))
+        # Verificar si el usuario ya existe en EnvioBot
+        cur.execute("""
+            SELECT id, email, full_name, password_hash, owner_id, abono_de,
+                   COALESCE(has_pedidos, 0) AS has_pedidos, COALESCE(has_full, 0) AS has_full
+            FROM users
+            WHERE email = %s LIMIT 1
+        """, (email,))
         existing = cur.fetchone()
-        if existing:
-            if existing.get("owner_id") == account_id:
-                p_hash = hash_pw(password)
-                cur.execute("""
-                    UPDATE users
-                    SET password_hash = %s, full_name = %s, active = 1, has_full = 1
-                    WHERE id = %s
-                """, (p_hash, full_name, existing["id"]))
-                conn.close()
-                return jsonify({
-                    "ok": True,
-                    "message": f"Se actualizó el acceso para {full_name} ({email}).",
-                    "member": {"id": existing["id"], "email": email, "full_name": full_name},
-                    "initial_password": password
-                }), 200
-            else:
-                conn.close()
-                return jsonify({"ok": False, "error": "Este email ya se encuentra registrado en el sistema con otra cuenta."}), 400
 
+        if existing:
+            # CASO 1: Ya existe en EnvioBot (ej: satélite en Pedidos abono_de=account_id o usuario previo)
+            # NO sobreescribimos su contraseña habitual
+            fn = full_name or existing.get("full_name") or "Colaborador"
+            cur.execute("""
+                UPDATE users
+                SET owner_id = %s, has_full = 1, active = 1,
+                    employee_label = COALESCE(employee_label, 'Colaborador')
+                WHERE id = %s
+            """, (account_id, existing["id"]))
+            conn.close()
+            return jsonify({
+                "ok": True,
+                "is_existing_user": True,
+                "uses_existing_password": True,
+                "message": f"{fn} ya es usuario de EnvioBot. Se habilitó su acceso a EnvioBot Full manteniendo su contraseña habitual de EnvioBot Pedidos.",
+                "member": {
+                    "id": existing["id"],
+                    "email": email,
+                    "full_name": fn,
+                    "employee_label": "Colaborador",
+                    "uses_existing_password": True
+                }
+            }), 200
+
+        # CASO 2: Usuario completamente nuevo
+        # Se asigna la clave inicial (123456) y se activa must_change_password
+        fn = full_name or "Colaborador"
         p_hash = hash_pw(password)
         cur.execute("""
-            INSERT INTO users (email, password_hash, full_name, owner_id, employee_label, has_full, has_pedidos, active)
-            VALUES (%s, %s, %s, %s, 'Colaborador', 1, 0, 1)
-        """, (email, p_hash, full_name, account_id))
+            INSERT INTO users (email, password_hash, full_name, owner_id, employee_label, has_full, has_pedidos, active, must_change_password)
+            VALUES (%s, %s, %s, %s, 'Colaborador', 1, 0, 1, 1)
+        """, (email, p_hash, fn, account_id))
         new_id = cur.lastrowid
     conn.close()
 
     return jsonify({
         "ok": True,
-        "message": f"Colaborador {full_name} habilitado correctamente.",
+        "is_existing_user": False,
+        "uses_existing_password": False,
+        "initial_password": password,
+        "must_change_password": True,
+        "message": f"Colaborador {fn} creado con clave inicial {password}. Deberá definir su contraseña personal al ingresar.",
         "member": {
             "id": new_id,
             "email": email,
-            "full_name": full_name,
-            "employee_label": "Colaborador"
-        },
-        "initial_password": password
+            "full_name": fn,
+            "employee_label": "Colaborador",
+            "uses_existing_password": False
+        }
     }), 201
 
 @app.route("/api/full/team/members/<int:member_id>", methods=["DELETE"])
