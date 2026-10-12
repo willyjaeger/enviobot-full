@@ -20,7 +20,9 @@ from whatsapp_service import (
     enviar_lote_con_demora,
     formatear_alerta_preventiva,
     formatear_alerta_colecta_hoy,
-    formatear_alerta_critica
+    formatear_alerta_critica,
+    formatear_alerta_resumen_diario,
+    obtener_configuracion_whatsapp
 )
 from email_service import enviar_alerta_stock_email, enviar_email
 
@@ -56,12 +58,12 @@ def get_db():
     )
 
 
-def ya_se_envio_alerta_hoy(conn, user_id: int, alert_type: str, item_id: str = None) -> bool:
+def ya_se_envio_alerta_hoy(conn, user_id: int, alert_type: str, item_id: str = None, horas_cooldown: int = 20) -> bool:
     """
-    Verifica si ya se envió una alerta del mismo tipo a este usuario en las últimas 20 horas.
+    Verifica si ya se envió una alerta del mismo tipo a este usuario dentro de la ventana de cooldown (por defecto 20 horas).
     Evita saturar o duplicar notificaciones en ejecuciones sucesivas del cron.
     """
-    limite = datetime.utcnow() - timedelta(hours=20)
+    limite = datetime.utcnow() - timedelta(hours=horas_cooldown)
     with conn.cursor() as cur:
         if item_id:
             cur.execute("""
@@ -212,9 +214,15 @@ def procesar_alertas_usuario(user_id: int) -> dict:
                 APP_URL
             )
 
-        # Verificar si ya se envió este tipo de alerta hoy
-        if ya_se_envio_alerta_hoy(conn, user_id, nivel_alerta):
-            logger.info(f"[Alerts Engine] Usuario {user_id} ya recibió alerta de nivel '{nivel_alerta}' hoy. Omitiendo.")
+        # Obtener configuración de WhatsApp y cadencia desde site_settings (admin)
+        wa_cfg = obtener_configuracion_whatsapp()
+        cadence = wa_cfg.get("cadence", {})
+        cooldown_hours = int(cadence.get("cooldown_hours", 20))
+        pacing_delay = int(cadence.get("pacing_delay_seconds", 3))
+
+        # Verificar si ya se envió este tipo de alerta dentro del cooldown
+        if ya_se_envio_alerta_hoy(conn, user_id, nivel_alerta, horas_cooldown=cooldown_hours):
+            logger.info(f"[Alerts Engine] Usuario {user_id} ya recibió alerta de nivel '{nivel_alerta}' en las últimas {cooldown_hours}hs. Omitiendo.")
             return resultado
 
         # Obtener destinatarios de WhatsApp configurados
@@ -232,10 +240,25 @@ def procesar_alertas_usuario(user_id: int) -> dict:
         if not telefonos and settings.get("whatsapp_phone"):
             telefonos = [settings["whatsapp_phone"]]
 
-        # 1. DISPARAR WHATSAPP
-        if telefonos:
-            logger.info(f"[Alerts Engine] Enviando WhatsApp a {len(telefonos)} destinatarios de usuario {user_id}")
-            res_wa = enviar_lote_con_demora(telefonos, texto_wa, delay_segundos=3)
+        # Sumar destinatarios administradores/globales configurados en admin.enviobot.com.ar
+        admin_recs = wa_cfg.get("recipients", [])
+        for ar in admin_recs:
+            if ar.get("active", True) and ar.get("phone"):
+                key_map = {
+                    "preventive": "notify_preventive",
+                    "warning": "notify_colecta",
+                    "critical": "notify_critical"
+                }
+                notif_flag = key_map.get(nivel_alerta, "notify_daily_digest")
+                if ar.get(notif_flag, True) or ar.get("notify_daily_digest", True):
+                    phone_clean = ar["phone"]
+                    if phone_clean not in telefonos:
+                        telefonos.append(phone_clean)
+
+        # 1. DISPARAR WHATSAPP (Si está habilitado globalmente)
+        if telefonos and wa_cfg.get("enabled", True):
+            logger.info(f"[Alerts Engine] Enviando WhatsApp a {len(telefonos)} destinatarios para usuario {user_id}")
+            res_wa = enviar_lote_con_demora(telefonos, texto_wa, delay_segundos=pacing_delay)
             resultado["mensajes_whatsapp_enviados"] = len(res_wa)
             # Registrar en log
             registrar_alerta_en_log(conn, user_id, "CONSOLIDADO", nivel_alerta, texto_wa, channel="whatsapp")
