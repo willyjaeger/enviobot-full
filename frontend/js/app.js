@@ -4070,7 +4070,15 @@ async function instalarAppEscritorio() {
 }
 
 function descargarAccesoDirectoWindows() {
-    const batContent = `@echo off\r\nchcp 65001 >nul\r\npowershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut([System.IO.Path]::Combine([System.Environment]::GetFolderPath('Desktop'), 'EnvioBot Full.lnk')); $chrome = '${env:ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe'; if (-not (Test-Path $chrome)) { $chrome = '${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe' }; if (-not (Test-Path $chrome)) { $chrome = '${env:LocalAppData}\\Google\\Chrome\\Application\\chrome.exe' }; if (-not (Test-Path $chrome)) { $chrome = '${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe' }; $s.TargetPath = $chrome; $s.Arguments = '--app=https://enviobot.com.ar/ --start-maximized'; $s.Description = 'EnvioBot Full'; $s.Save()"\r\necho Acceso directo de EnvioBot Full creado en el escritorio.\r\n`;
+    const batLines = [
+        '@echo off',
+        'chcp 65001 >nul',
+        'echo Creando acceso directo en el escritorio de Windows...',
+        'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $desktop = [System.Environment]::GetFolderPath(\'Desktop\'); $shortcutPath = [System.IO.Path]::Combine($desktop, \'EnvioBot Full.lnk\'); $chrome = \'${env:ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe\'; if (-not (Test-Path $chrome)) { $chrome = \'${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe\' }; if (-not (Test-Path $chrome)) { $chrome = \'${env:LocalAppData}\\Google\\Chrome\\Application\\chrome.exe\' }; if (-not (Test-Path $chrome)) { $chrome = \'${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe\' }; $s = $ws.CreateShortcut($shortcutPath); $s.TargetPath = $chrome; $s.Arguments = \'--app=https://enviobot.com.ar/ --start-maximized\'; $s.Description = \'EnvioBot Full\'; $s.Save(); Write-Host \'Acceso directo creado exitosamente.\'"',
+        'echo Acceso directo creado con exito en tu escritorio.',
+        'timeout /t 3 >nul'
+    ];
+    const batContent = batLines.join('\r\n') + '\r\n';
     const blob = new Blob([batContent], { type: 'application/bat' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -4078,7 +4086,7 @@ function descargarAccesoDirectoWindows() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    showToast('Descargando instalador de escritorio de 1 clic sin confirmaciones de Chrome.', 'success');
+    showToast('Descargando instalador de escritorio de 1 clic.', 'success');
 }
 
 
