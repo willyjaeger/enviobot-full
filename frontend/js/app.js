@@ -680,6 +680,13 @@ function renderizarTabla() {
             incomingBadgesHtml += `<span class="not-avail-pill" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; display: inline-block; margin-top: 3px;" title="${it.in_transit_stock} unidades despachadas en camino hacia Full">+${it.in_transit_stock} en camino</span>`;
         }
 
+        const meliCodeBadge = it.inventory_id 
+            ? `<span title="Código ML Fulfillment (WMS)" style="color: var(--accent); font-weight: 700; background: rgba(245, 166, 35, 0.12); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(245, 166, 35, 0.3); font-size: 11px;">Cód ML: ${it.inventory_id}</span>` 
+            : '';
+        const meliItemLink = it.item_id 
+            ? `<a href="${it.permalink || `https://articulo.mercadolibre.com.ar/${it.item_id}`}" target="_blank" style="color: var(--text2); text-decoration: underline; font-size: 11px;" title="Ver publicación ${it.item_id} en Mercado Libre" onclick="event.stopPropagation();">${it.item_id}</a>` 
+            : '';
+
         tr.innerHTML = `
             <td>
                 <div class="product-cell">
@@ -688,8 +695,11 @@ function renderizarTabla() {
                         <div class="product-title" title="${it.title}">
                             <span>${it.title}</span>${varTagHtml}
                         </div>
-                        <div class="product-meta">
-                            <span>SKU: <strong>${it.sku || 'Sin SKU'}</strong></span> · 
+                        <div class="product-meta" style="flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 3px;">
+                            <span>SKU: <strong>${it.sku || 'Sin SKU'}</strong></span>
+                            ${meliCodeBadge ? `<span>·</span> ${meliCodeBadge}` : ''}
+                            ${meliItemLink ? `<span>·</span> ${meliItemLink}` : ''}
+                            <span>·</span>
                             ${channelsHtml}
                         </div>
                     </div>
@@ -1185,10 +1195,9 @@ function renderizarFilasColecta() {
                     <div style="min-width: 0;">
                         <strong style="color: var(--text); font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px;">${it.title}</strong>
                         <div style="font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; margin-top: 2px;">
-                            <span>SKU: <strong>${it.sku || 'Sin SKU'}</strong></span>
-                            <span>·</span>
-                            <span>Inv: <code>${it.inventory_id || it.item_id}</code></span>
-                            ${channelBadges}
+                            <span>Cód ML: <strong style="color: var(--accent);">${it.inventory_id || it.item_id}</strong></span>
+                            ${it.item_id ? `<span>·</span><span style="color: var(--text2);">${it.item_id}</span>` : ''}
+                            ${channelBadges ? `<span>·</span> ${channelBadges}` : ''}
                             ${it.variation_name ? `<span>· <em>${it.variation_name}</em></span>` : ''}
                         </div>
                     </div>

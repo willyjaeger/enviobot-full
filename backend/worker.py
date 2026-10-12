@@ -233,48 +233,61 @@ def fetch_full_publications(access_token, meli_user_id):
     return all_flat_items
 
 def calculate_sales_velocity(access_token, meli_user_id, item_id, variation_id=None):
-    """Calcula unidades vendidas en los últimos 7, 15 y 30 días."""
+    """Calcula unidades vendidas en los últimos 7, 15 y 30 días con paginación completa."""
     headers = {"Authorization": f"Bearer {access_token}"}
     now = datetime.utcnow()
     date_from_30d = (now - timedelta(days=30)).strftime("%Y-%m-%dT00:00:00.000-00:00")
     date_to = now.strftime("%Y-%m-%dT23:59:59.000-00:00")
 
-    url = f"{MELI_API}/orders/search?seller={meli_user_id}&item={item_id}&order.date_created.from={date_from_30d}&order.date_created.to={date_to}&limit=50"
     sales_7d, sales_15d, sales_30d = 0, 0, 0
     t_7d = now - timedelta(days=7)
     t_15d = now - timedelta(days=15)
+    offset = 0
+    limit = 50
 
     try:
-        r = requests.get(url, headers=headers, timeout=12)
-        if r.status_code != 200:
-            return 0, 0, 0
+        while True:
+            url = f"{MELI_API}/orders/search?seller={meli_user_id}&item={item_id}&order.date_created.from={date_from_30d}&order.date_created.to={date_to}&limit={limit}&offset={offset}&sort=date_desc"
+            r = requests.get(url, headers=headers, timeout=12)
+            if r.status_code != 200:
+                break
 
-        orders = r.json().get("results", [])
-        for order in orders:
-            if order.get("status") in ("cancelled", "invalid"):
-                continue
-            date_created_str = order.get("date_created", "")
-            try:
-                order_dt = datetime.fromisoformat(date_created_str.replace("Z", "+00:00")).replace(tzinfo=None)
-            except Exception:
-                order_dt = now
+            data = r.json()
+            orders = data.get("results", [])
+            if not orders:
+                break
 
-            for item_ordered in order.get("order_items", []):
-                ord_item = item_ordered.get("item", {})
-                if ord_item.get("id") == item_id:
-                    # Si filtramos por variación específica
-                    if variation_id and ord_item.get("variation_id") and str(ord_item.get("variation_id")) != str(variation_id):
-                        continue
-                    qty = item_ordered.get("quantity", 1)
-                    sales_30d += qty
-                    if order_dt >= t_15d:
-                        sales_15d += qty
-                    if order_dt >= t_7d:
-                        sales_7d += qty
+            for order in orders:
+                if order.get("status") in ("cancelled", "invalid"):
+                    continue
+                date_created_str = order.get("date_created", "")
+                try:
+                    order_dt = datetime.fromisoformat(date_created_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                except Exception:
+                    order_dt = now
+
+                for item_ordered in order.get("order_items", []):
+                    ord_item = item_ordered.get("item", {})
+                    if ord_item.get("id") == item_id:
+                        # Si filtramos por variación específica
+                        if variation_id and ord_item.get("variation_id") and str(ord_item.get("variation_id")) != str(variation_id):
+                            continue
+                        qty = item_ordered.get("quantity", 1)
+                        sales_30d += qty
+                        if order_dt >= t_15d:
+                            sales_15d += qty
+                        if order_dt >= t_7d:
+                            sales_7d += qty
+
+            offset += limit
+            total_orders = data.get("paging", {}).get("total", 0)
+            if offset >= total_orders or offset >= 1000:
+                break
 
         return sales_7d, sales_15d, sales_30d
-    except Exception:
-        return 0, 0, 0
+    except Exception as e:
+        print(f"Error calculando ventas de {item_id}: {e}")
+        return sales_7d, sales_15d, sales_30d
 
 def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
     """
