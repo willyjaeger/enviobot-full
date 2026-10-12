@@ -268,13 +268,18 @@ function adaptarItemDesdeBackend(raw) {
         permalink: raw.permalink,
         current_stock: raw.current_stock_full || 0,
         not_available_stock: raw.not_available_stock_full || 0,
+        in_process_stock: raw.in_process_stock !== undefined ? raw.in_process_stock : (raw.not_available_stock_full || 0),
+        in_transit_stock: raw.in_transit_stock || 0,
+        total_incoming: raw.total_incoming || 0,
+        covered_days_left: raw.covered_days_left !== undefined ? raw.covered_days_left : null,
         lead_time_days: raw.effective_lead_time !== undefined ? raw.effective_lead_time : 5, // TIEMPO PREPARACIÓN
         transit_delay_days: raw.effective_transit !== undefined ? raw.effective_transit : 2, // DEMORA FLETE
         buffer_days: raw.effective_buffer !== undefined ? raw.effective_buffer : 2,         // COLCHÓN SEGURIDAD
         target_stock_days: raw.target_coverage_days || 30,
         vpd: raw.vpd_weighted || 0,
         channels: raw.channels || [],
-        account_nickname: raw.account_nickname || ""
+        account_nickname: raw.account_nickname || "",
+        backend_status: raw.status || 'ok'
     };
 }
 
@@ -284,6 +289,11 @@ function recalcularTodo() {
 
     itemsData.forEach(it => {
         const stock = it.current_stock;
+        const inProcess = it.in_process_stock || 0;
+        const inTransit = it.in_transit_stock || 0;
+        const totalIncoming = inProcess + inTransit;
+        const totalCoveredStock = stock + totalIncoming;
+
         const vpd = it.vpd;
         const prep = it.lead_time_days || 5;       // Tiempo para preparar/empaquetar
         const transit = it.transit_delay_days || 2; // Demora del flete / camión
@@ -292,6 +302,9 @@ function recalcularTodo() {
 
         if (vpd > 0) {
             it.days_left = Math.round((stock / vpd) * 10) / 10;
+            const coveredDays = Math.round((totalCoveredStock / vpd) * 10) / 10;
+            it.covered_days_left = coveredDays;
+
             // Fecha estimada de quiebre
             const stockoutDate = new Date(today);
             stockoutDate.setDate(stockoutDate.getDate() + Math.floor(it.days_left));
@@ -309,30 +322,51 @@ function recalcularTodo() {
                 deadlineDate.setDate(deadlineDate.getDate() + Math.floor(daysToDeadline));
             }
             it.reorder_deadline_date = deadlineDate.toISOString().split('T')[0];
+
+            // Semáforo inteligente considerando mercadería entrante (en recepción Full o en tránsito)
+            if (stock <= 0) {
+                if (inProcess > 0) {
+                    it.status = 'in_reception';
+                } else if (inTransit > 0) {
+                    it.status = 'in_transit';
+                } else {
+                    it.status = 'out_of_stock';
+                }
+            } else if (it.days_left <= (prep + transit)) {
+                if (totalIncoming > 0 && coveredDays > totalAdvance) {
+                    it.status = inProcess > 0 ? 'in_reception' : 'in_transit';
+                } else {
+                    it.status = 'critical';
+                }
+            } else if (it.days_left <= totalAdvance) {
+                if (totalIncoming > 0 && coveredDays > totalAdvance) {
+                    it.status = inProcess > 0 ? 'in_reception' : 'in_transit';
+                } else {
+                    it.status = 'warning';
+                }
+            } else {
+                it.status = 'ok';
+            }
+
+            // Unidades sugeridas para reponer restando lo que ya viene en camino o en recepción
+            const targetDays = it.target_stock_days || 30;
+            it.suggested_units = Math.max(0, Math.round((targetDays * vpd) - totalCoveredStock));
         } else {
             it.days_left = 999;
+            it.covered_days_left = 999;
             it.days_to_deadline = 999;
             it.is_overdue = false;
             it.stockout_date = null;
             it.reorder_deadline_date = null;
+            it.suggested_units = 0;
+            if (stock <= 0) {
+                if (inProcess > 0) it.status = 'in_reception';
+                else if (inTransit > 0) it.status = 'in_transit';
+                else it.status = 'out_of_stock';
+            } else {
+                it.status = 'ok';
+            }
         }
-
-        // Semáforo incorporando preparación y flete:
-        if (stock <= 0) {
-            it.status = 'out_of_stock';
-        } else if (it.days_left <= (prep + transit)) {
-            // Ya no llega a tiempo con preparación + camión antes del quiebre
-            it.status = 'critical';
-        } else if (it.days_left <= totalAdvance) {
-            // Ventana para empezar a preparar el pedido y agendar colecta
-            it.status = 'warning';
-        } else {
-            it.status = 'ok';
-        }
-
-        // Unidades sugeridas para reponer
-        const targetDays = it.target_stock_days || 30;
-        it.suggested_units = Math.max(0, Math.round((targetDays * vpd) - stock));
     });
 
     actualizarMetricas();
@@ -346,23 +380,25 @@ function recalcularTodo() {
 }
 
 function actualizarMetricas() {
-    let ok = 0, warn = 0, crit = 0, totalUnits = 0;
+    let ok = 0, warn = 0, crit = 0, inProcess = 0, totalUnits = 0;
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
 
     itemsData.forEach(it => {
         if (it.status === 'ok') ok++;
         else if (it.status === 'warning') warn++;
+        else if (it.status === 'in_reception' || it.status === 'in_transit') inProcess++;
         else crit++;
 
         const targetDays = it.target_stock_days || wh.defaultTarget || 30;
-        const faltante = Math.max(0, Math.round((targetDays * it.vpd) - it.current_stock));
-        if (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || faltante > 0) {
+        const totalCovered = it.current_stock + (it.in_process_stock || 0) + (it.in_transit_stock || 0);
+        const faltante = Math.max(0, Math.round((targetDays * it.vpd) - totalCovered));
+        if ((it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock') && faltante > 0) {
             totalUnits += faltante;
         }
     });
 
     document.getElementById('statTotal').textContent = itemsData.length;
-    document.getElementById('statOk').textContent = ok;
+    document.getElementById('statOk').textContent = ok + inProcess;
     document.getElementById('statWarning').textContent = warn;
     document.getElementById('statCritical').textContent = crit;
 
@@ -520,6 +556,10 @@ function renderizarTabla() {
             badgeHtml = '<span class="badge badge-warn">Preparar</span>';
         } else if (it.status === 'critical') {
             badgeHtml = '<span class="badge badge-danger">Crítico</span>';
+        } else if (it.status === 'in_reception') {
+            badgeHtml = `<span class="badge" style="background: rgba(168, 85, 247, 0.16); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); font-weight: 700;" title="${it.in_process_stock} un. recibidas en Villa Celina pendientes de escaneo por feriado">En Recepción Full</span>`;
+        } else if (it.status === 'in_transit') {
+            badgeHtml = `<span class="badge" style="background: rgba(59, 130, 246, 0.16); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-weight: 700;" title="${it.in_transit_stock} un. despachadas en camino hacia Full">En Tránsito</span>`;
         } else {
             badgeHtml = '<span class="badge badge-danger">Sin Stock</span>';
         }
@@ -533,7 +573,11 @@ function renderizarTabla() {
 
         // FECHA DE QUIEBRE ESTIMADA
         let quiebraElHtml = '—';
-        if (it.current_stock <= 0) {
+        if (it.status === 'in_reception') {
+            quiebraElHtml = `<span style="color: #c084fc; font-weight: 700;" title="Mercadería en depósito MeLi siendo procesada">+${it.in_process_stock} en MeLi</span>`;
+        } else if (it.status === 'in_transit') {
+            quiebraElHtml = `<span style="color: #60a5fa; font-weight: 700;" title="Envío despachado en camino">+${it.in_transit_stock} en camino</span>`;
+        } else if (it.current_stock <= 0) {
             quiebraElHtml = '<span style="color: var(--danger); font-weight: 700;">Agotado</span>';
         } else if (it.days_left >= 900 || !it.stockout_date) {
             quiebraElHtml = '<span style="color: var(--text2);">Sin ventas</span>';
@@ -545,9 +589,13 @@ function renderizarTabla() {
             quiebraElHtml = `<strong style="color: ${color};">${quiebreFecha}</strong>`;
         }
 
-        // CUÁNDO PEDIR COLECTA EN MELI (considerando tiempo de preparación + camión + buffer)
+        // CUÁNDO PEDIR COLECTA EN MELI (considerando tiempo de preparación + camión + buffer + mercadería en camino)
         let fechaColectaHtml = '—';
-        if (it.reorder_deadline_date) {
+        if (it.status === 'in_reception') {
+            fechaColectaHtml = `<span class="badge-date-normal" style="color: #c084fc; font-weight: 700;" title="Entregado en Villa Celina, pendiente de escaneo MeLi">+${it.in_process_stock} un. en ingreso</span>`;
+        } else if (it.status === 'in_transit') {
+            fechaColectaHtml = `<span class="badge-date-normal" style="color: #60a5fa; font-weight: 700;" title="Despacho en viaje hacia Full">+${it.in_transit_stock} un. en camino</span>`;
+        } else if (it.reorder_deadline_date) {
             const daysToDeadline = it.days_to_deadline !== undefined ? it.days_to_deadline : (it.days_left - totalAdvance);
             const roundedDays = Math.max(1, Math.round(daysToDeadline));
 
@@ -587,7 +635,13 @@ function renderizarTabla() {
         }
 
         const varTagHtml = it.variation_name ? `<span class="variation-tag" title="Variante">${it.variation_name}</span>` : '';
-        const notAvailHtml = it.not_available_stock > 0 ? `<span class="not-avail-pill" title="${it.not_available_stock} unidades retenidas/no aptas en Full">+${it.not_available_stock} no disponibles</span>` : '';
+        let incomingBadgesHtml = '';
+        if (it.in_process_stock > 0) {
+            incomingBadgesHtml += `<span class="not-avail-pill" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; display: inline-block; margin-top: 3px;" title="${it.in_process_stock} unidades entregadas en Villa Celina pendientes de escaneo MeLi">+${it.in_process_stock} en recepción MeLi</span>`;
+        }
+        if (it.in_transit_stock > 0) {
+            incomingBadgesHtml += `<span class="not-avail-pill" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; display: inline-block; margin-top: 3px;" title="${it.in_transit_stock} unidades despachadas en camino hacia Full">+${it.in_transit_stock} en camino</span>`;
+        }
 
         tr.innerHTML = `
             <td>
@@ -605,7 +659,7 @@ function renderizarTabla() {
                 </div>
             </td>
             <td class="num-cell">
-                <strong>${it.current_stock}</strong> un.${notAvailHtml}
+                <strong>${it.current_stock}</strong> un.${incomingBadgesHtml}
             </td>
             <td class="num-cell">${it.vpd} un./d</td>
             <td class="num-cell" style="font-weight: 700; color: ${it.days_left <= (prep + transit) ? 'var(--danger)' : 'var(--text)'};">
@@ -1350,6 +1404,16 @@ function solicitarActivacionInboundWhatsApp() {
     const telefono = "5491148462800";
     const texto = encodeURIComponent("¡Hola Guillermo! Me interesa activar el Módulo Pago de Colectas y Envíos a Full de EnvioBot para mi cuenta. ¿Cómo hacemos?");
     window.open(`https://wa.me/${telefono}?text=${texto}`, '_blank');
+}
+
+function abrirModalExplicacionColecta() {
+    const modal = document.getElementById('modalExplicacionColecta');
+    if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalExplicacionColecta() {
+    const modal = document.getElementById('modalExplicacionColecta');
+    if (modal) modal.style.display = 'none';
 }
 
 // ── Modal de Configuración General y Pestañas ───────────────────────

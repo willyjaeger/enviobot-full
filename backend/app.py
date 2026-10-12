@@ -369,6 +369,27 @@ def is_admin_user(user_id):
     email = (u.get("email") or "").lower()
     return email in ("guillermo.jaeger@gmail.com", "admin@enviobot.com.ar") or "admin" in email
 
+def get_account_user_id(user_id, conn=None):
+    """
+    Retorna el ID de la cuenta titular.
+    Si el usuario es un colaborador o empleado invitado (owner_id no nulo),
+    retorna owner_id. Si es la cuenta principal, retorna su propio ID.
+    """
+    should_close = False
+    if conn is None:
+        conn = get_db()
+        should_close = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, owner_id FROM users WHERE id=%s", (user_id,))
+            u = cur.fetchone()
+            if u and u.get("owner_id"):
+                return int(u["owner_id"])
+            return int(user_id)
+    finally:
+        if should_close:
+            conn.close()
+
 # -------------------------------------------------------------
 # RUTAS DE AUTENTICACIÓN (LOGIN / SIGNUP FACILITADO)
 # -------------------------------------------------------------
@@ -505,7 +526,7 @@ def login():
     conn = get_db()
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT id, email, password_hash, full_name, business_name,
+            SELECT id, email, password_hash, full_name, business_name, owner_id, employee_label,
                    COALESCE(is_blocked, 0) AS is_blocked, admin_notes
             FROM users
             WHERE email = %s LIMIT 1
@@ -521,17 +542,19 @@ def login():
             return jsonify({"ok": False, "blocked": True, "error": "Tu cuenta se encuentra bloqueada por la administración. Comunicate con soporte."}), 403
 
         user_id = user["id"]
-        # Cuentas de MeLi vinculadas
+        account_id = user["owner_id"] if user.get("owner_id") else user_id
+
+        # Cuentas de MeLi vinculadas (de la cuenta titular)
         cur.execute("""
             SELECT id, ml_user_id, ml_nickname,
                    (ml_token_expires_at > UNIX_TIMESTAMP()) AS is_valid
             FROM ml_credentials
             WHERE user_id = %s
             ORDER BY id ASC
-        """, (user_id,))
+        """, (account_id,))
         ml_accounts = cur.fetchall()
 
-    plan_info = get_user_plan_info(user_id, conn)
+    plan_info = get_user_plan_info(account_id, conn)
     conn.close()
 
     token = create_access_token(identity=str(user_id))
@@ -543,6 +566,8 @@ def login():
             "email": user["email"],
             "full_name": user["full_name"],
             "business_name": user["business_name"],
+            "owner_id": user.get("owner_id"),
+            "employee_label": user.get("employee_label"),
             "is_admin": is_admin_user(user_id),
             "is_blocked": bool(user.get("is_blocked", 0)),
             "admin_notes": user.get("admin_notes") or "",
@@ -566,7 +591,7 @@ def me():
     conn = get_db()
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT id, email, full_name, business_name,
+            SELECT id, email, full_name, business_name, owner_id, employee_label,
                    COALESCE(is_blocked, 0) AS is_blocked, admin_notes
             FROM users WHERE id=%s
         """, (user_id,))
@@ -579,16 +604,18 @@ def me():
             conn.close()
             return jsonify({"ok": False, "blocked": True, "error": "Tu cuenta ha sido bloqueada por la administración."}), 403
 
+        account_id = user["owner_id"] if user.get("owner_id") else user_id
+
         cur.execute("""
             SELECT id, ml_user_id, ml_nickname,
                    (ml_token_expires_at > UNIX_TIMESTAMP()) AS is_valid
             FROM ml_credentials
             WHERE user_id = %s
             ORDER BY id ASC
-        """, (user_id,))
+        """, (account_id,))
         ml_accounts = cur.fetchall()
 
-    plan_info = get_user_plan_info(user_id, conn)
+    plan_info = get_user_plan_info(account_id, conn)
     conn.close()
 
     return jsonify({
@@ -598,6 +625,8 @@ def me():
             "email": user["email"],
             "full_name": user["full_name"],
             "business_name": user["business_name"],
+            "owner_id": user.get("owner_id"),
+            "employee_label": user.get("employee_label"),
             "is_admin": is_admin_user(user_id),
             "is_blocked": bool(user.get("is_blocked", 0)),
             "admin_notes": user.get("admin_notes") or "",
@@ -866,6 +895,7 @@ def get_ml_accounts():
     """Lista las cuentas de MercadoLibre vinculadas del usuario."""
     user_id = int(get_jwt_identity())
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, ml_user_id, ml_nickname, created_at,
@@ -873,9 +903,9 @@ def get_ml_accounts():
             FROM ml_credentials
             WHERE user_id=%s
             ORDER BY id ASC
-        """, (user_id,))
+        """, (account_id,))
         accs = cur.fetchall()
-    plan_info = get_user_plan_info(user_id, conn)
+    plan_info = get_user_plan_info(account_id, conn)
     conn.close()
 
     return jsonify({
@@ -891,16 +921,17 @@ def delete_ml_account(acc_id):
     """Desvincula una cuenta de MercadoLibre y limpia su inventario asociado."""
     user_id = int(get_jwt_identity())
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     try:
         with conn.cursor() as cur:
             # 1. Eliminar pronósticos e items vinculados a esa credencial
             cur.execute("""
                 DELETE FROM forecasts 
                 WHERE item_id IN (SELECT id FROM full_items WHERE ml_credential_id=%s AND user_id=%s)
-            """, (acc_id, user_id))
-            cur.execute("DELETE FROM full_items WHERE ml_credential_id=%s AND user_id=%s", (acc_id, user_id))
+            """, (acc_id, account_id))
+            cur.execute("DELETE FROM full_items WHERE ml_credential_id=%s AND user_id=%s", (acc_id, account_id))
             # 2. Eliminar credencial de MeLi
-            cur.execute("DELETE FROM ml_credentials WHERE id=%s AND user_id=%s", (acc_id, user_id))
+            cur.execute("DELETE FROM ml_credentials WHERE id=%s AND user_id=%s", (acc_id, account_id))
         return jsonify({"ok": True, "message": "Cuenta desvinculada exitosamente."}), 200
     except Exception as e:
         print(f"Error desvinculando cuenta MeLi: {e}")
@@ -922,7 +953,8 @@ def get_full_items():
     warehouse = request.args.get("warehouse", "meli_full")
 
     conn = get_db()
-    full_sub = get_user_full_subscription(user_id, conn)
+    account_id = get_account_user_id(user_id, conn)
+    full_sub = get_user_full_subscription(account_id, conn)
     if not full_sub["has_full_access"]:
         conn.close()
         return jsonify({
@@ -934,10 +966,10 @@ def get_full_items():
         }), 403
 
     with conn.cursor() as cur:
-        cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
+        cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (account_id,))
         settings = cur.fetchone() or {"default_lead_time_days": 7, "default_safety_stock_days": 3, "target_coverage_days": 30}
 
-        cur.execute("SELECT transit_days, target_stock_days FROM warehouses WHERE user_id=%s AND is_active=1 ORDER BY id ASC LIMIT 1", (user_id,))
+        cur.execute("SELECT transit_days, target_stock_days FROM warehouses WHERE user_id=%s AND is_active=1 ORDER BY id ASC LIMIT 1", (account_id,))
         wh_row = cur.fetchone()
         default_transit = wh_row["transit_days"] if wh_row and wh_row.get("transit_days") is not None else 5
         target_cov = wh_row["target_stock_days"] if wh_row and wh_row.get("target_stock_days") is not None else settings.get("target_coverage_days", 30)
@@ -947,7 +979,7 @@ def get_full_items():
                 i.id, i.item_id, i.variation_id, i.variation_name, i.inventory_id,
                 i.sku, i.title, i.thumbnail, i.permalink, i.listing_type_id, i.is_catalog,
                 i.status AS item_status, i.current_stock_full, i.not_available_stock_full,
-                i.ml_credential_id,
+                i.ml_credential_id, i.units_per_box,
                 c.ml_nickname AS account_nickname,
                 COALESCE(i.lead_time_override, %s) AS effective_lead_time,
                 COALESCE(i.safety_stock_override, %s) AS effective_buffer,
@@ -962,7 +994,7 @@ def get_full_items():
         """
         default_lt = settings.get("default_lead_time_days", 5)
         default_ss = settings.get("default_safety_stock_days", 2)
-        params = [default_lt, default_ss, user_id]
+        params = [default_lt, default_ss, account_id]
 
         if account_filter and account_filter != "all":
             query += " AND i.ml_credential_id = %s"
@@ -1018,6 +1050,7 @@ def get_full_items():
                     "permalink": row.get("permalink"),
                     "ml_credential_id": row.get("ml_credential_id"),
                     "account_nickname": row.get("account_nickname"),
+                    "units_per_box": row.get("units_per_box") or 0,
                     "effective_lead_time": row.get("effective_lead_time") if row.get("effective_lead_time") is not None else default_lt,
                     "effective_buffer": row.get("effective_buffer") if row.get("effective_buffer") is not None else default_ss,
                     "effective_transit": default_transit,
@@ -1043,6 +1076,27 @@ def get_full_items():
                     c_item["sales_last_15d"] += (row.get("sales_last_15d") or 0)
                     c_item["sales_last_30d"] += (row.get("sales_last_30d") or 0)
 
+        # ── Mercadería en Tránsito hacia Full (Envíos Activos EnvioBot) ────────
+        cur.execute("""
+            SELECT isi.item_id, isi.inventory_id, isi.sku, SUM(isi.units_to_send) AS total_in_transit
+            FROM inbound_shipment_items isi
+            JOIN inbound_shipments s ON s.id = isi.shipment_id
+            WHERE s.user_id = %s AND s.status IN ('scheduled', 'in_transit')
+            GROUP BY isi.item_id, isi.inventory_id, isi.sku
+        """, (user_id,))
+        transit_rows = cur.fetchall()
+        transit_by_sku = {}
+        transit_by_inv = {}
+        transit_by_item = {}
+        for tr in transit_rows:
+            qty = int(tr.get("total_in_transit") or 0)
+            if tr.get("sku"):
+                transit_by_sku[tr["sku"].strip().upper()] = transit_by_sku.get(tr["sku"].strip().upper(), 0) + qty
+            if tr.get("inventory_id"):
+                transit_by_inv[tr["inventory_id"].strip()] = transit_by_inv.get(tr["inventory_id"].strip(), 0) + qty
+            if tr.get("item_id"):
+                transit_by_item[tr["item_id"].strip()] = transit_by_item.get(tr["item_id"].strip(), 0) + qty
+
         # ── Recalcular Métricas Consolidadas y Semáforos ──────────────────────────
         today = datetime.utcnow().date()
         output_items = []
@@ -1057,30 +1111,58 @@ def get_full_items():
             transit = c_item["effective_transit"]
             total_advance = lt + ss + transit
 
+            sku_key = (c_item.get("sku") or "").strip().upper()
+            inv_key = (c_item.get("inventory_id") or "").strip()
+            item_key = (c_item.get("item_id") or "").strip()
+
+            in_transit_units = transit_by_inv.get(inv_key, 0) or transit_by_sku.get(sku_key, 0) or transit_by_item.get(item_key, 0)
+            c_item["in_transit_stock"] = in_transit_units
+            in_process_units = c_item.get("not_available_stock_full", 0)
+            c_item["in_process_stock"] = in_process_units
+            total_incoming = in_process_units + in_transit_units
+            c_item["total_incoming"] = total_incoming
+            total_covered_stock = stock + total_incoming
+
             vpd = round((0.50 * (s7 / 7.0)) + (0.35 * (s15 / 15.0)) + (0.15 * (s30 / 30.0)), 2)
             c_item["vpd_weighted"] = vpd
 
             if vpd > 0:
                 days_left = round(stock / vpd, 1)
                 c_item["days_left"] = days_left
+                covered_days_left = round(total_covered_stock / vpd, 1)
+                c_item["covered_days_left"] = covered_days_left
+
                 stockout_date = today + timedelta(days=int(days_left))
                 c_item["stockout_date"] = stockout_date.isoformat()
                 days_until_prep = days_left - total_advance
                 reorder_deadline = today + timedelta(days=max(0, int(days_until_prep)))
                 c_item["reorder_deadline_date"] = reorder_deadline.isoformat()
-                c_item["suggested_restock_units"] = max(0, int(round((target_cov * vpd) - stock)))
+                c_item["suggested_restock_units"] = max(0, int(round((target_cov * vpd) - total_covered_stock)))
             else:
                 c_item["days_left"] = 999.0
+                c_item["covered_days_left"] = 999.0
                 c_item["stockout_date"] = None
                 c_item["reorder_deadline_date"] = None
                 c_item["suggested_restock_units"] = 0
 
+            # Semáforo Inteligente considerando Stock en Recepción de MeLi y en Tránsito
             if stock <= 0:
-                c_item["status"] = "out_of_stock"
+                if in_process_units > 0:
+                    c_item["status"] = "in_reception"
+                elif in_transit_units > 0:
+                    c_item["status"] = "in_transit"
+                else:
+                    c_item["status"] = "out_of_stock"
             elif c_item["days_left"] <= (lt + transit):
-                c_item["status"] = "critical"
+                if total_incoming > 0 and c_item["covered_days_left"] > total_advance:
+                    c_item["status"] = "in_reception" if in_process_units > 0 else "in_transit"
+                else:
+                    c_item["status"] = "critical"
             elif c_item["days_left"] <= total_advance:
-                c_item["status"] = "warning"
+                if total_incoming > 0 and c_item["covered_days_left"] > total_advance:
+                    c_item["status"] = "in_reception" if in_process_units > 0 else "in_transit"
+                else:
+                    c_item["status"] = "warning"
             else:
                 c_item["status"] = "ok"
 
@@ -1090,6 +1172,8 @@ def get_full_items():
         if status_filter:
             if status_filter == "action_required":
                 output_items = [x for x in output_items if x["status"] in ("warning", "critical", "out_of_stock")]
+            elif status_filter == "in_process":
+                output_items = [x for x in output_items if x["status"] in ("in_reception", "in_transit")]
             else:
                 output_items = [x for x in output_items if x["status"] == status_filter]
 
@@ -1106,15 +1190,16 @@ def get_full_items():
             output_items = filtered_by_search
 
         # Ordenamiento prioritario por urgencia y cobertura restante
-        status_priority = {'out_of_stock': 1, 'critical': 2, 'warning': 3, 'ok': 4}
-        output_items.sort(key=lambda x: (status_priority.get(x["status"], 5), x["days_left"]))
+        status_priority = {'out_of_stock': 1, 'critical': 2, 'warning': 3, 'in_transit': 4, 'in_reception': 5, 'ok': 6}
+        output_items.sort(key=lambda x: (status_priority.get(x["status"], 7), x["days_left"]))
 
         # Resumen consolidado para las tarjetas de KPI
         summary = {
             "total_monitored": len(output_items),
             "count_ok": sum(1 for x in output_items if x["status"] == "ok"),
             "count_warning": sum(1 for x in output_items if x["status"] == "warning"),
-            "count_critical": sum(1 for x in output_items if x["status"] in ("critical", "out_of_stock"))
+            "count_critical": sum(1 for x in output_items if x["status"] in ("critical", "out_of_stock")),
+            "count_in_process": sum(1 for x in output_items if x["status"] in ("in_reception", "in_transit"))
         }
 
     plan_info = get_user_plan_info(user_id, conn)
@@ -1131,25 +1216,36 @@ def get_full_items():
 @app.route("/api/full/items/<int:item_id>", methods=["PUT"])
 @jwt_required()
 def update_item(item_id):
-    """Actualiza Tiempo de Preparación (Lead Time) o Buffer particular de un producto."""
+    """Actualiza Tiempo de Preparación (Lead Time), Buffer o Unidades por Caja de un producto."""
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
     lt = data.get("lead_time_override")
     ss = data.get("safety_stock_override")
+    upb = data.get("units_per_box")
 
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
-        cur.execute("""
-            UPDATE full_items 
-            SET lead_time_override=%s, safety_stock_override=%s
-            WHERE id=%s AND user_id=%s
-        """, (lt, ss, item_id, user_id))
+        if upb is not None:
+            val_box = int(upb) if int(upb) > 0 else None
+            cur.execute("""
+                UPDATE full_items 
+                SET units_per_box=%s
+                WHERE id=%s AND user_id=%s
+            """, (val_box, item_id, account_id))
+
+        if lt is not None or ss is not None:
+            cur.execute("""
+                UPDATE full_items 
+                SET lead_time_override=%s, safety_stock_override=%s
+                WHERE id=%s AND user_id=%s
+            """, (lt, ss, item_id, account_id))
 
         # Recalcular semáforo inmediatamente
         cur.execute("SELECT item_id, variation_id, current_stock_full FROM full_items WHERE id=%s", (item_id,))
         it = cur.fetchone()
         if it:
-            cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
+            cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (account_id,))
             s = cur.fetchone() or {"default_lead_time_days": 5, "default_safety_stock_days": 2}
             effective_lt = lt if lt is not None else s.get("default_lead_time_days", 5)
             effective_ss = ss if ss is not None else s.get("default_safety_stock_days", 2)
@@ -1157,7 +1253,7 @@ def update_item(item_id):
             total_advance = effective_lt + effective_ss + transit
 
             var_val = it.get("variation_id") or ""
-            cur.execute("SELECT vpd_weighted, days_left FROM forecasts WHERE user_id=%s AND item_id=%s AND COALESCE(variation_id, '')=%s", (user_id, it["item_id"], var_val))
+            cur.execute("SELECT vpd_weighted, days_left FROM forecasts WHERE user_id=%s AND item_id=%s AND COALESCE(variation_id, '')=%s", (account_id, it["item_id"], var_val))
             fc = cur.fetchone()
             if fc and fc["vpd_weighted"] > 0:
                 dl = fc["days_left"]
@@ -1176,10 +1272,10 @@ def update_item(item_id):
                     UPDATE forecasts 
                     SET status=%s, reorder_deadline_date=%s, updated_at=NOW()
                     WHERE user_id=%s AND item_id=%s AND COALESCE(variation_id, '')=%s
-                """, (new_status, reorder_deadline, user_id, it["item_id"], var_val))
+                """, (new_status, reorder_deadline, account_id, it["item_id"], var_val))
 
     conn.close()
-    return jsonify({"ok": True, "message": "Plazos de reposición guardados."}), 200
+    return jsonify({"ok": True, "message": "Datos de reposición guardados."}), 200
 
 @app.route("/api/full/sync", methods=["POST"])
 @app.route("/api/full/sync-now", methods=["POST"])
@@ -1187,6 +1283,9 @@ def update_item(item_id):
 def trigger_sync():
     """Dispara sincronización inmediata de todas las cuentas del usuario."""
     user_id = int(get_jwt_identity())
+    conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
+    conn.close()
     from worker import sync_all_accounts_for_user
     conn = get_db()
     with conn.cursor() as cur:
@@ -1488,18 +1587,19 @@ def get_whatsapp_status():
 def get_warehouses():
     user_id = int(get_jwt_identity())
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, code, name, city, province, type, transit_days, target_stock_days
             FROM warehouses
             WHERE user_id=%s AND is_active=1
             ORDER BY id ASC
-        """, (user_id,))
+        """, (account_id,))
         whs = cur.fetchall()
 
         # Si el usuario no tiene depósitos registrados aún, crearle automáticamente Villa Celina
         if not whs:
-            cur.execute("SELECT target_coverage_days FROM user_settings WHERE user_id=%s", (user_id,))
+            cur.execute("SELECT target_coverage_days FROM user_settings WHERE user_id=%s", (account_id,))
             s = cur.fetchone()
             target_days = s["target_coverage_days"] if s and s.get("target_coverage_days") else 30
             cur.execute("""
@@ -1507,7 +1607,7 @@ def get_warehouses():
                 VALUES (%s, 'meli_full', 'Mercado Envíos Full (Villa Celina)', 'Villa Celina', 5, %s, 'meli_full', 1)
                 ON DUPLICATE KEY UPDATE 
                     name=VALUES(name), city=VALUES(city), is_active=1
-            """, (user_id, target_days))
+            """, (account_id, target_days))
             wh_id = cur.lastrowid
             whs = [{
                 "id": wh_id,
@@ -1537,13 +1637,14 @@ def create_warehouse():
         return jsonify({"ok": False, "error": "El nombre del depósito es obligatorio."}), 400
 
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO warehouses (user_id, code, name, city, transit_days, target_stock_days)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE 
                 name=VALUES(name), city=VALUES(city), transit_days=VALUES(transit_days), target_stock_days=VALUES(target_stock_days)
-        """, (user_id, code, name, city, transit_days, target_stock_days))
+        """, (account_id, code, name, city, transit_days, target_stock_days))
         new_id = cur.lastrowid
     conn.close()
     return jsonify({"ok": True, "id": new_id, "code": code, "message": "Depósito guardado."}), 201
@@ -1553,9 +1654,10 @@ def create_warehouse():
 def user_settings_route():
     user_id = int(get_jwt_identity())
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     if request.method == "GET":
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
+            cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (account_id,))
             s = cur.fetchone() or {
                 "default_lead_time_days": 7,
                 "default_safety_stock_days": 3,
@@ -1575,7 +1677,7 @@ def user_settings_route():
                 FROM warehouses
                 WHERE user_id=%s AND is_active=1
                 ORDER BY id ASC
-            """, (user_id,))
+            """, (account_id,))
             whs = cur.fetchall()
             s["warehouses"] = whs
         conn.close()
@@ -1594,7 +1696,7 @@ def user_settings_route():
 
     with conn.cursor() as cur:
         # Consultar estado anterior
-        cur.execute("SELECT alert_email, email_verified FROM user_settings WHERE user_id=%s", (user_id,))
+        cur.execute("SELECT alert_email, email_verified FROM user_settings WHERE user_id=%s", (account_id,))
         prev_s = cur.fetchone()
         prev_email = prev_s.get("alert_email") if prev_s else None
         email_is_verified = prev_s.get("email_verified", False) if prev_s else False
@@ -1618,7 +1720,7 @@ def user_settings_route():
                 whatsapp_phone = VALUES(whatsapp_phone),
                 email_verified = VALUES(email_verified)
         """, (
-            user_id,
+            account_id,
             data.get("default_lead_time_days", 7),
             data.get("default_safety_stock_days", 3),
             target_cov,
@@ -1647,16 +1749,16 @@ def user_settings_route():
                         transit_days = VALUES(transit_days),
                         target_stock_days = VALUES(target_stock_days),
                         is_active = 1
-                """, (user_id, wh_code, wh_name, wh_city, wh_transit, wh_target))
+                """, (account_id, wh_code, wh_name, wh_city, wh_transit, wh_target))
         else:
             # Si no se envió array de depósitos, actualizar el depósito activo de MeLi
             cur.execute("""
                 UPDATE warehouses 
                 SET target_stock_days = %s
                 WHERE user_id = %s AND (code = 'meli_full' OR is_active = 1)
-            """, (target_cov, user_id))
+            """, (target_cov, account_id))
 
-        cur.execute("SELECT full_name FROM users WHERE id=%s", (user_id,))
+        cur.execute("SELECT full_name FROM users WHERE id=%s", (account_id,))
         u_row = cur.fetchone()
         if u_row and u_row.get("full_name"):
             user_name = u_row["full_name"]
@@ -1728,6 +1830,113 @@ def test_email():
         "message": f"Correo de prueba enviado a {dest}",
         "detail": res
     }), 200
+
+# -------------------------------------------------------------
+# RUTAS DE EQUIPO Y COLABORADORES (INVITAR A FRAN / MIEMBROS)
+# -------------------------------------------------------------
+
+@app.route("/api/full/team/members", methods=["GET"])
+@jwt_required()
+def get_team_members():
+    """Lista los colaboradores pertenecientes a la cuenta principal."""
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, email, full_name, employee_label, active, created_at
+            FROM users
+            WHERE owner_id = %s
+            ORDER BY created_at DESC
+        """, (account_id,))
+        members = cur.fetchall() or []
+        for m in members:
+            if m.get("created_at"):
+                m["created_at"] = str(m["created_at"])
+    conn.close()
+    return jsonify({"ok": True, "members": members}), 200
+
+@app.route("/api/full/team/invite", methods=["POST"])
+@jwt_required()
+def invite_team_member():
+    """
+    Crea un acceso directo para un colaborador (ej: Fran).
+    Hereda la cuenta principal y todas sus conexiones sin re-registrarse ni conectar MeLi.
+    """
+    current_user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    email = data.get("email", "").strip().lower()
+    full_name = data.get("full_name", "").strip() or "Colaborador"
+    password = data.get("password", "").strip()
+
+    if not email:
+        return jsonify({"ok": False, "error": "El email del colaborador es obligatorio."}), 400
+
+    if not password:
+        password = secrets.token_urlsafe(8)
+
+    conn = get_db()
+    account_id = get_account_user_id(current_user_id, conn)
+    with conn.cursor() as cur:
+        # Verificar si el email ya existe
+        cur.execute("SELECT id, owner_id FROM users WHERE email = %s", (email,))
+        existing = cur.fetchone()
+        if existing:
+            if existing.get("owner_id") == account_id:
+                p_hash = hash_pw(password)
+                cur.execute("""
+                    UPDATE users
+                    SET password_hash = %s, full_name = %s, active = 1, has_full = 1
+                    WHERE id = %s
+                """, (p_hash, full_name, existing["id"]))
+                conn.close()
+                return jsonify({
+                    "ok": True,
+                    "message": f"Se actualizó el acceso para {full_name} ({email}).",
+                    "member": {"id": existing["id"], "email": email, "full_name": full_name},
+                    "initial_password": password
+                }), 200
+            else:
+                conn.close()
+                return jsonify({"ok": False, "error": "Este email ya se encuentra registrado en el sistema con otra cuenta."}), 400
+
+        p_hash = hash_pw(password)
+        cur.execute("""
+            INSERT INTO users (email, password_hash, full_name, owner_id, employee_label, has_full, has_pedidos, active)
+            VALUES (%s, %s, %s, %s, 'Colaborador', 1, 0, 1)
+        """, (email, p_hash, full_name, account_id))
+        new_id = cur.lastrowid
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "message": f"Colaborador {full_name} habilitado correctamente.",
+        "member": {
+            "id": new_id,
+            "email": email,
+            "full_name": full_name,
+            "employee_label": "Colaborador"
+        },
+        "initial_password": password
+    }), 201
+
+@app.route("/api/full/team/members/<int:member_id>", methods=["DELETE"])
+@jwt_required()
+def delete_team_member(member_id):
+    """Elimina o desactiva un colaborador del equipo."""
+    current_user_id = int(get_jwt_identity())
+    conn = get_db()
+    account_id = get_account_user_id(current_user_id, conn)
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM users WHERE id = %s AND owner_id = %s", (member_id, account_id))
+        m = cur.fetchone()
+        if not m:
+            conn.close()
+            return jsonify({"ok": False, "error": "Colaborador no encontrado en tu equipo."}), 404
+
+        cur.execute("DELETE FROM users WHERE id = %s AND owner_id = %s", (member_id, account_id))
+    conn.close()
+    return jsonify({"ok": True, "message": "Colaborador removido exitosamente."}), 200
 
 # -------------------------------------------------------------
 # RUTAS DE ADMINISTRACIÓN Y CONTROL DE CLIENTES
@@ -1871,7 +2080,8 @@ def get_inbound_status():
     user_id = int(get_jwt_identity())
     is_admin = is_admin_user(user_id)
     conn = get_db()
-    sub = get_user_full_subscription(user_id, conn)
+    account_id = get_account_user_id(user_id, conn)
+    sub = get_user_full_subscription(account_id, conn)
     has_inbound = bool(sub.get("has_inbound", False)) or is_admin
 
     with conn.cursor() as cur:
@@ -1881,7 +2091,7 @@ def get_inbound_status():
                 SUM(CASE WHEN status IN ('scheduled', 'in_transit') THEN 1 ELSE 0 END) AS active_shipments
             FROM inbound_shipments
             WHERE user_id = %s
-        """, (user_id,))
+        """, (account_id,))
         stats = cur.fetchone() or {"total_shipments": 0, "active_shipments": 0}
     conn.close()
 
@@ -1903,6 +2113,7 @@ def list_inbound_shipments():
     """Lista todos los envíos / colectas generadas por el usuario."""
     user_id = int(get_jwt_identity())
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT 
@@ -1914,7 +2125,7 @@ def list_inbound_shipments():
             FROM inbound_shipments s
             WHERE s.user_id = %s
             ORDER BY s.id DESC
-        """, (user_id,))
+        """, (account_id,))
         shipments = cur.fetchall() or []
 
         for sh in shipments:
@@ -1943,7 +2154,8 @@ def create_inbound_shipment():
     user_id = int(get_jwt_identity())
     is_admin = is_admin_user(user_id)
     conn = get_db()
-    sub = get_user_full_subscription(user_id, conn)
+    account_id = get_account_user_id(user_id, conn)
+    sub = get_user_full_subscription(account_id, conn)
     has_inbound = bool(sub.get("has_inbound", False)) or is_admin
 
     if not has_inbound:
@@ -2040,7 +2252,7 @@ def create_inbound_shipment():
                 %s, %s, %s
             )
         """, (
-            user_id, shipment_code, target_coverage_days, lead_time_days, transit_days,
+            account_id, shipment_code, target_coverage_days, lead_time_days, transit_days,
             total_items, total_units, total_boxes, packaging_type,
             carrier_notes, pickup_date, estimated_arrival
         ))
@@ -2062,6 +2274,14 @@ def create_inbound_shipment():
                 cit["sku"], cit["title"], cit["current_full_stock"], cit["vpd"], cit["suggested_units"],
                 cit["units_to_send"], cit["units_per_box"], cit["box_count"]
             ))
+
+            # Recordar units_per_box en full_items si está presente y mayor a cero
+            if cit["units_per_box"] > 0:
+                cur.execute("""
+                    UPDATE full_items
+                    SET units_per_box = %s
+                    WHERE item_id = %s AND user_id = %s
+                """, (cit["units_per_box"], cit["item_id"], account_id))
 
     conn.close()
 
@@ -2086,8 +2306,9 @@ def get_inbound_shipment_detail(shipment_id):
     """Obtiene el detalle completo de un envío inbound con sus ítems."""
     user_id = int(get_jwt_identity())
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
-        cur.execute("SELECT * FROM inbound_shipments WHERE id = %s AND user_id = %s", (shipment_id, user_id))
+        cur.execute("SELECT * FROM inbound_shipments WHERE id = %s AND user_id = %s", (shipment_id, account_id))
         shipment = cur.fetchone()
         if not shipment:
             conn.close()
@@ -2115,8 +2336,9 @@ def update_inbound_shipment_status(shipment_id):
         return jsonify({"ok": False, "error": f"Estado inválido. Opciones: {list(valid_statuses)}"}), 400
 
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
-        cur.execute("UPDATE inbound_shipments SET status = %s WHERE id = %s AND user_id = %s", (new_status, shipment_id, user_id))
+        cur.execute("UPDATE inbound_shipments SET status = %s WHERE id = %s AND user_id = %s", (new_status, shipment_id, account_id))
         affected = cur.rowcount
     conn.close()
 
@@ -2131,8 +2353,9 @@ def delete_inbound_shipment(shipment_id):
     """Elimina una colecta o envío programado."""
     user_id = int(get_jwt_identity())
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM inbound_shipments WHERE id = %s AND user_id = %s", (shipment_id, user_id))
+        cur.execute("DELETE FROM inbound_shipments WHERE id = %s AND user_id = %s", (shipment_id, account_id))
         affected = cur.rowcount
     conn.close()
 
@@ -2147,13 +2370,14 @@ def get_inbound_shipment_remito_html(shipment_id):
     """Genera la vista imprimible A4 del Remito Oficial de Colecta con códigos de barras."""
     user_id = int(get_jwt_identity())
     conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:
         cur.execute("""
             SELECT s.*, u.full_name, u.business_name, u.email, u.phone, u.cuit
             FROM inbound_shipments s
             JOIN users u ON s.user_id = u.id
             WHERE s.id = %s AND s.user_id = %s
-        """, (shipment_id, user_id))
+        """, (shipment_id, account_id))
         shipment = cur.fetchone()
         if not shipment:
             conn.close()

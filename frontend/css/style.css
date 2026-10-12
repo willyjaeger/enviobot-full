@@ -1437,8 +1437,43 @@ table.stock-table tr:hover td {
     font-size: 12.5px !important;
 }
 
+/* ── Pantalla Completa para Modal de Colectas y Envíos ── */
+.modal-card-large.modal-fullscreen {
+    position: fixed !important;
+    top: 10px !important;
+    left: 10px !important;
+    right: 10px !important;
+    bottom: 10px !important;
+    width: calc(100vw - 20px) !important;
+    height: calc(100vh - 20px) !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    margin: 0 !important;
+    border-radius: 8px !important;
+    z-index: 10000 !important;
+    padding: 16px 22px !important;
+}
 
+.modal-card-large.modal-fullscreen .modal-body-scroll {
+    flex: 1 1 auto !important;
+    max-height: calc(100vh - 200px) !important;
+    overflow-y: auto !important;
+}
 
+/* Encabezado fijo al scrollear la tabla de colecta */
+.colecta-table thead th {
+    position: sticky !important;
+    top: 0 !important;
+    background: var(--surf2) !important;
+    z-index: 20 !important;
+    box-shadow: 0 1px 0 var(--border) !important;
+}
 
-
-
+/* Botones presets compactos */
+.btn-xs {
+    padding: 2px 7px !important;
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    border-radius: 4px !important;
+    line-height: 1.4 !important;
+}

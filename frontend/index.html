@@ -28,7 +28,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261012_3">
+    <link rel="stylesheet" href="css/style.css?v=20261012_4">
 </head>
 <body>
 
@@ -491,8 +491,8 @@
 
     <!-- ── Modal de Armado y Gestión de Colectas Full (Etapa 2) ────────────────── -->
     <div class="modal-overlay" id="colectaModal">
-        <div class="modal-card modal-card-large" style="max-width: 1040px; width: 96%; max-height: 90vh;">
-            <div class="modal-header" style="margin-bottom: 12px;">
+        <div class="modal-card modal-card-large" id="colectaModalCard" style="max-width: 1040px; width: 96%; max-height: 90vh;">
+            <div class="modal-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                 <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <h3 style="color: var(--accent); font-size: 21px; font-weight: 800; margin: 0;">Colectas & Envíos a Full</h3>
@@ -502,16 +502,47 @@
                         Planificación inteligente de reposición para el Centro de Distribución de Mercado Libre Full.
                     </p>
                 </div>
-                <button class="modal-close" onclick="cerrarModalColecta()">✕</button>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnToggleResumenColecta" onclick="toggleResumenColecta()" title="Plegar o desplegar métricas superiores para maximizar el espacio de los artículos">
+                        Plegar Resumen
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btnColectaFullscreen" onclick="toggleColectaFullscreen()" title="Ver en pantalla completa">
+                        <svg id="fsColectaIconExpand" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                        </svg>
+                        <svg id="fsColectaIconCompress" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                            <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+                        </svg>
+                        <span id="btnColectaFullscreenText">Pantalla Completa</span>
+                    </button>
+                    <button class="modal-close" onclick="cerrarModalColecta()">✕</button>
+                </div>
             </div>
 
             <!-- Pestañas del Modal: Planificador vs Historial -->
             <div style="display: flex; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
                 <button type="button" class="btn btn-sm" id="btnTabPlanificarColecta" style="background: var(--accent); color: #111; font-weight: 700;" onclick="switchColectaTab('planificar')">
-                    📦 Planificar Nuevo Envío
+                    Planificar Nuevo Envío
                 </button>
                 <button type="button" class="btn btn-secondary btn-sm" id="btnTabHistorialColecta" onclick="switchColectaTab('historial')">
-                    📋 Historial de Envíos (<span id="colectaHistorialBadge">0</span>)
+                    Historial de Envíos (<span id="colectaHistorialBadge">0</span>)
+                </button>
+            </div>
+
+            <!-- ── Banner de Seguridad Garantizada (Modo Interno) ── -->
+            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 9px 13px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                <div style="display: flex; align-items: center; gap: 9px;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                    <div style="font-size: 12px; color: var(--text); line-height: 1.4;">
+                        <strong style="color: var(--good);">Modo Seguro de Control Interno:</strong> 
+                        Este remito y conteo de cajas es para tu depósito y tu chofer. 
+                        <span style="color: var(--text2);"><strong>NO genera compromisos ni colectas en Mercado Libre.</strong> Cero riesgo de alterar tu cuenta oficial.</span>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="abrirModalExplicacionColecta()" style="font-size: 11px; padding: 4px 10px; font-weight: 700; white-space: nowrap;">
+                    ¿Cómo funciona? (Paso previo)
                 </button>
             </div>
 
@@ -522,14 +553,20 @@
                         <span>Destino: <strong id="colectaDestinoText" style="color: var(--accent);">Mercado Envíos Full (Villa Celina)</strong></span>
                     </div>
 
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <label style="font-size: 12px; color: var(--text2);">Cobertura deseada:</label>
-                        <select id="colectaDiasSelect" onchange="recalcularColecta()" class="filter-select" style="padding: 4px 8px; font-size: 12px;">
-                            <option value="15">15 días (Rápida)</option>
-                            <option value="30" selected>30 días (1 mes de ventas)</option>
-                            <option value="45">45 días</option>
-                            <option value="60">60 días (Bimestral)</option>
-                        </select>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <label style="font-size: 12px; color: var(--text2); font-weight: 600;">Cobertura deseada:</label>
+                        <div style="display: inline-flex; align-items: center; gap: 4px;">
+                            <input type="number" id="colectaDiasInput" value="15" min="1" max="180" 
+                                   oninput="onColectaDiasChange()" 
+                                   class="filter-input" style="width: 65px; padding: 4px 6px; font-size: 13px; font-weight: 700; text-align: center;">
+                            <span style="font-size: 12px; color: var(--text2);">días</span>
+                        </div>
+                        <div class="colecta-quick-presets" style="display: inline-flex; gap: 4px; margin-left: 4px;">
+                            <button type="button" class="btn btn-secondary btn-xs" onclick="setColectaDiasPreset(15)">15d</button>
+                            <button type="button" class="btn btn-secondary btn-xs" onclick="setColectaDiasPreset(20)">20d</button>
+                            <button type="button" class="btn btn-secondary btn-xs" onclick="setColectaDiasPreset(30)">30d</button>
+                            <button type="button" class="btn btn-secondary btn-xs" onclick="setColectaDiasPreset(45)">45d</button>
+                        </div>
                     </div>
 
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -547,37 +584,45 @@
                     </div>
                 </div>
 
-                <!-- Métricas Rápidas en Vivo -->
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px;">
-                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
-                        <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">SKUs Seleccionados</div>
-                        <div id="colectaTotalSkus" style="font-size: 18px; font-weight: 800; color: var(--text);">0</div>
-                    </div>
-                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
-                        <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">Unidades a Despachar</div>
-                        <div id="colectaTotalUnits" style="font-size: 18px; font-weight: 800; color: var(--accent);">0 un.</div>
-                    </div>
-                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
-                        <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">Bultos / Cajas Estimadas</div>
-                        <div id="colectaTotalBoxes" style="font-size: 18px; font-weight: 800; color: #64b5f6;">0 cajas</div>
-                    </div>
+                <!-- Banner de Advertencia de Días Mínimos para no quebrar stock -->
+                <div id="colectaLeadTimeWarning" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; color: #fca5a5; font-size: 12.5px; line-height: 1.45;">
+                    <strong style="color: #ff8080;">Atención por quiebre inminente:</strong> Con <strong id="warnDiasElegidos">0</strong> días de cobertura no llegás a cubrir el ciclo de reposición. Entre preparar pedidos (<span id="warnLeadTime">0</span> d), colchón de seguridad (<span id="warnBuffer">0</span> d) y demora del flete (<span id="warnTransit">0</span> d), necesitás un mínimo de <strong><span id="warnMinDias">0</span> días</strong> para no quedarte sin stock antes de que el camión ingrese a Full.
                 </div>
 
-                <!-- Cronograma de Pasos para MercadoLibre -->
-                <div class="colecta-timeline-bar" id="colectaTimelineBar" style="margin-bottom: 10px; padding: 6px 12px;">
-                    <div class="timeline-step">
-                        <span class="step-num">1</span>
-                        <div><strong>Pedir Turno / Colecta</strong><br><span id="timelineAskDate" style="color: var(--accent); font-weight: 700;">HOY</span></div>
+                <!-- Sección Colapsable de Métricas y Cronograma -->
+                <div id="colectaHeaderSummarySection">
+                    <!-- Métricas Rápidas en Vivo -->
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px;">
+                        <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">SKUs Seleccionados</div>
+                            <div id="colectaTotalSkus" style="font-size: 18px; font-weight: 800; color: var(--text);">0</div>
+                        </div>
+                        <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">Unidades a Despachar</div>
+                            <div id="colectaTotalUnits" style="font-size: 18px; font-weight: 800; color: var(--accent);">0 un.</div>
+                        </div>
+                        <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">Bultos / Cajas Estimadas</div>
+                            <div id="colectaTotalBoxes" style="font-size: 18px; font-weight: 800; color: #64b5f6;">0 cajas</div>
+                        </div>
                     </div>
-                    <div class="timeline-arrow">→</div>
-                    <div class="timeline-step">
-                        <span class="step-num">2</span>
-                        <div><strong>Retiro por Galpón</strong><br><span id="timelinePickupDate" style="color: var(--text2);">En 48 hs</span></div>
-                    </div>
-                    <div class="timeline-arrow">→</div>
-                    <div class="timeline-step">
-                        <span class="step-num">3</span>
-                        <div><strong>Disponible en Villa Celina</strong><br><span id="timelineArrivalDate" style="color: var(--text2);">Antes del quiebre</span></div>
+
+                    <!-- Cronograma de Pasos para MercadoLibre -->
+                    <div class="colecta-timeline-bar" id="colectaTimelineBar" style="margin-bottom: 10px; padding: 6px 12px;">
+                        <div class="timeline-step">
+                            <span class="step-num">1</span>
+                            <div><strong>Pedir Turno / Colecta</strong><br><span id="timelineAskDate" style="color: var(--accent); font-weight: 700;">HOY</span></div>
+                        </div>
+                        <div class="timeline-arrow">→</div>
+                        <div class="timeline-step">
+                            <span class="step-num">2</span>
+                            <div><strong>Retiro por Galpón</strong><br><span id="timelinePickupDate" style="color: var(--text2);">En 48 hs</span></div>
+                        </div>
+                        <div class="timeline-arrow">→</div>
+                        <div class="timeline-step">
+                            <span class="step-num">3</span>
+                            <div><strong>Disponible en Villa Celina</strong><br><span id="timelineArrivalDate" style="color: var(--text2);">Antes del quiebre</span></div>
+                        </div>
                     </div>
                 </div>
 
@@ -622,7 +667,7 @@
                     <div style="display: flex; gap: 8px;">
                         <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
                         <button type="button" class="btn" style="background: var(--accent); color: #111; font-weight: 800;" onclick="confirmarDespachoColecta()">
-                            📦 Generar Envío y Remito Oficial
+                            Generar Envío y Remito Oficial
                         </button>
                     </div>
                 </div>
@@ -689,6 +734,63 @@
         </div>
     </div>
 
+    <!-- ── Modal Explicativo: Paso previo de Colectas y Remitos ── -->
+    <div id="modalExplicacionColecta" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 1600;">
+        <div class="modal-card" style="max-width: 620px; width: 94%; padding: 24px; border: 1.5px solid var(--border-hover);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; border-bottom: 1px solid var(--border); padding-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 22px;">🛡️</span>
+                    <h3 style="color: var(--accent); font-size: 18px; font-weight: 800; margin: 0;">
+                        ¿Cómo funciona la Planificación y los Remitos?
+                    </h3>
+                </div>
+                <button class="modal-close" onclick="cerrarModalExplicacionColecta()">✕</button>
+            </div>
+
+            <p style="font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 16px;">
+                EnvioBot está diseñado para darte <strong>tranquilidad total</strong>. Armar un remito o planificar un envío acá <strong>nunca va a mandar órdenes a ciegas ni alterar tu cuenta de Mercado Libre</strong>. Este es el circuito:
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+                <div style="display: flex; gap: 12px; background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+                    <div style="background: var(--accent); color: #111; font-weight: 800; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px;">1</div>
+                    <div>
+                        <strong style="color: var(--text); font-size: 13.5px;">Cálculo Inteligente de Cajas y Unidades (EnvioBot)</strong>
+                        <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0 0; line-height: 1.45;">
+                            EnvioBot cruza tus ventas reales de los últimos 30 días con tu stock en Full (restando lo que ya está en camino o por ingresar tras feriados). Te calcula cuántas unidades mandar y cuántas cajas master armar para no quebrar.
+                        </p>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+                    <div style="background: #64b5f6; color: #111; font-weight: 800; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px;">2</div>
+                    <div>
+                        <strong style="color: var(--text); font-size: 13.5px;">Generación de Remito Oficial A4 (100% Interno y Seguro)</strong>
+                        <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0 0; line-height: 1.45;">
+                            Al tocar "Generar Envío y Remito", se crea un documento formal con código de barras, bultos y chofer para tu depósito. <strong>Mercado Libre NO recibe ninguna orden en esta etapa.</strong> Tu cuenta queda intacta. En EnvioBot, estos artículos se marcan como <em>"En Tránsito"</em> para pausar las alarmas de quiebre.
+                        </p>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+                    <div style="background: var(--good); color: #111; font-weight: 800; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px;">3</div>
+                    <div>
+                        <strong style="color: var(--text); font-size: 13.5px;">Presentación en Mercado Libre (Vos tenés el control total)</strong>
+                        <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0 0; line-height: 1.45;">
+                            Con el remito impreso: si vas con flete propio a Villa Celina, el chofer viaja con el remito. Si vas a pedir colecta oficial a MeLi, cargás las cajas calculadas en la sección oficial de MeLi cuando vos lo decidas. Nada se ejecuta en MeLi sin tu clic explícito.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end;">
+                <button type="button" class="btn" style="background: var(--accent); color: #111; font-weight: 700; padding: 8px 18px;" onclick="cerrarModalExplicacionColecta()">
+                    Entendido, continuar
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Modal de Configuración ────────────────────── -->
     <div class="modal-overlay" id="configModal">
         <div class="modal-card modal-card-config">
@@ -707,6 +809,9 @@
                 </button>
                 <button class="config-tab-btn" id="tabBtnWhatsapp" onclick="switchConfigTab('whatsapp')">
                     Alertas de WhatsApp (Equipo)
+                </button>
+                <button class="config-tab-btn" id="tabBtnTeam" onclick="switchConfigTab('team')">
+                    Equipo / Colaboradores
                 </button>
             </div>
 
@@ -919,6 +1024,65 @@
                             <button type="button" class="btn btn-secondary btn-sm" onclick="forzarEvaluacionAlertas()" style="font-size: 11px; padding: 5px 12px; white-space: nowrap;">
                                 Probar Alertas en Vivo
                             </button>
+                        </div>
+                    </div>
+
+                    <!-- TAB 4: Equipo y Colaboradores (Invitar a Fran / Miembros) -->
+                    <div id="configTabTeam" style="display: none;">
+                        <div style="margin-bottom: 20px;">
+                            <h4 style="font-size: 14.5px; font-weight: 700; color: var(--text);">Equipo y Colaboradores de Cuenta</h4>
+                            <p style="font-size: 12.5px; color: var(--text2); margin-top: 2px; line-height: 1.45;">
+                                Habilitá a miembros de tu equipo (como Fran, operarios de galpón o choferes) para que ingresen con su propio correo y contraseña a tu cuenta de EnvioBot Full.
+                                <strong>No necesitan registrarse aparte ni vincular cuentas de Mercado Libre.</strong>
+                            </p>
+
+                            <!-- Formulario para invitar colaborador -->
+                            <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 18px;">
+                                <div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 10px;">
+                                    Invitar Nuevo Miembro de Equipo
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: flex-end;">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-size: 11px; text-transform: uppercase;">Nombre / Apodo</label>
+                                        <input type="text" id="newTeamName" class="filter-input" placeholder="Ej: Fran" style="width: 100%; font-size: 12.5px; padding: 7px 10px;">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-size: 11px; text-transform: uppercase;">Correo Electrónico</label>
+                                        <input type="email" id="newTeamEmail" class="filter-input" placeholder="fran@tudominio.com" style="width: 100%; font-size: 12.5px; padding: 7px 10px;">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label style="font-size: 11px; text-transform: uppercase;">Contraseña Inicial</label>
+                                        <input type="text" id="newTeamPassword" class="filter-input" placeholder="Opcional (se autogenera)" style="width: 100%; font-size: 12.5px; padding: 7px 10px;">
+                                    </div>
+                                    <div>
+                                        <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 800; padding: 8px 14px;" onclick="invitarMiembroEquipo(event)">
+                                            Habilitar Acceso
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="newTeamInviteResult" style="display: none; margin-top: 10px; padding: 8px 12px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); font-size: 12px; color: var(--text);"></div>
+                            </div>
+
+                            <!-- Tabla de Colaboradores Activos -->
+                            <div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 8px;">
+                                Colaboradores Habilitados
+                            </div>
+                            <table class="config-table" style="width: 100%; font-size: 12.5px; border-collapse: collapse;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid var(--border); text-align: left;">
+                                        <th style="padding: 8px 10px;">Nombre</th>
+                                        <th style="padding: 8px 10px;">Email de Ingreso</th>
+                                        <th style="padding: 8px 10px;">Rol</th>
+                                        <th style="padding: 8px 10px;">Fecha de Alta</th>
+                                        <th style="padding: 8px 10px; text-align: right; width: 100px;">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cfgTeamTableBody">
+                                    <tr>
+                                        <td colspan="5" style="text-align: center; padding: 20px; color: var(--text2);">Cargando colaboradores...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -1143,8 +1307,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261012_3"></script>
-    <script src="js/notifications.js?v=20261012_3"></script>
-    <script src="js/app.js?v=20261012_3"></script>
+    <script src="js/theme.js?v=20261012_4"></script>
+    <script src="js/notifications.js?v=20261012_4"></script>
+    <script src="js/app.js?v=20261012_4"></script>
 </body>
 </html>
