@@ -306,11 +306,12 @@
     <!-- ── MODAL: Wizard Asistente Inicial de Configuración (Post-MeLi) ── -->
     <div id="modalWizardOnboarding" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 1300;">
         <div class="modal-card" style="max-width: 540px; width: 92%; padding: 26px;">
-            <div class="modal-header">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
                 <div>
                     <span id="wizardStepTag" style="font-size: 11px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px;">Paso 1 de 3 · Depósito y Reposición</span>
                     <h3 id="wizardStepTitle" style="color: var(--text); font-size: 18px; font-weight: 800; margin-top: 2px;">Parámetros del Depósito Full</h3>
                 </div>
+                <button type="button" onclick="cerrarWizardOnboarding()" style="background: none; border: none; color: var(--text2); font-size: 22px; cursor: pointer; padding: 0 4px; line-height: 1;" title="Cerrar y continuar al panel">&times;</button>
             </div>
 
             <!-- Indicador de Pasos -->
@@ -360,9 +361,14 @@
                     </div>
                 </div>
 
-                <button type="button" class="btn btn-block" onclick="avanzarWizardPaso2()" style="background: var(--accent); color: #111; font-weight: 700; padding: 12px; font-size: 13.5px; justify-content: center; cursor: pointer;">
-                    Siguiente: Alertas de WhatsApp y Email
-                </button>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn btn-secondary" onclick="cerrarWizardOnboarding(); cargarDatos();" style="padding: 10px 14px; font-size: 12.5px;">
+                        Omitir
+                    </button>
+                    <button type="button" class="btn" onclick="avanzarWizardPaso2()" style="flex: 1; background: var(--accent); color: #111; font-weight: 700; padding: 12px; font-size: 13.5px; justify-content: center; cursor: pointer;">
+                        Siguiente: Alertas de WhatsApp y Email
+                    </button>
+                </div>
             </div>
 
             <!-- PASO 2: Alertas, Días y Horarios -->

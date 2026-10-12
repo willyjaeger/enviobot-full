@@ -5,6 +5,43 @@
 
 const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:5001/api' : '/api';
 
+// Sistema de Notificaciones Toast no bloqueantes (reemplaza alertas emergentes invasivas)
+function showToast(message, type = 'info', duration = 2800) {
+    let container = document.getElementById('toastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.style.cssText = 'position: fixed; bottom: 22px; right: 22px; z-index: 999999; display: flex; flex-direction: column; gap: 8px; pointer-events: none;';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = `toast-msg toast-${type}`;
+    let borderCol = '#38bdf8';
+    let textCol = '#f8fafc';
+    let bgCol = '#0f172a';
+    if (type === 'success') {
+        borderCol = '#10b981';
+        textCol = '#ecfdf5';
+    } else if (type === 'error') {
+        borderCol = '#ef4444';
+        textCol = '#fef2f2';
+    }
+    toast.style.cssText = `background: ${bgCol}; color: ${textCol}; border: 1.5px solid ${borderCol}; border-radius: 8px; padding: 10px 16px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); pointer-events: auto; opacity: 0; transform: translateY(12px); transition: all 0.22s ease-out; max-width: 380px; line-height: 1.4;`;
+    toast.textContent = message;
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateY(0)';
+    });
+
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(12px)';
+        setTimeout(() => toast.remove(), 250);
+    }, duration);
+}
+
 // Configuración de Depósitos disponibles
 const WAREHOUSES = {
     meli_full: { id: "meli_full", name: "Mercado Envíos Full (Villa Celina)", city: "Villa Celina", defaultTransit: 5, defaultTarget: 30 }
@@ -1243,9 +1280,9 @@ function copiarListaColecta() {
     texto += `TOTAL: ${totalUnits} unidades en ${totalBoxes} bultos\n`;
 
     navigator.clipboard.writeText(texto).then(() => {
-        alert("Lista de colecta copiada al portapapeles. Lista para compartir con transporte o pegar en planilla.");
+        showToast("Lista de colecta copiada al portapapeles.", "success");
     }).catch(() => {
-        alert("Lista:\n\n" + texto);
+        showToast("No se pudo copiar automáticamente.", "error");
     });
 }
 
@@ -1885,7 +1922,7 @@ async function invitarMiembroEquipo(e) {
             resEl.style.display = 'block';
             resEl.innerHTML = `<strong>Acceso listo para ${name || email}:</strong><br>Email: <code>${email}</code><br>Contraseña: <strong><code>${clave}</code></strong><br><small style="color: var(--text2);">Pasale estos datos a ${name || 'tu colaborador'} para que ingrese directamente en Enviobot Full.</small>`;
         }
-        alert(`Colaborador ${name || email} habilitado exitosamente.\n\nEmail: ${email}\nContraseña: ${clave}\n\nYa puede ingresar directamente en la aplicación sin registrarse en Mercado Libre.`);
+        showToast(`Colaborador ${name || email} habilitado exitosamente.`, "success");
         
         if (nameEl) nameEl.value = '';
         if (emailEl) emailEl.value = '';
@@ -1894,7 +1931,7 @@ async function invitarMiembroEquipo(e) {
         cargarMiembrosEquipo();
     } catch (err) {
         console.error("Error invitando miembro:", err);
-        alert(`Error de red: ${err.message}`);
+        showToast(`Error de red: ${err.message}`, "error");
     }
 }
 
@@ -1911,14 +1948,14 @@ async function eliminarMiembroEquipo(memberId, memberName) {
         });
         const data = await resp.json();
         if (data.ok) {
-            alert(`Acceso de ${memberName} revocado correctamente.`);
+            showToast(`Acceso de ${memberName} revocado correctamente.`, "info");
             cargarMiembrosEquipo();
         } else {
-            alert(data.error || "No se pudo remover al colaborador.");
+            showToast(data.error || "No se pudo remover al colaborador.", "error");
         }
     } catch (e) {
         console.error("Error eliminando miembro:", e);
-        alert(`Error al contactar al servidor: ${e.message}`);
+        showToast(`Error al contactar al servidor: ${e.message}`, "error");
     }
 }
 
@@ -2363,7 +2400,7 @@ async function guardarConfiguracion(e) {
     }
 
     cerrarConfiguracion();
-    alert(`Configuración guardada en tu cuenta con éxito.\nDemora flete: ${activeWh.defaultTransit} días\nStock objetivo: ${activeWh.defaultTarget} días`);
+    showToast("Configuración guardada correctamente en tu cuenta.", "success");
 }
 
 // ── MODAL: Alta de Nuevo Depósito ─────────────────────────────────
@@ -2457,7 +2494,7 @@ function guardarNuevoDeposito(e) {
 
     // Cambiar inmediatamente al nuevo depósito creado
     cambiarDeposito(depotId);
-    alert(`Depósito "${name}" agregado con éxito.`);
+    showToast(`Depósito "${name}" agregado con éxito.`, "success");
 }
 
 // ── Manejo de Autenticación Rápida (Estilo Enviobot Pedidos) ─────────
@@ -3051,9 +3088,9 @@ async function checkUserSession() {
             } else {
                 if (trialBanner) trialBanner.style.display = 'none';
                 if (btnConnectHeader) btnConnectHeader.style.display = 'inline-flex';
-                // Verificar si debe mostrar el Wizard de Configuración Inicial
+                // Solo mostrar wizard si es un usuario virgen sin correo y sin wizard previo
                 const wizCompleted = localStorage.getItem('enviobot_wizard_completed_' + currentUser.id) || localStorage.getItem('enviobot_wizard_completed');
-                if (!wizCompleted) {
+                if (!wizCompleted && (!currentUser.email || currentUser.email.includes('meli_')) && currentUser.id !== 45) {
                     abrirWizardOnboarding();
                 }
             }
@@ -3408,11 +3445,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const hasMlOk = params.get('ml') === 'ok';
     if (hasMlOk) {
-        const nickname = params.get('nickname') || '';
         window.history.replaceState({}, document.title, window.location.pathname);
+        showToast("Cuenta de Mercado Libre conectada con éxito.", "success");
     } else if (params.get('ml') === 'error') {
         const msg = params.get('msg') || 'Error en la autorización de MercadoLibre';
-        alert(`Error: ${msg}`);
+        showToast(`Error: ${msg}`, 'error');
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -3432,10 +3469,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
             const vData = await vRes.json();
             if (vData.ok && vData.verified) {
-                alert("¡Casilla de correo vinculada y confirmada con éxito!\nTus reportes y alertas matutinas de stock se enviarán a esta dirección.");
+                showToast("Casilla de correo vinculada y confirmada con éxito.", "success");
                 actualizarEstadoVerificacionEmail(true);
             } else {
-                alert("No se pudo verificar el correo: " + (vData.error || "código inválido."));
+                showToast("No se pudo verificar el correo: " + (vData.error || "código inválido."), "error");
             }
         } catch (err) {
             console.error("Error verificando código desde URL:", err);
@@ -3449,13 +3486,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 4. Verificar sesión y estado de vinculación
     const hasActiveSession = await checkUserSession();
 
-    // 5. Si acaba de vincular MeLi o es un usuario nuevo sin wizard, abrir el wizard
-    if (hasMlOk && currentUser) {
-        abrirWizardOnboarding();
-        return;
-    }
-
-    // 6. Si la sesión está activa y ya completó el wizard, cargar datos reales de MeLi
+    // 5. Cargar datos reales de MeLi directamente
     if (hasActiveSession) {
         await cargarSettingsBackend();
         cargarDatos();
@@ -3881,7 +3912,7 @@ window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
     const btnTop = document.getElementById('btnInstallDesktopApp');
     if (btnTop) btnTop.style.display = 'none';
-    alert('EnvioBot Full se instaló en tu escritorio con éxito.');
+    showToast('EnvioBot Full se instaló en tu escritorio con éxito.', 'success');
 });
 
 function checkPwaInstallState() {
@@ -3905,18 +3936,30 @@ async function instalarAppEscritorio() {
             deferredPrompt = null;
             const btnTop = document.getElementById('btnInstallDesktopApp');
             if (btnTop) btnTop.style.display = 'none';
+            showToast('Acceso directo de EnvioBot Full instalado con éxito.', 'success');
         }
     } else {
         const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
         if (isStandalone) {
-            alert('EnvioBot Full ya se encuentra instalado y ejecutándose como aplicación en tu equipo.');
+            showToast('EnvioBot Full ya está ejecutándose como aplicación en tu equipo.', 'info');
             return;
         }
 
-        const esEdge = navigator.userAgent.includes('Edg/');
-        const nav = esEdge ? 'Microsoft Edge' : 'Google Chrome';
-        alert(`Para instalar EnvioBot Full automáticamente en tu escritorio con ${nav}:\n\n1. Hacé clic en el ícono de instalación (computadora o "+") que aparece a la derecha en la barra de direcciones de ${nav}.\n2. O desde el menú de opciones (tres puntos arriba a la derecha), hacé clic en "Instalar EnvioBot Full".\n\nEl sistema colocará de inmediato el ícono en tu escritorio de Windows.`);
+        // Descargar o ejecutar script de acceso directo para Windows sin preguntas de Chrome
+        descargarAccesoDirectoWindows();
     }
+}
+
+function descargarAccesoDirectoWindows() {
+    const batContent = `@echo off\r\nchcp 65001 >nul\r\npowershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut([System.IO.Path]::Combine([System.Environment]::GetFolderPath('Desktop'), 'EnvioBot Full.lnk')); $chrome = '${env:ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe'; if (-not (Test-Path $chrome)) { $chrome = '${env:ProgramFiles(x86)}\\Google\\Chrome\\Application\\chrome.exe' }; if (-not (Test-Path $chrome)) { $chrome = '${env:LocalAppData}\\Google\\Chrome\\Application\\chrome.exe' }; if (-not (Test-Path $chrome)) { $chrome = '${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe' }; $s.TargetPath = $chrome; $s.Arguments = '--app=https://enviobot.com.ar/ --start-maximized'; $s.Description = 'EnvioBot Full'; $s.Save()"\r\necho Acceso directo de EnvioBot Full creado en el escritorio.\r\n`;
+    const blob = new Blob([batContent], { type: 'application/bat' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'Instalar_EnvioBot_Full_Escritorio.bat';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    showToast('Descargando instalador de escritorio de 1 clic sin confirmaciones de Chrome.', 'success');
 }
 
 
