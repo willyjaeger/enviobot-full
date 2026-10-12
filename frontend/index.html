@@ -28,7 +28,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261012_1">
+    <link rel="stylesheet" href="css/style.css?v=20261012_3">
 </head>
 <body>
 
@@ -193,7 +193,7 @@
         <!-- ── Contenido Principal ──────────────────────── -->
         <div class="main-content">
             <!-- Columna Izquierda: Tabla y Monitoreo -->
-            <div class="card">
+            <div class="card" id="cardStockPrincipal">
                 <!-- Barra de Depósito Integrada -->
                 <div class="depot-toolbar">
                     <div class="depot-selector-group">
@@ -209,12 +209,23 @@
                     </div>
                 </div>
 
-                <h2>
-                    <span>Pronóstico y Rotación de Stock</span>
-                    <button class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="abrirModalColecta()">
-                        Armar Colecta
-                    </button>
-                </h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                    <h2 style="margin: 0;">Pronóstico y Rotación de Stock</h2>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button class="btn btn-secondary btn-sm" id="btnToggleFullscreenTable" onclick="toggleFullscreenTable()" title="Ver en pantalla completa para revisar más artículos cómodamente">
+                            <svg id="fsIconExpand" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                            </svg>
+                            <svg id="fsIconCompress" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+                                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
+                            </svg>
+                            <span id="btnToggleFullscreenText">Pantalla Completa</span>
+                        </button>
+                        <button class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="abrirModalColecta()">
+                            Armar Colecta
+                        </button>
+                    </div>
+                </div>
 
                 <!-- Filtros -->
                 <div class="filter-bar">
@@ -1132,8 +1143,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261012_2"></script>
-    <script src="js/notifications.js?v=20261012_2"></script>
-    <script src="js/app.js?v=20261012_2"></script>
+    <script src="js/theme.js?v=20261012_3"></script>
+    <script src="js/notifications.js?v=20261012_3"></script>
+    <script src="js/app.js?v=20261012_3"></script>
 </body>
 </html>

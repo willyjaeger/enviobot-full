@@ -297,13 +297,22 @@ function recalcularTodo() {
             stockoutDate.setDate(stockoutDate.getDate() + Math.floor(it.days_left));
             it.stockout_date = stockoutDate.toISOString().split('T')[0];
 
-            // Fecha tope para empezar a preparar (Días restantes - Total anticipación)
+            // Días hasta tener que empezar a preparar el pedido
             const daysToDeadline = it.days_left - totalAdvance;
+            it.days_to_deadline = daysToDeadline;
+            it.is_overdue = (stock <= 0 || daysToDeadline <= 0);
+
+            // La fecha para pedir NUNCA puede ser en el pasado
+            // Si el producto ya venció o está en quiebre, la fecha de acción es HOY
             const deadlineDate = new Date(today);
-            deadlineDate.setDate(deadlineDate.getDate() + Math.floor(daysToDeadline));
+            if (daysToDeadline > 0) {
+                deadlineDate.setDate(deadlineDate.getDate() + Math.floor(daysToDeadline));
+            }
             it.reorder_deadline_date = deadlineDate.toISOString().split('T')[0];
         } else {
             it.days_left = 999;
+            it.days_to_deadline = 999;
+            it.is_overdue = false;
             it.stockout_date = null;
             it.reorder_deadline_date = null;
         }
@@ -385,22 +394,29 @@ function renderizarWidgetAlertas() {
         const mostUrgent = allNeedingAction[0];
         const transit = mostUrgent.transit_delay_days || 5;
         const buffer = mostUrgent.buffer_days || 2;
-        const daysToDeadline = mostUrgent.days_left - transit - buffer;
+        const daysToDeadline = mostUrgent.days_to_deadline !== undefined ? mostUrgent.days_to_deadline : (mostUrgent.days_left - transit - buffer);
         const roundedDays = Math.max(1, Math.round(daysToDeadline));
 
-        const isToday = (mostUrgent.current_stock <= 0 || daysToDeadline <= 0);
-        const askDateStr = isToday ? `PEDIR HOY (${formatearFecha(mostUrgent.reorder_deadline_date)})` : `Pedir el ${formatearFecha(mostUrgent.reorder_deadline_date)} (en ${roundedDays} d)`;
+        const isUrgent = (mostUrgent.current_stock <= 0 || daysToDeadline <= 0);
+        let askDateStr = '';
+        if (mostUrgent.current_stock <= 0) {
+            askDateStr = 'PEDIR HOY (Sin Stock)';
+        } else if (isUrgent) {
+            askDateStr = 'PEDIR HOY URGENTE';
+        } else {
+            askDateStr = `Pedir el ${formatearFecha(mostUrgent.reorder_deadline_date)} (en ${roundedDays} d)`;
+        }
 
         // Banner principal claro con la fecha para pedir en MeLi
         const proximaColectaBannerHtml = `
-            <div class="proxima-colecta-banner" style="border-left: 4px solid ${isToday ? 'var(--danger)' : 'var(--warn)'};">
+            <div class="proxima-colecta-banner" style="border-left: 4px solid ${isUrgent ? 'var(--danger)' : 'var(--warn)'};">
                 <div class="proxima-colecta-label">Día para pedir Colecta a MeLi</div>
-                <div class="proxima-colecta-date" style="color: ${isToday ? 'var(--danger)' : 'var(--accent)'};">
+                <div class="proxima-colecta-date" style="color: ${isUrgent ? 'var(--danger)' : 'var(--accent)'}; font-size: 19px; font-weight: 800;">
                     ${askDateStr}
                 </div>
                 <div class="proxima-colecta-desc">
-                    ${isToday ? 
-                        `Tenés que pedir el turno en MercadoLibre hoy para que el flete llegue antes del quiebre del <strong>${formatearFecha(mostUrgent.stockout_date)}</strong> (${mostUrgent.title.substring(0, 30)}...).` :
+                    ${isUrgent ? 
+                        `Tenés que pedir el turno en MercadoLibre <strong>hoy</strong> para que el flete llegue antes del quiebre estimado (${mostUrgent.title.substring(0, 30)}...).` :
                         `Generá el envío en MeLi antes del <strong>${formatearFecha(mostUrgent.reorder_deadline_date)}</strong> para que el camión descargue a tiempo.`
                     }
                 </div>
@@ -532,12 +548,16 @@ function renderizarTabla() {
         // CUÁNDO PEDIR COLECTA EN MELI (considerando tiempo de preparación + camión + buffer)
         let fechaColectaHtml = '—';
         if (it.reorder_deadline_date) {
-            const daysToDeadline = it.days_left - totalAdvance;
+            const daysToDeadline = it.days_to_deadline !== undefined ? it.days_to_deadline : (it.days_left - totalAdvance);
             const roundedDays = Math.max(1, Math.round(daysToDeadline));
 
-            if (it.current_stock <= 0 || daysToDeadline <= 0) {
+            if (it.current_stock <= 0) {
                 fechaColectaHtml = `
-                    <span class="badge-date-today" title="Preparar y pedir turno en MeLi hoy para no quebrar">PEDIR HOY (${formatearFecha(it.reorder_deadline_date)})</span>
+                    <span class="badge-date-today" style="background: rgba(239, 68, 68, 0.15); color: var(--danger); font-weight: 700;" title="Sin stock en Full. Generar reposición urgente hoy.">PEDIR HOY (Sin Stock)</span>
+                `;
+            } else if (daysToDeadline <= 0) {
+                fechaColectaHtml = `
+                    <span class="badge-date-today" style="background: rgba(239, 68, 68, 0.15); color: var(--danger); font-weight: 700;" title="Cobertura crítica. Pedir turno en MeLi hoy para evitar quiebre de stock.">PEDIR HOY URGENTE</span>
                 `;
             } else if (daysToDeadline <= 3) {
                 fechaColectaHtml = `
@@ -1376,6 +1396,23 @@ async function cargarSettingsBackend() {
                 emailEl.value = s.alert_email;
             }
             actualizarEstadoVerificacionEmail(s.email_verified);
+
+            // Sincronizar depósitos reales guardados en MariaDB
+            if (Array.isArray(s.warehouses) && s.warehouses.length > 0) {
+                s.warehouses.forEach(wh => {
+                    const whCode = wh.code || wh.id;
+                    WAREHOUSES[whCode] = {
+                        id: whCode,
+                        dbId: wh.id,
+                        name: wh.name,
+                        city: wh.city || '',
+                        defaultTransit: wh.transit_days !== undefined ? wh.transit_days : 5,
+                        defaultTarget: wh.target_stock_days !== undefined ? wh.target_stock_days : (s.target_coverage_days || 30)
+                    };
+                });
+                poblarSelectoresDepositos();
+                renderizarTablaConfiguracionDepositos();
+            }
         }
     } catch (e) {
         console.error("Error cargando settings:", e);
@@ -1942,11 +1979,14 @@ function mostrarInfoUpgrade() {
     alert("PLANES DE ALERTAS DE WHATSAPP MULTIUSUARIO:\n\n• Plan Pro: Hasta 2 números incluidos.\n• Plan Enterprise: Hasta 10 números ($14.900 ARS/mes adicionales o USD 15/mes).\n\nIdeal para notificar en simultáneo al dueño, encargados de depósito y choferes de flete.");
 }
 
-function guardarConfiguracion(e) {
+async function guardarConfiguracion(e) {
     e.preventDefault();
     const lt = parseInt(document.getElementById('cfgLeadTime').value, 10) || 5;
     const ss = parseInt(document.getElementById('cfgSafetyStock').value, 10) || 2;
     const email = document.getElementById('cfgEmail').value;
+
+    const warehousesList = [];
+    let generalTarget = 30;
 
     // Actualizar parámetros individuales de cada depósito
     Object.values(WAREHOUSES).forEach(wh => {
@@ -1957,6 +1997,19 @@ function guardarConfiguracion(e) {
             const newTarget = Math.max(5, parseInt(targetEl.value, 10) || wh.defaultTarget);
             wh.defaultTransit = newTransit;
             wh.defaultTarget = newTarget;
+
+            if (wh.id === currentWarehouse || wh.id === 'meli_full') {
+                generalTarget = newTarget;
+            }
+
+            warehousesList.push({
+                id: wh.dbId,
+                code: wh.id,
+                name: wh.name,
+                city: wh.city,
+                transit_days: newTransit,
+                target_stock_days: newTarget
+            });
 
             // Actualizar catálogo demo para este depósito
             BASE_ITEMS_CATALOG.forEach(it => {
@@ -1978,23 +2031,30 @@ function guardarConfiguracion(e) {
         it.buffer_days = ss;
     });
 
+    poblarSelectoresDepositos();
     recalcularTodo();
 
     const token = getToken();
     if (token) {
-        fetch(`${API_BASE}/full/settings`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({
-                default_lead_time_days: lt,
-                default_safety_stock_days: ss,
-                alert_email: email
-            })
-        }).catch(err => console.error("Error guardando settings:", err));
+        try {
+            await fetch(`${API_BASE}/full/settings`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({
+                    default_lead_time_days: lt,
+                    default_safety_stock_days: ss,
+                    target_coverage_days: generalTarget,
+                    alert_email: email,
+                    warehouses: warehousesList
+                })
+            });
+        } catch (err) {
+            console.error("Error guardando settings:", err);
+        }
     }
 
     cerrarConfiguracion();
-    alert('Configuración guardada. La demora de camión y la cobertura se actualizaron para cada depósito.');
+    alert(`Configuración guardada en tu cuenta con éxito.\nDemora flete: ${activeWh.defaultTransit} días\nStock objetivo: ${activeWh.defaultTarget} días`);
 }
 
 // ── MODAL: Alta de Nuevo Depósito ─────────────────────────────────
@@ -3088,11 +3148,47 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 6. Si la sesión está activa y ya completó el wizard, cargar datos reales de MeLi
     if (hasActiveSession) {
+        await cargarSettingsBackend();
         cargarDatos();
     }
 
     // 7. Verificar visibilidad del botón de instalación de aplicación en escritorio
     checkPwaInstallState();
+});
+
+// ── Control de Pantalla Completa para la Card de Stock y Colectas ───────────
+function toggleFullscreenTable() {
+    const card = document.getElementById('cardStockPrincipal');
+    const btnText = document.getElementById('btnToggleFullscreenText');
+    const iconExp = document.getElementById('fsIconExpand');
+    const iconComp = document.getElementById('fsIconCompress');
+    if (!card) return;
+
+    card.classList.toggle('card-fullscreen');
+    const isFull = card.classList.contains('card-fullscreen');
+
+    if (btnText) {
+        btnText.textContent = isFull ? 'Ventana Normal' : 'Pantalla Completa';
+    }
+    if (iconExp && iconComp) {
+        iconExp.style.display = isFull ? 'none' : 'inline-block';
+        iconComp.style.display = isFull ? 'inline-block' : 'none';
+    }
+
+    if (isFull) {
+        document.body.style.overflow = 'hidden';
+    } else {
+        document.body.style.overflow = '';
+    }
+}
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const card = document.getElementById('cardStockPrincipal');
+        if (card && card.classList.contains('card-fullscreen')) {
+            toggleFullscreenTable();
+        }
+    }
 });
 
 // -------------------------------------------------------------

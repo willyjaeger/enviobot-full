@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS full_items (
     user_id INT NOT NULL,
     ml_credential_id INT NULL,
     item_id VARCHAR(50) NOT NULL,                      -- MLA123456789
-    variation_id VARCHAR(50) NULL,
+    variation_id VARCHAR(50) NOT NULL DEFAULT '',
     variation_name VARCHAR(150) NULL,                  -- ej: Color: Negro / Talle: 42
     inventory_id VARCHAR(50) NULL,                     -- Inventory ID de MeLi en bodega Full
     sku VARCHAR(100) NULL,
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS forecasts (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     item_id VARCHAR(50) NOT NULL,
-    variation_id VARCHAR(50) NULL,
+    variation_id VARCHAR(50) NOT NULL DEFAULT '',
     sales_last_7d INT NOT NULL DEFAULT 0,
     sales_last_15d INT NOT NULL DEFAULT 0,
     sales_last_30d INT NOT NULL DEFAULT 0,

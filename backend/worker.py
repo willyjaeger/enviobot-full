@@ -12,11 +12,13 @@ import pymysql
 import requests
 from dotenv import load_dotenv
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 load_dotenv()
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+DB_USER = os.getenv("DB_USER", "enviobot")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "5DI1LCoeuFEzJpLznuJudFfq")
 DB_NAME = os.getenv("DB_NAME", "enviobot_web")
 DB_PORT = int(os.getenv("DB_PORT", 3306))
 
@@ -159,9 +161,22 @@ def fetch_full_publications(access_token, meli_user_id):
                             variations = body.get("variations", [])
                             if variations:
                                 for v in variations:
-                                    var_id = str(v.get("id"))
+                                    var_id = str(v.get("id")) if v.get("id") else ""
                                     var_inv_id = v.get("inventory_id") or parent_inv_id
-                                    var_sku = (v.get("seller_custom_field") or "").strip() or base_sku
+                                    
+                                    # SKU de la variación (seller_custom_field, attributes o seller_sku)
+                                    var_sku = (v.get("seller_custom_field") or "").strip()
+                                    if not var_sku:
+                                        for attr in v.get("attributes", []):
+                                            if attr.get("id") in ("SELLER_SKU", "SKU"):
+                                                var_sku = (attr.get("value_name") or "").strip()
+                                                if var_sku:
+                                                    break
+                                    if not var_sku:
+                                        var_sku = (v.get("seller_sku") or "").strip()
+                                    if not var_sku:
+                                        var_sku = base_sku
+
                                     var_combs = v.get("attribute_combinations", [])
                                     var_name = " / ".join(f"{c.get('name')}: {c.get('value_name')}" for c in var_combs) if var_combs else None
                                     var_declared_stock = v.get("available_quantity", 0)
@@ -183,7 +198,7 @@ def fetch_full_publications(access_token, meli_user_id):
                             else:
                                 all_flat_items.append({
                                     "item_id": item_id,
-                                    "variation_id": None,
+                                    "variation_id": "",
                                     "variation_name": None,
                                     "inventory_id": parent_inv_id,
                                     "sku": base_sku,
@@ -202,6 +217,18 @@ def fetch_full_publications(access_token, meli_user_id):
         except Exception as e:
             print(f"Error consultando items Full: {e}")
             break
+
+    # Retroalimentar SKUs a publicaciones de catálogo u homónimas que comparten inventory_id
+    inv_sku_map = {}
+    for fitm in all_flat_items:
+        inv = fitm.get("inventory_id")
+        sku = fitm.get("sku")
+        if inv and sku and inv not in inv_sku_map:
+            inv_sku_map[inv] = sku
+
+    for fitm in all_flat_items:
+        if not fitm.get("sku") and fitm.get("inventory_id") in inv_sku_map:
+            fitm["sku"] = inv_sku_map[fitm["inventory_id"]]
 
     return all_flat_items
 
@@ -296,6 +323,7 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
                 stock_real = declared_stock
                 not_available = 0
 
+            var_id = it.get("variation_id") or ""
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO full_items 
@@ -320,10 +348,7 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
                       listing_type_id, is_catalog, status, stock_real, not_available))
 
                 # Leer overrides específicos si existen
-                if var_id:
-                    cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s AND variation_id=%s", (user_id, item_id, var_id))
-                else:
-                    cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s AND variation_id IS NULL", (user_id, item_id))
+                cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s AND variation_id=%s", (user_id, item_id, var_id))
                 irow = cur.fetchone()
                 lt = irow["lead_time_override"] if irow and irow.get("lead_time_override") is not None else default_lt
                 ss = irow["safety_stock_override"] if irow and irow.get("safety_stock_override") is not None else default_ss

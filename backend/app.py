@@ -937,6 +937,11 @@ def get_full_items():
         cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
         settings = cur.fetchone() or {"default_lead_time_days": 7, "default_safety_stock_days": 3, "target_coverage_days": 30}
 
+        cur.execute("SELECT transit_days, target_stock_days FROM warehouses WHERE user_id=%s AND is_active=1 ORDER BY id ASC LIMIT 1", (user_id,))
+        wh_row = cur.fetchone()
+        default_transit = wh_row["transit_days"] if wh_row and wh_row.get("transit_days") is not None else 5
+        target_cov = wh_row["target_stock_days"] if wh_row and wh_row.get("target_stock_days") is not None else settings.get("target_coverage_days", 30)
+
         query = """
             SELECT 
                 i.id, i.item_id, i.variation_id, i.variation_name, i.inventory_id,
@@ -951,7 +956,7 @@ def get_full_items():
                 f.suggested_restock_units, f.status, f.updated_at
             FROM full_items i
             LEFT JOIN forecasts f ON f.user_id = i.user_id AND f.item_id = i.item_id 
-                 AND ( (i.variation_id IS NULL AND f.variation_id IS NULL) OR (f.variation_id = i.variation_id) )
+                 AND COALESCE(f.variation_id, '') = COALESCE(i.variation_id, '')
             LEFT JOIN ml_credentials c ON c.id = i.ml_credential_id
             WHERE i.user_id = %s AND i.is_monitored = 1
         """
@@ -1015,28 +1020,31 @@ def get_full_items():
                     "account_nickname": row.get("account_nickname"),
                     "effective_lead_time": row.get("effective_lead_time") if row.get("effective_lead_time") is not None else default_lt,
                     "effective_buffer": row.get("effective_buffer") if row.get("effective_buffer") is not None else default_ss,
-                    "effective_transit": 2, # Demora habitual hacia Villa Celina
+                    "effective_transit": default_transit,
                     "current_stock_full": row.get("current_stock_full", 0),
                     "not_available_stock_full": row.get("not_available_stock_full", 0),
                     "sales_last_7d": row.get("sales_last_7d") or 0,
                     "sales_last_15d": row.get("sales_last_15d") or 0,
                     "sales_last_30d": row.get("sales_last_30d") or 0,
                     "channels": [channel_info],
-                    "target_coverage_days": settings.get("target_coverage_days", 30)
+                    "target_coverage_days": target_cov
                 }
             else:
                 c_item = consolidated[group_key]
+                if not c_item.get("sku") and row.get("sku"):
+                    c_item["sku"] = row["sku"]
+                if not c_item.get("inventory_id") and row.get("inventory_id"):
+                    c_item["inventory_id"] = row["inventory_id"]
                 c_item["current_stock_full"] = max(c_item["current_stock_full"], row.get("current_stock_full", 0))
                 c_item["not_available_stock_full"] = max(c_item["not_available_stock_full"], row.get("not_available_stock_full", 0))
-                c_item["sales_last_7d"] += (row.get("sales_last_7d") or 0)
-                c_item["sales_last_15d"] += (row.get("sales_last_15d") or 0)
-                c_item["sales_last_30d"] += (row.get("sales_last_30d") or 0)
                 if not any(ch["item_id"] == channel_info["item_id"] for ch in c_item["channels"]):
                     c_item["channels"].append(channel_info)
+                    c_item["sales_last_7d"] += (row.get("sales_last_7d") or 0)
+                    c_item["sales_last_15d"] += (row.get("sales_last_15d") or 0)
+                    c_item["sales_last_30d"] += (row.get("sales_last_30d") or 0)
 
         # ── Recalcular Métricas Consolidadas y Semáforos ──────────────────────────
         today = datetime.utcnow().date()
-        target_cov = settings.get("target_coverage_days", 30)
         output_items = []
 
         for c_item in consolidated.values():
@@ -1138,7 +1146,7 @@ def update_item(item_id):
         """, (lt, ss, item_id, user_id))
 
         # Recalcular semáforo inmediatamente
-        cur.execute("SELECT item_id, current_stock_full FROM full_items WHERE id=%s", (item_id,))
+        cur.execute("SELECT item_id, variation_id, current_stock_full FROM full_items WHERE id=%s", (item_id,))
         it = cur.fetchone()
         if it:
             cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
@@ -1148,7 +1156,8 @@ def update_item(item_id):
             transit = 2 # Villa Celina
             total_advance = effective_lt + effective_ss + transit
 
-            cur.execute("SELECT vpd_weighted, days_left FROM forecasts WHERE user_id=%s AND item_id=%s", (user_id, it["item_id"]))
+            var_val = it.get("variation_id") or ""
+            cur.execute("SELECT vpd_weighted, days_left FROM forecasts WHERE user_id=%s AND item_id=%s AND COALESCE(variation_id, '')=%s", (user_id, it["item_id"], var_val))
             fc = cur.fetchone()
             if fc and fc["vpd_weighted"] > 0:
                 dl = fc["days_left"]
@@ -1166,8 +1175,8 @@ def update_item(item_id):
                 cur.execute("""
                     UPDATE forecasts 
                     SET status=%s, reorder_deadline_date=%s, updated_at=NOW()
-                    WHERE user_id=%s AND item_id=%s
-                """, (new_status, reorder_deadline, user_id, it["item_id"]))
+                    WHERE user_id=%s AND item_id=%s AND COALESCE(variation_id, '')=%s
+                """, (new_status, reorder_deadline, user_id, it["item_id"], var_val))
 
     conn.close()
     return jsonify({"ok": True, "message": "Plazos de reposición guardados."}), 200
@@ -1487,6 +1496,29 @@ def get_warehouses():
             ORDER BY id ASC
         """, (user_id,))
         whs = cur.fetchall()
+
+        # Si el usuario no tiene depósitos registrados aún, crearle automáticamente Villa Celina
+        if not whs:
+            cur.execute("SELECT target_coverage_days FROM user_settings WHERE user_id=%s", (user_id,))
+            s = cur.fetchone()
+            target_days = s["target_coverage_days"] if s and s.get("target_coverage_days") else 30
+            cur.execute("""
+                INSERT INTO warehouses (user_id, code, name, city, transit_days, target_stock_days, type, is_active)
+                VALUES (%s, 'meli_full', 'Mercado Envíos Full (Villa Celina)', 'Villa Celina', 5, %s, 'meli_full', 1)
+                ON DUPLICATE KEY UPDATE 
+                    name=VALUES(name), city=VALUES(city), is_active=1
+            """, (user_id, target_days))
+            wh_id = cur.lastrowid
+            whs = [{
+                "id": wh_id,
+                "code": "meli_full",
+                "name": "Mercado Envíos Full (Villa Celina)",
+                "city": "Villa Celina",
+                "province": None,
+                "type": "meli_full",
+                "transit_days": 5,
+                "target_stock_days": target_days
+            }]
     conn.close()
     return jsonify({"ok": True, "warehouses": whs}), 200
 
@@ -1536,6 +1568,16 @@ def user_settings_route():
             }
             if s and "email_verified" not in s:
                 s["email_verified"] = False
+
+            # Incluir depósitos del usuario para carga unificada
+            cur.execute("""
+                SELECT id, code, name, city, province, type, transit_days, target_stock_days
+                FROM warehouses
+                WHERE user_id=%s AND is_active=1
+                ORDER BY id ASC
+            """, (user_id,))
+            whs = cur.fetchall()
+            s["warehouses"] = whs
         conn.close()
         return jsonify({"ok": True, "settings": s}), 200
 
@@ -1561,6 +1603,7 @@ def user_settings_route():
         if prev_email and new_email and prev_email.lower() != new_email.lower():
             email_is_verified = False
 
+        target_cov = data.get("target_coverage_days", 30)
         cur.execute("""
             INSERT INTO user_settings 
             (user_id, default_lead_time_days, default_safety_stock_days, target_coverage_days, notify_email, alert_email, notify_whatsapp, whatsapp_phone, email_verified)
@@ -1578,13 +1621,40 @@ def user_settings_route():
             user_id,
             data.get("default_lead_time_days", 7),
             data.get("default_safety_stock_days", 3),
-            data.get("target_coverage_days", 30),
+            target_cov,
             data.get("notify_email", True),
             new_email,
             data.get("notify_whatsapp", False),
             new_phone,
             email_is_verified
         ))
+
+        # Actualizar depósitos individuales en la base de datos
+        warehouses_payload = data.get("warehouses")
+        if isinstance(warehouses_payload, list) and len(warehouses_payload) > 0:
+            for wh in warehouses_payload:
+                wh_code = wh.get("code") or wh.get("id") or "meli_full"
+                wh_transit = int(wh.get("transit_days", 5))
+                wh_target = int(wh.get("target_stock_days", target_cov))
+                wh_name = wh.get("name") or "Mercado Envíos Full (Villa Celina)"
+                wh_city = wh.get("city") or "Villa Celina"
+                cur.execute("""
+                    INSERT INTO warehouses (user_id, code, name, city, transit_days, target_stock_days, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, 1)
+                    ON DUPLICATE KEY UPDATE
+                        name = VALUES(name),
+                        city = VALUES(city),
+                        transit_days = VALUES(transit_days),
+                        target_stock_days = VALUES(target_stock_days),
+                        is_active = 1
+                """, (user_id, wh_code, wh_name, wh_city, wh_transit, wh_target))
+        else:
+            # Si no se envió array de depósitos, actualizar el depósito activo de MeLi
+            cur.execute("""
+                UPDATE warehouses 
+                SET target_stock_days = %s
+                WHERE user_id = %s AND (code = 'meli_full' OR is_active = 1)
+            """, (target_cov, user_id))
 
         cur.execute("SELECT full_name FROM users WHERE id=%s", (user_id,))
         u_row = cur.fetchone()
