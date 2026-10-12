@@ -83,11 +83,14 @@ def ya_se_envio_alerta_hoy(conn, user_id: int, alert_type: str, item_id: str = N
 
 def registrar_alerta_en_log(conn, user_id: int, item_id: str, alert_type: str, mensaje: str, channel: str = "whatsapp"):
     """Registra en la tabla alert_logs para auditoría y control de frecuencia."""
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO alert_logs (user_id, item_id, alert_type, message, channel, sent_at)
-            VALUES (%s, %s, %s, %s, %s, NOW())
-        """, (user_id, item_id, alert_type, mensaje[:250], channel))
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO alert_logs (user_id, item_id, alert_type, message, channel, sent_at)
+                VALUES (%s, %s, %s, %s, %s, NOW())
+            """, (user_id, item_id, alert_type, mensaje[:250], channel))
+    except Exception as e:
+        logger.warning(f"[Alert Logs] Error registrando en tabla alert_logs: {e}")
 
 
 def enviar_email_alerta(destinatario: str, asunto: str, cuerpo_texto: str, cuerpo_html: str = None):
@@ -144,11 +147,12 @@ def procesar_alertas_usuario(user_id: int) -> dict:
             # Obtener publicaciones monitoreadas con sus pronósticos
             cur.execute("""
                 SELECT 
-                    i.item_id, i.sku, i.title, i.current_stock_full,
+                    i.item_id, i.sku, i.inventory_id, i.variation_id, i.title, i.current_stock_full,
                     f.days_left, f.stockout_date, f.reorder_deadline_date,
                     f.suggested_restock_units, f.status, f.vpd_weighted
                 FROM full_items i
                 JOIN forecasts f ON f.user_id = i.user_id AND f.item_id = i.item_id
+                     AND ( (i.variation_id IS NULL AND f.variation_id IS NULL) OR (f.variation_id = i.variation_id) )
                 WHERE i.user_id = %s AND i.is_monitored = 1
                 ORDER BY f.days_left ASC
             """, (user_id,))
@@ -156,6 +160,18 @@ def procesar_alertas_usuario(user_id: int) -> dict:
 
         if not items:
             return resultado
+
+        # Consolidar por producto físico para evitar notificaciones duplicadas (Clásica vs Premium vs Catálogo)
+        dedup_items = {}
+        for it in items:
+            key = (it.get("inventory_id") or "").strip() or (it.get("sku") or "").strip().upper() or f"{it['item_id']}_{it.get('variation_id') or ''}"
+            if key not in dedup_items:
+                dedup_items[key] = it
+            else:
+                prev = dedup_items[key]
+                if (it.get("days_left") or 999) < (prev.get("days_left") or 999):
+                    dedup_items[key] = it
+        items = list(dedup_items.values())
 
         today = date.today()
         criticos = []
