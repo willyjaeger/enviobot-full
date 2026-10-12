@@ -59,6 +59,10 @@ def obtener_configuracion_whatsapp() -> dict:
         "gateway_token": os.getenv("WHATSAPP_GATEWAY_TOKEN", ""),
         "simulation_mode": os.getenv("WHATSAPP_SIMULATION_MODE", "").lower() in ("true", "1", "yes"),
         "templates": {},
+        "send_vcard_on_welcome": True,
+        "vcard_name": "EnvioBot Full",
+        "vcard_org": "EnvioBot",
+        "vcard_title": "Alertas de Stock Full",
         "cadence": {
             "schedule_hours": "08:00, 14:00, 20:00",
             "cooldown_hours": 20,
@@ -115,6 +119,12 @@ def obtener_configuracion_whatsapp() -> dict:
                         cfg["cadence"].update(cad)
                     except Exception:
                         pass
+                elif k == "whatsapp_send_vcard_on_welcome":
+                    cfg["send_vcard_on_welcome"] = str(v).lower() in ("true", "1", "yes")
+                elif k == "whatsapp_vcard_name":
+                    cfg["vcard_name"] = str(v).strip()
+                elif k == "whatsapp_vcard_org":
+                    cfg["vcard_org"] = str(v).strip()
         conn.close()
     except Exception as e:
         logger.warning(f"[WhatsApp Config] No se pudo leer site_settings ({e}), usando defaults/.env")
@@ -226,6 +236,79 @@ def enviar_mensaje_whatsapp(telefono: str, mensaje: str) -> dict:
             return {"ok": False, "provider": "gateway_http", "error": str(e)}
 
     return {"ok": False, "error": f"Proveedor '{provider}' no configurado o URL inválida."}
+
+
+def enviar_contacto_vcard(telefono: str, contact_name: str = None, contact_phone: str = None, org: str = None, title: str = None, note: str = None, url: str = None) -> dict:
+    """
+    Envía una tarjeta de contacto interactiva (vCard 3.0) para que el destinatario
+    pueda guardar 'EnvioBot Full' en su agenda con un solo toque.
+    Esto hace que:
+    1. El chat muestre 'EnvioBot Full' en lugar del número.
+    2. Se elimine el cartel de 'Bloquear / Añadir a contactos'.
+    3. Los enlaces web del panel se vuelvan directamente cliqueables.
+    """
+    cfg = obtener_configuracion_whatsapp()
+
+    if not cfg["enabled"]:
+        return {"ok": False, "error": "WhatsApp está desactivado globalmente en admin.enviobot.com.ar"}
+
+    clean_phone = normalizar_telefono(telefono)
+    if not clean_phone:
+        return {"ok": False, "error": "Número de teléfono inválido o vacío."}
+
+    name = contact_name or cfg.get("vcard_name", "EnvioBot Full")
+    b_phone = contact_phone or cfg.get("business_phone", "+54 9 11 2859 4631")
+    c_org = org or cfg.get("vcard_org", "EnvioBot")
+    c_title = title or cfg.get("vcard_title", "Alertas de Stock Full")
+    c_note = note or "Asistente oficial de alertas de reposición y fecha límite de colecta en Mercado Envíos Full."
+    c_url = url or "https://enviobot.com.ar"
+
+    if cfg["simulation_mode"] or cfg["provider"] == "simulation":
+        logger.info(f"[SIMULACIÓN WHATSAPP] Enviando vCard '{name}' a {clean_phone}")
+        return {
+            "ok": True,
+            "simulated": True,
+            "to": clean_phone,
+            "displayName": name,
+            "message": f"vCard de {name} simulada con éxito."
+        }
+
+    provider = cfg["provider"]
+    api_url = cfg["api_url"] or "http://127.0.0.1:8085"
+    instance = cfg["instance_name"] or "enviobot_full"
+
+    if provider in ("gateway_local", "evolution"):
+        endpoint_url = f"{api_url}/message/sendContact/{instance}"
+        headers = {"Content-Type": "application/json"}
+        if cfg["api_key"]:
+            headers["apikey"] = cfg["api_key"]
+
+        payload = {
+            "number": clean_phone,
+            "contact": {
+                "name": name,
+                "phone": normalizar_telefono(b_phone),
+                "org": c_org,
+                "title": c_title,
+                "url": c_url,
+                "note": c_note
+            }
+        }
+
+        try:
+            r = requests.post(endpoint_url, headers=headers, json=payload, timeout=15)
+            if r.status_code in (200, 201):
+                res_data = r.json()
+                logger.info(f"[{provider}] vCard '{name}' enviada con éxito a {clean_phone}")
+                return {"ok": True, "provider": provider, "response": res_data}
+            else:
+                logger.error(f"[{provider} Error] Status {r.status_code}: {r.text}")
+                return {"ok": False, "provider": provider, "status_code": r.status_code, "error": r.text}
+        except Exception as e:
+            logger.error(f"[{provider} Exception] Error conectando con {endpoint_url}: {e}")
+            return {"ok": False, "provider": provider, "error": str(e)}
+
+    return {"ok": False, "error": f"El proveedor '{provider}' no soporta envío directo de vCard."}
 
 
 def enviar_lote_con_demora(destinatarios: list, mensaje: str, delay_segundos: int = None) -> list:
@@ -428,18 +511,32 @@ def formatear_alerta_verificacion_whatsapp(nombre_usuario: str, codigo_verificac
         })
 
     return (
-        f"*EnvioBot Full — Verificación de WhatsApp*\n"
+        f"*EnvioBot Full — Verificación y Contacto Oficial*\n"
         f"Hola {nombre_usuario}, este número fue registrado en tu cuenta de EnvioBot Full para recibir las alertas de reposición y fecha límite de colecta en Mercado Envíos Full.\n\n"
         f"Tu código de validación es: *{codigo_verificacion}*\n\n"
-        f"Con este aviso comprobamos que tu línea está activa y vinculada correctamente a tu depósito.\n"
-        f"Acceso al panel: {app_url}"
+        f"Tocá en *Añadir a contactos* en la tarjeta adjunta para guardar a EnvioBot Full en tu agenda. Así los enlaces del panel quedarán siempre activos y recibirás las alertas en tiempo y forma.\n"
+        f"Panel: {app_url}"
     )
 
 
 def enviar_verificacion_whatsapp(telefono: str, nombre_usuario: str, codigo_verificacion: str, app_url: str = "https://enviobot.com.ar/full") -> dict:
     """
     Despacha el mensaje de verificación de WhatsApp al número especificado.
+    Si está habilitado (por defecto sí), envía primero la tarjeta de contacto oficial (vCard)
+    para que el usuario guarde a EnvioBot Full con un toque.
     """
+    cfg = obtener_configuracion_whatsapp()
+
+    # 1. Enviar primero la tarjeta vCard interactiva si está activo
+    if cfg.get("send_vcard_on_welcome", True):
+        try:
+            vcard_res = enviar_contacto_vcard(telefono)
+            logger.info(f"[WhatsApp] vCard de bienvenida enviada a {telefono}: {vcard_res.get('ok')}")
+            time.sleep(1.5)
+        except Exception as e:
+            logger.warning(f"[WhatsApp] Error enviando vCard previa: {e}")
+
+    # 2. Enviar el mensaje formal de verificación y bienvenida
     msg = formatear_alerta_verificacion_whatsapp(nombre_usuario, codigo_verificacion, app_url)
     return enviar_mensaje_whatsapp(telefono, msg)
 

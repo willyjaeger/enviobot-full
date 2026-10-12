@@ -26,7 +26,7 @@ import requests
 from dotenv import load_dotenv
 
 from whatsapp_service import (
-    enviar_mensaje_whatsapp, enviar_verificacion_whatsapp,
+    enviar_mensaje_whatsapp, enviar_contacto_vcard, enviar_verificacion_whatsapp,
     WHATSAPP_SIMULATION_MODE, EVOLUTION_API_URL, WHATSAPP_GATEWAY_URL
 )
 from alerts_engine import procesar_alertas_usuario
