@@ -837,6 +837,87 @@ async function verificarEstadoInboundUsuario() {
     return false;
 }
 
+function getDiasCoberturaColecta() {
+    const input = document.getElementById('colectaDiasInput');
+    if (input) {
+        const val = parseInt(input.value, 10);
+        if (!isNaN(val) && val > 0) return val;
+    }
+    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+    return (wh && wh.defaultTarget) ? wh.defaultTarget : 15;
+}
+
+function onColectaDiasChange() {
+    verificarLeadTimeMinimoColecta();
+    recalcularColecta();
+}
+
+function setColectaDiasPreset(dias) {
+    const input = document.getElementById('colectaDiasInput');
+    if (input) {
+        input.value = dias;
+        onColectaDiasChange();
+    }
+}
+
+function verificarLeadTimeMinimoColecta() {
+    const targetDays = getDiasCoberturaColecta();
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 5;
+    const buffer = parseInt(document.getElementById('cfgSafetyStock')?.value, 10) || 2;
+    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+    const transit = wh.defaultTransit || 3;
+    const minDaysNeeded = leadTime + buffer + transit;
+
+    const warnBanner = document.getElementById('colectaLeadTimeWarning');
+    if (warnBanner) {
+        if (targetDays < minDaysNeeded) {
+            const elDias = document.getElementById('warnDiasElegidos');
+            const elLt = document.getElementById('warnLeadTime');
+            const elBuf = document.getElementById('warnBuffer');
+            const elTr = document.getElementById('warnTransit');
+            const elMin = document.getElementById('warnMinDias');
+            if (elDias) elDias.textContent = targetDays;
+            if (elLt) elLt.textContent = leadTime;
+            if (elBuf) elBuf.textContent = buffer;
+            if (elTr) elTr.textContent = transit;
+            if (elMin) elMin.textContent = minDaysNeeded;
+            warnBanner.style.display = 'block';
+        } else {
+            warnBanner.style.display = 'none';
+        }
+    }
+    return minDaysNeeded;
+}
+
+function toggleColectaFullscreen() {
+    const card = document.getElementById('colectaModalCard');
+    const btnText = document.getElementById('btnColectaFullscreenText');
+    const iconExp = document.getElementById('fsColectaIconExpand');
+    const iconComp = document.getElementById('fsColectaIconCompress');
+    if (!card) return;
+
+    card.classList.toggle('modal-fullscreen');
+    const isFull = card.classList.contains('modal-fullscreen');
+
+    if (btnText) btnText.textContent = isFull ? 'Ventana Normal' : 'Pantalla Completa';
+    if (iconExp && iconComp) {
+        iconExp.style.display = isFull ? 'none' : 'inline-block';
+        iconComp.style.display = isFull ? 'inline-block' : 'none';
+    }
+}
+
+function toggleResumenColecta() {
+    const sec = document.getElementById('colectaHeaderSummarySection');
+    const btn = document.getElementById('btnToggleResumenColecta');
+    if (!sec) return;
+
+    const isHidden = sec.style.display === 'none';
+    sec.style.display = isHidden ? 'block' : 'none';
+    if (btn) {
+        btn.textContent = isHidden ? 'Plegar Resumen' : 'Mostrar Resumen';
+    }
+}
+
 async function abrirModalColecta() {
     const modal = document.getElementById('colectaModal');
     if (!modal) return;
@@ -847,12 +928,18 @@ async function abrirModalColecta() {
     // Verificar permisos del módulo pago en backend
     await verificarEstadoInboundUsuario();
 
+    // Cobertura del depósito activo o guardada (default 15 días)
+    const targetGlobalDays = wh.defaultTarget || 15;
+    const inputDias = document.getElementById('colectaDiasInput');
+    if (inputDias) inputDias.value = targetGlobalDays;
+
+    verificarLeadTimeMinimoColecta();
+
     // Inicializar mapa de selección y unidades por defecto
     colectaSelectedItems.clear();
     colectaBoxUnits.clear();
 
-    const targetGlobalDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
-    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 5;
     const transit = wh.defaultTransit || 3;
     const daysFactor = targetGlobalDays + leadTime + transit;
 
@@ -862,8 +949,8 @@ async function abrirModalColecta() {
         const shouldCheck = (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || suggested > 0);
         if (shouldCheck) {
             colectaSelectedItems.set(it.id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
-            // Estimación de unidades por caja máster (ej: 20 o múltiplo)
-            const defaultUnitsBox = suggested >= 50 ? 25 : (suggested >= 20 ? 10 : 0);
+            // Unidades por caja máster reales del producto guardadas en base de datos
+            const defaultUnitsBox = (it.units_per_box && it.units_per_box > 0) ? it.units_per_box : 0;
             colectaBoxUnits.set(it.id, defaultUnitsBox);
         }
     });
@@ -938,8 +1025,8 @@ function switchColectaTab(tab) {
 }
 
 function recalcularColecta() {
-    const targetDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
-    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+    const targetDays = getDiasCoberturaColecta();
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 5;
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
     const transit = wh.defaultTransit || 3;
     const daysFactor = targetDays + leadTime + transit;
@@ -954,8 +1041,8 @@ function recalcularColecta() {
 }
 
 function toggleSelectAllColecta(checked) {
-    const targetDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
-    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+    const targetDays = getDiasCoberturaColecta();
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 5;
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
     const transit = wh.defaultTransit || 3;
     const daysFactor = targetDays + leadTime + transit;
@@ -966,7 +1053,7 @@ function toggleSelectAllColecta(checked) {
             const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
             colectaSelectedItems.set(it.id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
             if (!colectaBoxUnits.has(it.id)) {
-                colectaBoxUnits.set(it.id, 0);
+                colectaBoxUnits.set(it.id, it.units_per_box || 0);
             }
         });
     }
@@ -974,18 +1061,18 @@ function toggleSelectAllColecta(checked) {
 }
 
 function toggleItemColecta(id, checked) {
-    const targetDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
+    const targetDays = getDiasCoberturaColecta();
     const it = itemsData.find(x => x.id === id);
     if (!it) return;
 
     if (checked) {
-        const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+        const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 5;
         const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
         const transit = wh.defaultTransit || 3;
         const daysFactor = targetDays + leadTime + transit;
         const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
         colectaSelectedItems.set(id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
-        if (!colectaBoxUnits.has(id)) colectaBoxUnits.set(id, 0);
+        if (!colectaBoxUnits.has(id)) colectaBoxUnits.set(id, it.units_per_box || 0);
     } else {
         colectaSelectedItems.delete(id);
     }
@@ -1001,6 +1088,20 @@ function cambiarUnidadesColecta(id, val) {
 function cambiarUnidadesPorCajaColecta(id, val) {
     const cant = Math.max(0, parseInt(val, 10) || 0);
     colectaBoxUnits.set(id, cant);
+
+    // Actualizar en memoria y persistir en base de datos
+    const it = itemsData.find(x => x.id === id);
+    if (it) it.units_per_box = cant;
+
+    const token = getToken();
+    if (token) {
+        fetch(`${API_BASE}/full/items/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ units_per_box: cant })
+        }).catch(e => console.warn("Aviso guardando units_per_box:", e));
+    }
+
     actualizarTotalColecta();
 }
 
@@ -1009,8 +1110,8 @@ function renderizarFilasColecta() {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    const targetDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
-    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+    const targetDays = getDiasCoberturaColecta();
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 5;
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
     const transit = wh.defaultTransit || 3;
     const daysFactor = targetDays + leadTime + transit;
@@ -1019,7 +1120,7 @@ function renderizarFilasColecta() {
         const isSelected = colectaSelectedItems.has(it.id);
         const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
         const unitsToSend = colectaSelectedItems.get(it.id) !== undefined ? colectaSelectedItems.get(it.id) : suggested;
-        const unitsPerBox = colectaBoxUnits.get(it.id) || 0;
+        const unitsPerBox = colectaBoxUnits.get(it.id) !== undefined ? colectaBoxUnits.get(it.id) : (it.units_per_box || 0);
         const boxesEst = unitsPerBox > 0 ? Math.ceil(unitsToSend / unitsPerBox) : (unitsToSend > 0 ? 1 : 0);
 
         // Canales badges
@@ -1645,16 +1746,18 @@ function switchConfigTab(tab) {
     const tabMeli = document.getElementById('configTabMeli');
     const tabGeneral = document.getElementById('configTabGeneral');
     const tabWA = document.getElementById('configTabWhatsapp');
+    const tabTeam = document.getElementById('configTabTeam');
 
     const btnMeli = document.getElementById('tabBtnMeli');
     const btnGeneral = document.getElementById('tabBtnGeneral');
     const btnWA = document.getElementById('tabBtnWhatsapp');
+    const btnTeam = document.getElementById('tabBtnTeam');
 
     const btnSave = document.getElementById('btnConfigSave');
     const btnCancel = document.getElementById('btnConfigCancel');
 
-    [btnMeli, btnGeneral, btnWA].forEach(b => { if (b) b.classList.remove('active'); });
-    [tabMeli, tabGeneral, tabWA].forEach(t => { if (t) t.style.display = 'none'; });
+    [btnMeli, btnGeneral, btnWA, btnTeam].forEach(b => { if (b) b.classList.remove('active'); });
+    [tabMeli, tabGeneral, tabWA, tabTeam].forEach(t => { if (t) t.style.display = 'none'; });
 
     if (tab === 'meli') {
         if (tabMeli) tabMeli.style.display = 'block';
@@ -1674,6 +1777,148 @@ function switchConfigTab(tab) {
         if (btnSave) btnSave.style.display = 'none';
         if (btnCancel) btnCancel.textContent = 'Cerrar';
         renderizarDestinatariosWA();
+    } else if (tab === 'team') {
+        if (tabTeam) tabTeam.style.display = 'block';
+        if (btnTeam) btnTeam.classList.add('active');
+        if (btnSave) btnSave.style.display = 'none';
+        if (btnCancel) btnCancel.textContent = 'Cerrar';
+        cargarMiembrosEquipo();
+    }
+}
+
+// ── GESTIÓN DE EQUIPO Y COLABORADORES (FRAN / MIEMBROS) ───────────────
+async function cargarMiembrosEquipo() {
+    const tbody = document.getElementById('cfgTeamTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text2);">Cargando colaboradores...</td></tr>';
+
+    const token = getToken();
+    if (!token) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text2);">Iniciá sesión para ver tu equipo.</td></tr>';
+        return;
+    }
+
+    try {
+        const resp = await fetch(`${API_BASE}/full/team/members`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        if (!data.ok || !Array.isArray(data.members)) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text2);">No hay colaboradores registrados todavía.</td></tr>';
+            return;
+        }
+
+        if (data.members.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text2);">No tenés colaboradores en tu equipo aún. Podés invitar a Fran arriba.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        data.members.forEach(m => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid var(--border)';
+            const fecha = m.created_at ? m.created_at.split(' ')[0] : '—';
+            tr.innerHTML = `
+                <td style="padding: 10px;">
+                    <strong style="color: var(--text);">${m.full_name || 'Sin nombre'}</strong>
+                </td>
+                <td style="padding: 10px; font-family: monospace; color: var(--text2);">${m.email}</td>
+                <td style="padding: 10px;">
+                    <span class="role-badge role-deposito" style="font-size: 11px;">${m.employee_label || 'Colaborador'}</span>
+                </td>
+                <td style="padding: 10px; color: var(--text2); font-size: 12px;">${fecha}</td>
+                <td style="padding: 10px; text-align: right;">
+                    <button type="button" class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; color: #ff6b6b;"
+                            onclick="eliminarMiembroEquipo(${m.id}, '${m.full_name || m.email}')" title="Eliminar acceso">
+                        Quitar
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (e) {
+        console.error("Error cargando equipo:", e);
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #ff6b6b;">Error de conexión con el servidor.</td></tr>';
+    }
+}
+
+async function invitarMiembroEquipo(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    const nameEl = document.getElementById('newTeamName');
+    const emailEl = document.getElementById('newTeamEmail');
+    const passEl = document.getElementById('newTeamPassword');
+    const resEl = document.getElementById('newTeamInviteResult');
+
+    const name = nameEl ? nameEl.value.trim() : '';
+    const email = emailEl ? emailEl.value.trim().toLowerCase() : '';
+    const pass = passEl ? passEl.value.trim() : '';
+
+    if (!email) {
+        alert("Ingresá el correo electrónico del colaborador a invitar.");
+        return;
+    }
+
+    const token = getToken();
+    if (!token) {
+        alert("Iniciá sesión para invitar miembros a tu equipo.");
+        return;
+    }
+
+    try {
+        const resp = await fetch(`${API_BASE}/full/team/invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+                full_name: name || 'Colaborador',
+                email: email,
+                password: pass
+            })
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            alert(data.error || "No se pudo invitar al colaborador.");
+            return;
+        }
+
+        const clave = data.initial_password;
+        if (resEl) {
+            resEl.style.display = 'block';
+            resEl.innerHTML = `<strong>Acceso listo para ${name || email}:</strong><br>Email: <code>${email}</code><br>Contraseña: <strong><code>${clave}</code></strong><br><small style="color: var(--text2);">Pasale estos datos a ${name || 'tu colaborador'} para que ingrese directamente en Enviobot Full.</small>`;
+        }
+        alert(`Colaborador ${name || email} habilitado exitosamente.\n\nEmail: ${email}\nContraseña: ${clave}\n\nYa puede ingresar directamente en la aplicación sin registrarse en Mercado Libre.`);
+        
+        if (nameEl) nameEl.value = '';
+        if (emailEl) emailEl.value = '';
+        if (passEl) passEl.value = '';
+
+        cargarMiembrosEquipo();
+    } catch (err) {
+        console.error("Error invitando miembro:", err);
+        alert(`Error de red: ${err.message}`);
+    }
+}
+
+async function eliminarMiembroEquipo(memberId, memberName) {
+    if (!confirm(`¿Estás seguro de que deseás revocar el acceso a ${memberName}?`)) {
+        return;
+    }
+    const token = getToken();
+    if (!token) return;
+    try {
+        const resp = await fetch(`${API_BASE}/full/team/members/${memberId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            alert(`Acceso de ${memberName} revocado correctamente.`);
+            cargarMiembrosEquipo();
+        } else {
+            alert(data.error || "No se pudo remover al colaborador.");
+        }
+    } catch (e) {
+        console.error("Error eliminando miembro:", e);
+        alert(`Error al contactar al servidor: ${e.message}`);
     }
 }
 
