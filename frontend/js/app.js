@@ -1845,8 +1845,36 @@ async function cargarMiembrosEquipo() {
             return;
         }
 
+        // Renderizar usuarios satélite detectados en EnvioBot Pedidos
+        const satSection = document.getElementById('cfgTeamSatellitesSection');
+        const satList = document.getElementById('cfgTeamSatellitesList');
+        if (satSection && satList) {
+            if (data.satellites_pedidos && data.satellites_pedidos.length > 0) {
+                satList.innerHTML = '';
+                satSection.style.display = 'block';
+                data.satellites_pedidos.forEach(s => {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display: flex; justify-content: space-between; align-items: center; background: var(--surf1); border: 1px solid var(--border); border-radius: 6px; padding: 9px 12px; font-size: 12.5px;';
+                    row.innerHTML = `
+                        <div>
+                            <strong style="color: var(--text);">${s.full_name || 'Usuario Satélite'}</strong>
+                            <span style="color: var(--text2); font-family: monospace; margin-left: 8px;">(${s.email})</span>
+                            <span class="role-badge" style="margin-left: 6px; font-size: 10px; background: rgba(56, 189, 248, 0.15); color: var(--accent);">EnvioBot Pedidos</span>
+                        </div>
+                        <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700; padding: 5px 12px; font-size: 11.5px;"
+                                onclick="habilitarSateliteEnFull('${s.email}', '${s.full_name || ''}')">
+                            Habilitar en Full
+                        </button>
+                    `;
+                    satList.appendChild(row);
+                });
+            } else {
+                satSection.style.display = 'none';
+            }
+        }
+
         if (data.members.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text2);">No tenés colaboradores en tu equipo aún. Podés invitar a Fran arriba.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text2);">No tenés colaboradores en tu equipo aún. Podés habilitar a Fran arriba.</td></tr>';
             return;
         }
 
@@ -1879,6 +1907,32 @@ async function cargarMiembrosEquipo() {
     }
 }
 
+async function habilitarSateliteEnFull(email, name) {
+    const token = getToken();
+    if (!token) return;
+    try {
+        const resp = await fetch(`${API_BASE}/full/team/invite`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+                full_name: name || 'Colaborador',
+                email: email,
+                password: ''
+            })
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            showToast(`${name || email} habilitado en Full con su contraseña de Pedidos.`, "success");
+            cargarMiembrosEquipo();
+        } else {
+            showToast(data.error || "No se pudo habilitar al colaborador.", "error");
+        }
+    } catch (e) {
+        console.error("Error habilitando satélite:", e);
+        showToast("Error de conexión al habilitar satélite.", "error");
+    }
+}
+
 async function invitarMiembroEquipo(e) {
     if (e && e.preventDefault) e.preventDefault();
     const nameEl = document.getElementById('newTeamName');
@@ -1891,13 +1945,13 @@ async function invitarMiembroEquipo(e) {
     const pass = passEl ? passEl.value.trim() : '';
 
     if (!email) {
-        alert("Ingresá el correo electrónico del colaborador a invitar.");
+        showToast("Ingresá el correo electrónico del colaborador a invitar.", "error");
         return;
     }
 
     const token = getToken();
     if (!token) {
-        alert("Iniciá sesión para invitar miembros a tu equipo.");
+        showToast("Iniciá sesión para invitar miembros a tu equipo.", "error");
         return;
     }
 
@@ -1913,16 +1967,24 @@ async function invitarMiembroEquipo(e) {
         });
         const data = await resp.json();
         if (!data.ok) {
-            alert(data.error || "No se pudo invitar al colaborador.");
+            showToast(data.error || "No se pudo invitar al colaborador.", "error");
             return;
         }
 
-        const clave = data.initial_password;
-        if (resEl) {
-            resEl.style.display = 'block';
-            resEl.innerHTML = `<strong>Acceso listo para ${name || email}:</strong><br>Email: <code>${email}</code><br>Contraseña: <strong><code>${clave}</code></strong><br><small style="color: var(--text2);">Pasale estos datos a ${name || 'tu colaborador'} para que ingrese directamente en Enviobot Full.</small>`;
+        if (data.is_existing_user || data.uses_existing_password) {
+            if (resEl) {
+                resEl.style.display = 'block';
+                resEl.innerHTML = `<strong>${data.member.full_name || email} ya es usuario de EnvioBot:</strong><br><span style="color: var(--text2);">Su acceso a Full quedó habilitado. <strong>Mantiene la misma contraseña que ya utiliza habitualmente en EnvioBot Pedidos.</strong></span>`;
+            }
+            showToast(`${data.member.full_name || email} habilitado con su clave habitual de Pedidos.`, "success");
+        } else {
+            const clave = data.initial_password || pass || '123456';
+            if (resEl) {
+                resEl.style.display = 'block';
+                resEl.innerHTML = `<strong>Nuevo Colaborador Creado (${data.member.full_name || email}):</strong><br>Email: <code>${email}</code><br>Contraseña Inicial: <strong><code>${clave}</code></strong><br><small style="color: var(--text2);">Al ingresar por primera vez con esta clave temporal se le solicitará definir su contraseña personal.</small>`;
+            }
+            showToast(`Colaborador ${name || email} creado con éxito.`, "success");
         }
-        showToast(`Colaborador ${name || email} habilitado exitosamente.`, "success");
         
         if (nameEl) nameEl.value = '';
         if (emailEl) emailEl.value = '';
@@ -1956,6 +2018,51 @@ async function eliminarMiembroEquipo(memberId, memberName) {
     } catch (e) {
         console.error("Error eliminando miembro:", e);
         showToast(`Error al contactar al servidor: ${e.message}`, "error");
+    }
+}
+
+// ── MANEJO DE CAMBIO DE CONTRASEÑA OBLIGATORIO PARA NUEVOS USUARIOS ──
+function abrirModalChangePassword() {
+    const m = document.getElementById('modalChangePassword');
+    if (m) m.style.display = 'flex';
+}
+
+async function confirmarCambioContraseña() {
+    const p1 = document.getElementById('changePwInput').value.trim();
+    const p2 = document.getElementById('changePwConfirmInput').value.trim();
+    const err = document.getElementById('changePwError');
+    if (err) err.style.display = 'none';
+
+    if (p1.length < 6) {
+        if (err) { err.textContent = 'La nueva contraseña debe tener al menos 6 caracteres.'; err.style.display = 'block'; }
+        return;
+    }
+    if (p1 === '123456') {
+        if (err) { err.textContent = 'Debés ingresar una contraseña personal diferente a la clave inicial 123456.'; err.style.display = 'block'; }
+        return;
+    }
+    if (p1 !== p2) {
+        if (err) { err.textContent = 'Las contraseñas no coinciden.'; err.style.display = 'block'; }
+        return;
+    }
+
+    const token = getToken();
+    try {
+        const resp = await fetch(`${API_BASE}/auth/change-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ new_password: p1 })
+        });
+        const d = await resp.json();
+        if (d.ok) {
+            const m = document.getElementById('modalChangePassword');
+            if (m) m.style.display = 'none';
+            showToast('Tu contraseña personal fue guardada exitosamente.', 'success');
+        } else {
+            if (err) { err.textContent = d.error || 'Error al actualizar contraseña.'; err.style.display = 'block'; }
+        }
+    } catch (e) {
+        if (err) { err.textContent = e.message; err.style.display = 'block'; }
     }
 }
 
@@ -2574,7 +2681,12 @@ async function handleAuthSubmit(e) {
         cerrarModalAuth();
 
         if (data.existing_user_linked) {
-            alert(data.message || 'Detectamos tu cuenta de EnvioBot Pedidos. Se habilitó EnvioBot Full con tu contraseña habitual.');
+            showToast(data.message || 'Detectamos tu cuenta de EnvioBot Pedidos. Se habilitó EnvioBot Full con tu contraseña habitual.', 'success');
+        }
+
+        // Si se le exige cambio de contraseña al nuevo colaborador que ingresó con clave inicial
+        if (data.must_change_password || (data.user && data.user.must_change_password)) {
+            abrirModalChangePassword();
         }
 
         // Si es un usuario existente pero NO tiene suscripción a EnvioBot Full:
@@ -2600,8 +2712,9 @@ async function handleAuthSubmit(e) {
         if (errBox) {
             errBox.textContent = err.message;
             errBox.style.display = 'block';
+            errBox.style.lineHeight = '1.45';
         } else {
-            alert(err.message);
+            showToast(err.message, 'error');
         }
     } finally {
         btnSubmit.disabled = false;

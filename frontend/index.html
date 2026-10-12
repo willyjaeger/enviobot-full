@@ -1053,6 +1053,17 @@
                                 <strong>No necesitan registrarse aparte ni vincular cuentas de Mercado Libre.</strong>
                             </p>
 
+                            <!-- Sección de Usuarios Satélite Detectados en EnvioBot Pedidos -->
+                            <div id="cfgTeamSatellitesSection" style="display: none; background: rgba(56, 189, 248, 0.08); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+                                <div style="font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 4px;">
+                                    Usuarios Satélite detectados en tu cuenta de EnvioBot Pedidos
+                                </div>
+                                <p style="font-size: 11.5px; color: var(--text2); margin-bottom: 10px; line-height: 1.45;">
+                                    Estos usuarios ya tienen acceso en tu cuenta de EnvioBot Pedidos con su propia contraseña. Podés habilitarlos en EnvioBot Full con un solo clic manteniendo su clave habitual.
+                                </p>
+                                <div id="cfgTeamSatellitesList" style="display: flex; flex-direction: column; gap: 8px;"></div>
+                            </div>
+
                             <!-- Formulario para invitar colaborador -->
                             <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 18px;">
                                 <div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 10px;">
@@ -1320,6 +1331,28 @@
                 </div>
                 <button class="btn btn-secondary" onclick="cerrarModalAdminClientes()">Cerrar</button>
             </div>
+        </div>
+    </div>
+
+    <!-- ── MODAL: Definir Contraseña Personal Obligatoria (Nuevos Colaboradores) ── -->
+    <div id="modalChangePassword" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 2000;">
+        <div class="modal-card" style="max-width: 440px; width: 92%; padding: 24px; text-align: left;">
+            <h3 style="color: var(--accent); font-size: 18px; font-weight: 800; margin-bottom: 6px;">Definir Contraseña Personal</h3>
+            <p style="font-size: 12.5px; color: var(--text2); margin-bottom: 16px; line-height: 1.5;">
+                Por seguridad, como es tu primer ingreso con la clave inicial temporal, por favor ingresá tu nueva contraseña personal para EnvioBot Full (mínimo 6 caracteres).
+            </p>
+            <div class="form-group" style="margin-bottom: 12px;">
+                <label style="font-size: 12px; font-weight: 700;">Nueva Contraseña</label>
+                <input type="password" id="changePwInput" class="filter-input" placeholder="Mínimo 6 caracteres" style="width: 100%; font-size: 13px; padding: 8px 10px;">
+            </div>
+            <div class="form-group" style="margin-bottom: 14px;">
+                <label style="font-size: 12px; font-weight: 700;">Confirmar Nueva Contraseña</label>
+                <input type="password" id="changePwConfirmInput" class="filter-input" placeholder="Repetí tu nueva contraseña" style="width: 100%; font-size: 13px; padding: 8px 10px;">
+            </div>
+            <div id="changePwError" style="display: none; color: #ff6b6b; font-size: 12px; margin-bottom: 12px;"></div>
+            <button type="button" class="btn" style="background: var(--accent); color: #111; font-weight: 800; width: 100%; padding: 11px; font-size: 13px; justify-content: center;" onclick="confirmarCambioContraseña()">
+                Guardar Contraseña y Continuar
+            </button>
         </div>
     </div>
 
