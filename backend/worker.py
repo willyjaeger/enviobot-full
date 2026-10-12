@@ -412,7 +412,18 @@ def sync_all_accounts_for_user(user_id):
         token = get_valid_token_for_cred(conn, cred)
         if token and cred.get("ml_user_id"):
             sync_account_full_catalog(user_id, cred["id"], token, cred["ml_user_id"])
-    conn.close()
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO user_settings (user_id, last_sync_at) 
+                VALUES (%s, NOW())
+                ON DUPLICATE KEY UPDATE last_sync_at = NOW()
+            """, (user_id,))
+    except Exception as e:
+        print(f"[{datetime.now()}] Error guardando last_sync_at para user_id={user_id}: {e}")
+    finally:
+        conn.close()
 
     # Disparar evaluación de alertas para el usuario
     try:
@@ -422,11 +433,22 @@ def sync_all_accounts_for_user(user_id):
     except Exception as e:
         print(f"[{datetime.now()}] Error evaluando alertas para user_id={user_id}: {e}")
 
-def run_periodic_sync(skip_alerts: bool = False):
-    """Ejecutado por Cron en producción para todos los clientes."""
+def run_periodic_sync(skip_alerts: bool = False, force: bool = False):
+    """Ejecutado por Cron en producción respetando la frecuencia configurada de cada usuario."""
     print(f"[{datetime.now()}] === Iniciando Sync Periódica EnvioBot Full ===")
     conn = get_db()
     with conn.cursor() as cur:
+        # Traer configuración de frecuencia y última sincronización de cada usuario activo
+        cur.execute("""
+            SELECT u.id as user_id, 
+                   COALESCE(s.sync_frequency_hours, 4) as sync_frequency_hours,
+                   s.last_sync_at
+            FROM users u
+            LEFT JOIN user_settings s ON s.user_id = u.id
+            WHERE u.active = 1
+        """)
+        users_settings = {r["user_id"]: r for r in cur.fetchall()}
+
         cur.execute("""
             SELECT c.id, c.user_id, c.ml_user_id, c.ml_access_token, c.ml_refresh_token, c.ml_token_expires_at, c.ml_nickname
             FROM ml_credentials c
@@ -435,21 +457,55 @@ def run_periodic_sync(skip_alerts: bool = False):
         """)
         creds = cur.fetchall()
 
+    now = datetime.now()
+    creds_by_user = {}
+    for c in creds:
+        creds_by_user.setdefault(c["user_id"], []).append(c)
+
     usuarios_procesados = set()
-    for cred in creds:
-        try:
-            token = get_valid_token_for_cred(conn, cred)
-            if token and cred.get("ml_user_id"):
-                sync_account_full_catalog(cred["user_id"], cred["id"], token, cred["ml_user_id"])
-                usuarios_procesados.add(cred["user_id"])
-        except Exception as e:
-            print(f"Error procesando cred {cred.get('id')}: {e}")
+    for uid, user_creds in creds_by_user.items():
+        us = users_settings.get(uid, {})
+        freq = us.get("sync_frequency_hours") or 4
+        last_sync = us.get("last_sync_at")
+
+        should_sync = force
+        if not should_sync:
+            if not last_sync:
+                should_sync = True
+            else:
+                elapsed_hours = (now - last_sync).total_seconds() / 3600.0
+                # Margen de 10 minutos (0.16h) para compensar desfasajes de tiempo de cron
+                if elapsed_hours >= (freq - 0.16):
+                    should_sync = True
+                else:
+                    print(f"[{datetime.now()}] [SKIP] user_id={uid}: frecuencia configurada={freq}h, última sync fue hace {elapsed_hours:.1f}h")
+
+        if should_sync:
+            print(f"[{datetime.now()}] [RUN] user_id={uid}: sincronizando {len(user_creds)} credenciales (frecuencia configurada: {freq}h)")
+            for cred in user_creds:
+                try:
+                    token = get_valid_token_for_cred(conn, cred)
+                    if token and cred.get("ml_user_id"):
+                        sync_account_full_catalog(uid, cred["id"], token, cred["ml_user_id"])
+                        usuarios_procesados.add(uid)
+                except Exception as e:
+                    print(f"Error procesando cred {cred.get('id')}: {e}")
+
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO user_settings (user_id, last_sync_at)
+                        VALUES (%s, NOW())
+                        ON DUPLICATE KEY UPDATE last_sync_at = NOW()
+                    """, (uid,))
+            except Exception as e:
+                print(f"Error actualizando last_sync_at para user_id={uid}: {e}")
 
     conn.close()
     print(f"[{datetime.now()}] === Sync Periódica Finalizada ({len(usuarios_procesados)} usuarios sincronizados) ===")
 
     # Disparar motor de alertas para todos los usuarios sincronizados
-    if not skip_alerts:
+    if not skip_alerts and usuarios_procesados:
         try:
             from alerts_engine import ejecutar_motor_alertas_global
             ejecutar_motor_alertas_global()
@@ -467,5 +523,7 @@ if __name__ == "__main__":
             sync_all_accounts_for_user(target_uid)
         except Exception as ex:
             print(f"Uso: python worker.py --user <user_id> (Error: {ex})")
+    elif "--force" in sys.argv:
+        run_periodic_sync(force=True)
     else:
         run_periodic_sync()

@@ -103,6 +103,20 @@ def init_verification_tables():
                 pass
 
             try:
+                cur.execute("SHOW COLUMNS FROM user_settings LIKE 'sync_frequency_hours'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE user_settings ADD COLUMN sync_frequency_hours INT NOT NULL DEFAULT 4")
+            except Exception:
+                pass
+
+            try:
+                cur.execute("SHOW COLUMNS FROM user_settings LIKE 'last_sync_at'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE user_settings ADD COLUMN last_sync_at DATETIME NULL")
+            except Exception:
+                pass
+
+            try:
                 cur.execute("SHOW COLUMNS FROM alert_recipients LIKE 'is_verified'")
                 if not cur.fetchone():
                     cur.execute("ALTER TABLE alert_recipients ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT FALSE")
@@ -1168,6 +1182,7 @@ def get_full_items():
             
             # Si el usuario despachó 130 un y MeLi ya recibió 60 un en muelle, lo remanente en camino son 70 un
             remaining_transit = max(0, raw_transit_units - in_process_units) if raw_transit_units > 0 else 0
+            in_transit_units = remaining_transit
             c_item["in_transit_stock"] = remaining_transit
             total_incoming = in_process_units + remaining_transit
             c_item["total_incoming"] = total_incoming
@@ -1199,7 +1214,7 @@ def get_full_items():
             if stock <= 0:
                 if in_process_units > 0:
                     c_item["status"] = "in_reception"
-                elif in_transit_units > 0:
+                elif remaining_transit > 0:
                     c_item["status"] = "in_transit"
                 else:
                     c_item["status"] = "out_of_stock"
@@ -1335,18 +1350,16 @@ def trigger_sync():
     user_id = int(get_jwt_identity())
     conn = get_db()
     account_id = get_account_user_id(user_id, conn)
-    conn.close()
     from worker import sync_all_accounts_for_user
-    conn = get_db()
     with conn.cursor() as cur:
-        cur.execute("SELECT id FROM ml_credentials WHERE user_id=%s", (user_id,))
+        cur.execute("SELECT id FROM ml_credentials WHERE user_id=%s", (account_id,))
         accounts = cur.fetchall()
     conn.close()
 
     if not accounts:
         return jsonify({"ok": False, "error": "Todavía no tenés cuentas de MercadoLibre vinculadas."}), 400
 
-    threading.Thread(target=sync_all_accounts_for_user, args=(user_id,), daemon=True).start()
+    threading.Thread(target=sync_all_accounts_for_user, args=(account_id,), daemon=True).start()
     return jsonify({"ok": True, "message": "Sincronización iniciada en segundo plano."}), 200
 
 # -------------------------------------------------------------
@@ -1712,14 +1725,18 @@ def user_settings_route():
                 "default_lead_time_days": 7,
                 "default_safety_stock_days": 3,
                 "target_coverage_days": 30,
+                "sync_frequency_hours": 4,
                 "notify_email": True,
                 "alert_email": "",
                 "notify_whatsapp": False,
                 "whatsapp_phone": "",
                 "email_verified": False
             }
-            if s and "email_verified" not in s:
-                s["email_verified"] = False
+            if s:
+                if "email_verified" not in s:
+                    s["email_verified"] = False
+                if "sync_frequency_hours" not in s or s["sync_frequency_hours"] is None:
+                    s["sync_frequency_hours"] = 4
 
             # Incluir depósitos del usuario para carga unificada
             cur.execute("""
@@ -1756,14 +1773,19 @@ def user_settings_route():
             email_is_verified = False
 
         target_cov = data.get("target_coverage_days", 30)
+        sync_freq = int(data.get("sync_frequency_hours", 4))
+        if sync_freq not in (1, 2, 4, 6, 12, 24):
+            sync_freq = 4
+
         cur.execute("""
             INSERT INTO user_settings 
-            (user_id, default_lead_time_days, default_safety_stock_days, target_coverage_days, notify_email, alert_email, notify_whatsapp, whatsapp_phone, email_verified)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (user_id, default_lead_time_days, default_safety_stock_days, target_coverage_days, sync_frequency_hours, notify_email, alert_email, notify_whatsapp, whatsapp_phone, email_verified)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 default_lead_time_days = VALUES(default_lead_time_days),
                 default_safety_stock_days = VALUES(default_safety_stock_days),
                 target_coverage_days = VALUES(target_coverage_days),
+                sync_frequency_hours = VALUES(sync_frequency_hours),
                 notify_email = VALUES(notify_email),
                 alert_email = VALUES(alert_email),
                 notify_whatsapp = VALUES(notify_whatsapp),
@@ -1774,6 +1796,7 @@ def user_settings_route():
             data.get("default_lead_time_days", 7),
             data.get("default_safety_stock_days", 3),
             target_cov,
+            sync_freq,
             data.get("notify_email", True),
             new_email,
             data.get("notify_whatsapp", False),

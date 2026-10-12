@@ -950,6 +950,19 @@
                                 </div>
                                 <small>Resumen matutino de publicaciones que alcanzaron su fecha límite de reposición.</small>
                             </div>
+
+                            <div class="form-group" style="margin-top: 14px; margin-bottom: 0;">
+                                <label for="cfgSyncFrequency" style="font-weight: 600; color: var(--text);">Frecuencia de sincronización de stock con Mercado Libre</label>
+                                <select id="cfgSyncFrequency" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surf2); color: var(--text); font-size: 13px;">
+                                    <option value="1">Cada 1 hora (Intensivo - Recomendado para Hot Sale o Cyber)</option>
+                                    <option value="2">Cada 2 horas (Alto volumen de rotación diaria)</option>
+                                    <option value="4" selected>Cada 4 horas (Estándar recomendado - 6 veces al día)</option>
+                                    <option value="6">Cada 6 horas (4 veces al día)</option>
+                                    <option value="12">Cada 12 horas (2 veces al día)</option>
+                                    <option value="24">Cada 24 horas (1 vez al día)</option>
+                                </select>
+                                <small>Intervalo automático en que el sistema consulta a Mercado Libre el stock disponible y en recepción de Full. También podés sincronizar manualmente en cualquier momento desde el botón de la barra superior.</small>
+                            </div>
                         </div>
 
                         <!-- Notificaciones Nativas de Pantalla / Escritorio -->

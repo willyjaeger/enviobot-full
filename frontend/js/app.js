@@ -1597,6 +1597,10 @@ async function cargarSettingsBackend() {
             if (emailEl && s.alert_email) {
                 emailEl.value = s.alert_email;
             }
+            const syncEl = document.getElementById('cfgSyncFrequency');
+            if (syncEl && s.sync_frequency_hours !== undefined) {
+                syncEl.value = String(s.sync_frequency_hours);
+            }
             actualizarEstadoVerificacionEmail(s.email_verified);
 
             // Sincronizar depósitos reales guardados en MariaDB
@@ -2490,6 +2494,7 @@ async function guardarConfiguracion(e) {
     const token = getToken();
     if (token) {
         try {
+            const syncFreq = parseInt(document.getElementById('cfgSyncFrequency')?.value, 10) || 4;
             await fetch(`${API_BASE}/full/settings`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -2497,6 +2502,7 @@ async function guardarConfiguracion(e) {
                     default_lead_time_days: lt,
                     default_safety_stock_days: ss,
                     target_coverage_days: generalTarget,
+                    sync_frequency_hours: syncFreq,
                     alert_email: email,
                     warehouses: warehousesList
                 })
