@@ -7,10 +7,7 @@ const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:5001/a
 
 // Configuración de Depósitos disponibles
 const WAREHOUSES = {
-    meli_full: { id: "meli_full", name: "Mercado Envíos Full (Bs As)", city: "Buenos Aires", defaultTransit: 5, defaultTarget: 30 },
-    cordoba:   { id: "cordoba",   name: "Depósito Córdoba",            city: "Córdoba",      defaultTransit: 3, defaultTarget: 20 },
-    rosario:   { id: "rosario",   name: "Hub Rosario",                 city: "Rosario",      defaultTransit: 2, defaultTarget: 20 },
-    mdp:       { id: "mdp",       name: "Depósito Mar del Plata",      city: "Mar del Plata", defaultTransit: 2, defaultTarget: 15 }
+    meli_full: { id: "meli_full", name: "Mercado Envíos Full (Villa Celina)", city: "Villa Celina", defaultTransit: 5, defaultTarget: 30 }
 };
 
 let currentWarehouse = 'meli_full';
@@ -19,7 +16,7 @@ let currentAccount = 'all';
 let currentPlanInfo = null;
 let currentAuthTab = 'login';
 
-// Dataset demo interactivo multi-depósito (funciona aún sin backend)
+// Dataset demo interactivo (funciona aún sin backend)
 const BASE_ITEMS_CATALOG = [
     {
         id: 1,
@@ -29,10 +26,7 @@ const BASE_ITEMS_CATALOG = [
         thumbnail: "https://http2.mlstatic.com/D_Q_NP_2X_841443-MLA74805728863_032024-T.webp",
         permalink: "https://mercadolibre.com.ar",
         depots: {
-            meli_full: { stock: 34,  transit_days: 5, target_days: 30, buffer: 2, vpd: 7.5 },
-            cordoba:   { stock: 85,  transit_days: 3, target_days: 20, buffer: 2, vpd: 2.2 },
-            rosario:   { stock: 10,  transit_days: 2, target_days: 20, buffer: 2, vpd: 3.1 },
-            mdp:       { stock: 4,   transit_days: 2, target_days: 15, buffer: 2, vpd: 1.8 }
+            meli_full: { stock: 34,  transit_days: 5, target_days: 30, buffer: 2, vpd: 7.5 }
         }
     },
     {
@@ -43,10 +37,7 @@ const BASE_ITEMS_CATALOG = [
         thumbnail: "https://http2.mlstatic.com/D_Q_NP_2X_723145-MLA71542109821_092023-T.webp",
         permalink: "https://mercadolibre.com.ar",
         depots: {
-            meli_full: { stock: 68,  transit_days: 5, target_days: 30, buffer: 2, vpd: 6.7 },
-            cordoba:   { stock: 15,  transit_days: 3, target_days: 20, buffer: 2, vpd: 3.0 },
-            rosario:   { stock: 42,  transit_days: 2, target_days: 20, buffer: 2, vpd: 2.5 },
-            mdp:       { stock: 0,   transit_days: 2, target_days: 15, buffer: 2, vpd: 1.2 }
+            meli_full: { stock: 68,  transit_days: 5, target_days: 30, buffer: 2, vpd: 6.7 }
         }
     },
     {
@@ -57,10 +48,7 @@ const BASE_ITEMS_CATALOG = [
         thumbnail: "https://http2.mlstatic.com/D_Q_NP_2X_910243-MLA72899451022_112023-T.webp",
         permalink: "https://mercadolibre.com.ar",
         depots: {
-            meli_full: { stock: 280, transit_days: 4, target_days: 30, buffer: 2, vpd: 9.6 },
-            cordoba:   { stock: 90,  transit_days: 3, target_days: 20, buffer: 2, vpd: 2.8 },
-            rosario:   { stock: 65,  transit_days: 2, target_days: 20, buffer: 2, vpd: 2.0 },
-            mdp:       { stock: 40,  transit_days: 2, target_days: 15, buffer: 2, vpd: 1.1 }
+            meli_full: { stock: 280, transit_days: 4, target_days: 30, buffer: 2, vpd: 9.6 }
         }
     },
     {
@@ -71,10 +59,7 @@ const BASE_ITEMS_CATALOG = [
         thumbnail: "https://http2.mlstatic.com/D_Q_NP_2X_612984-MLA70198421390_072023-T.webp",
         permalink: "https://mercadolibre.com.ar",
         depots: {
-            meli_full: { stock: 0,   transit_days: 6, target_days: 30, buffer: 2, vpd: 2.8 },
-            cordoba:   { stock: 20,  transit_days: 3, target_days: 20, buffer: 2, vpd: 0.9 },
-            rosario:   { stock: 0,   transit_days: 2, target_days: 20, buffer: 2, vpd: 1.0 },
-            mdp:       { stock: 18,  transit_days: 2, target_days: 15, buffer: 2, vpd: 0.6 }
+            meli_full: { stock: 0,   transit_days: 6, target_days: 30, buffer: 2, vpd: 2.8 }
         }
     }
 ];
@@ -99,7 +84,63 @@ function cambiarDeposito(depotId) {
     const destinoText = document.getElementById('colectaDestinoText');
     if (destinoText) destinoText.textContent = wh.name;
 
+    const depotSingleLabel = document.getElementById('depotSingleLabelPill');
+    if (depotSingleLabel) depotSingleLabel.textContent = wh.name;
+
+    const transitText = document.getElementById('depotTransitDaysText');
+    if (transitText) transitText.textContent = `${wh.defaultTransit || 5} días`;
+
+    const targetText = document.getElementById('depotTargetDaysText');
+    if (targetText) targetText.textContent = `${wh.defaultTarget || 30} días`;
+
+    const sidebarDepot = document.getElementById('sidebarDepotName');
+    if (sidebarDepot) sidebarDepot.textContent = wh.name;
+
     cargarDatos();
+}
+
+function poblarSelectoresDepositos() {
+    const activeSelect = document.getElementById('activeWarehouseSelect');
+    const depotSingleLabel = document.getElementById('depotSingleLabelPill');
+    const recipSelect = document.getElementById('newRecipDepot');
+    const whKeys = Object.keys(WAREHOUSES);
+
+    if (activeSelect && depotSingleLabel) {
+        if (whKeys.length <= 1) {
+            activeSelect.style.display = 'none';
+            depotSingleLabel.style.display = 'inline-block';
+            depotSingleLabel.textContent = (WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full).name;
+        } else {
+            activeSelect.style.display = 'inline-block';
+            depotSingleLabel.style.display = 'none';
+            activeSelect.innerHTML = '';
+            Object.values(WAREHOUSES).forEach(wh => {
+                const opt = document.createElement('option');
+                opt.value = wh.id;
+                opt.textContent = wh.name;
+                if (wh.id === currentWarehouse) opt.selected = true;
+                activeSelect.appendChild(opt);
+            });
+        }
+    }
+
+    if (recipSelect) {
+        recipSelect.innerHTML = '<option value="all">Todos los depósitos</option>';
+        Object.values(WAREHOUSES).forEach(wh => {
+            const opt = document.createElement('option');
+            opt.value = wh.id;
+            opt.textContent = `Solo ${wh.name}`;
+            recipSelect.appendChild(opt);
+        });
+    }
+
+    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+    const transitText = document.getElementById('depotTransitDaysText');
+    if (transitText) transitText.textContent = `${wh.defaultTransit || 5} días`;
+    const targetText = document.getElementById('depotTargetDaysText');
+    if (targetText) targetText.textContent = `${wh.defaultTarget || 30} días`;
+    const sidebarDepot = document.getElementById('sidebarDepotName');
+    if (sidebarDepot) sidebarDepot.textContent = wh.name;
 }
 
 // ── Cargar inventario desde API o fallback a demo ──────────────────
@@ -865,9 +906,10 @@ let recipientsData = [
 let currentPlanTier = 'pro'; // trial: 1, pro: 2, enterprise: 10
 const PLAN_LIMITS = { trial: 1, pro: 2, enterprise: 10 };
 
-function abrirConfiguracion() {
+function abrirConfiguracion(initialTab = 'meli') {
     document.getElementById('configModal').style.display = 'flex';
-    switchConfigTab('general');
+    switchConfigTab(initialTab);
+    renderizarConfiguracionMeLi();
     renderizarTablaConfiguracionDepositos();
     cargarSettingsBackend();
     cargarDestinatariosBackend();
@@ -1061,28 +1103,153 @@ function renderizarTablaConfiguracionDepositos() {
 }
 
 function switchConfigTab(tab) {
+    const tabMeli = document.getElementById('configTabMeli');
     const tabGeneral = document.getElementById('configTabGeneral');
     const tabWA = document.getElementById('configTabWhatsapp');
+
+    const btnMeli = document.getElementById('tabBtnMeli');
     const btnGeneral = document.getElementById('tabBtnGeneral');
     const btnWA = document.getElementById('tabBtnWhatsapp');
+
     const btnSave = document.getElementById('btnConfigSave');
     const btnCancel = document.getElementById('btnConfigCancel');
 
-    if (tab === 'general') {
-        tabGeneral.style.display = 'block';
-        tabWA.style.display = 'none';
-        btnGeneral.classList.add('active');
-        btnWA.classList.remove('active');
+    [btnMeli, btnGeneral, btnWA].forEach(b => { if (b) b.classList.remove('active'); });
+    [tabMeli, tabGeneral, tabWA].forEach(t => { if (t) t.style.display = 'none'; });
+
+    if (tab === 'meli') {
+        if (tabMeli) tabMeli.style.display = 'block';
+        if (btnMeli) btnMeli.classList.add('active');
+        if (btnSave) btnSave.style.display = 'none';
+        if (btnCancel) btnCancel.textContent = 'Cerrar';
+        renderizarConfiguracionMeLi();
+    } else if (tab === 'general') {
+        if (tabGeneral) tabGeneral.style.display = 'block';
+        if (btnGeneral) btnGeneral.classList.add('active');
         if (btnSave) btnSave.style.display = 'inline-block';
         if (btnCancel) btnCancel.textContent = 'Cancelar';
-    } else {
-        tabGeneral.style.display = 'none';
-        tabWA.style.display = 'block';
-        btnGeneral.classList.remove('active');
-        btnWA.classList.add('active');
+        renderizarTablaConfiguracionDepositos();
+    } else if (tab === 'whatsapp') {
+        if (tabWA) tabWA.style.display = 'block';
+        if (btnWA) btnWA.classList.add('active');
         if (btnSave) btnSave.style.display = 'none';
         if (btnCancel) btnCancel.textContent = 'Cerrar';
         renderizarDestinatariosWA();
+    }
+}
+
+async function renderizarConfiguracionMeLi() {
+    const tbody = document.getElementById('cfgMeliAccountsTableBody');
+    const countEl = document.getElementById('cfgMeliAccountsCount');
+    const maxEl = document.getElementById('cfgMeliAccountsMax');
+    const btnConnect = document.getElementById('btnConnectMeLiModal');
+    if (!tbody) return;
+
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:18px; color:var(--text2);">Consultando cuentas de Mercado Libre...</td></tr>`;
+
+    let accounts = (currentUser && currentUser.ml_accounts) ? currentUser.ml_accounts : [];
+    let maxAllowed = (currentUser && currentUser.limits && currentUser.limits.max_ml_accounts) ? currentUser.limits.max_ml_accounts : 3;
+
+    try {
+        const token = getToken();
+        if (token) {
+            const res = await fetch(`${API_BASE}/full/ml/accounts`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.ok && data.accounts) {
+                accounts = data.accounts;
+                if (data.limits && data.limits.max_ml_accounts) {
+                    maxAllowed = data.limits.max_ml_accounts;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Error consultando cuentas MeLi para config:", e);
+    }
+
+    if (countEl) countEl.textContent = accounts.length;
+    if (maxEl) maxEl.textContent = maxAllowed;
+    if (btnConnect) {
+        btnConnect.disabled = accounts.length >= maxAllowed;
+        if (accounts.length >= maxAllowed) {
+            btnConnect.title = `Límite alcanzado (${maxAllowed} cuentas permitidas por tu plan).`;
+        } else {
+            btnConnect.title = "Vincular otra cuenta de Mercado Libre";
+        }
+    }
+
+    if (accounts.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" style="text-align: center; padding: 28px 14px; color: var(--text2);">
+                    <div style="font-size: 13.5px; font-weight: 700; color: var(--text); margin-bottom: 6px;">No tenés cuentas de Mercado Libre vinculadas</div>
+                    <div style="font-size: 12px; max-width: 440px; margin: 0 auto 14px auto; line-height: 1.5;">Para que EnvioBot Full monitoree tu stock en el depósito de Villa Celina y pronostique tus fechas de quiebre, vinculá tu tienda.</div>
+                    <button type="button" onclick="iniciarConexionMeLi()" class="btn btn-sm" style="padding: 7px 18px; font-size: 12px; font-weight: 700;">Conectar Mercado Libre</button>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = '';
+    accounts.forEach(acc => {
+        const nickname = acc.ml_nickname || `Vendedor ${acc.ml_user_id}`;
+        const isValid = acc.is_valid !== false && acc.is_active !== false && acc.is_active !== 0;
+        const statusBadge = isValid 
+            ? `<span class="badge badge-ok" style="font-size: 11px;">Conectada</span>`
+            : `<span class="badge badge-warn" style="font-size: 11px;">Re-autorizar</span>`;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div style="width: 28px; height: 28px; border-radius: 6px; background: var(--surf2); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 11px; color: var(--accent);">
+                        ML
+                    </div>
+                    <div>
+                        <strong style="color: var(--text); font-size: 13.5px;">${nickname}</strong>
+                        <div style="font-size: 11px; color: var(--text2);">Depósito Full (Villa Celina)</div>
+                    </div>
+                </div>
+            </td>
+            <td style="color: var(--text2); font-size: 12.5px; font-family: monospace;">${acc.ml_user_id}</td>
+            <td style="text-align: center;">${statusBadge}</td>
+            <td style="text-align: right;">
+                <button type="button" onclick="desconectarCuentaMeLi(${acc.id}, '${nickname.replace(/'/g, "\\'")}')" 
+                        class="btn btn-secondary btn-sm" 
+                        style="color: var(--danger); border-color: rgba(255, 82, 82, 0.3); font-size: 11.5px; padding: 4px 10px;"
+                        title="Desvincular esta cuenta de Mercado Libre">
+                    Desconectar
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+async function desconectarCuentaMeLi(accId, nickname) {
+    if (!confirm(`¿Estás seguro de que deseás desconectar la cuenta "${nickname}" de Mercado Libre?\n\nSe desvinculará la sincronización y se eliminarán sus publicaciones de EnvioBot Full.`)) {
+        return;
+    }
+
+    const token = getToken();
+    try {
+        const res = await fetch(`${API_BASE}/full/ml/accounts/${accId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.ok) {
+            alert(`Cuenta "${nickname}" desvinculada exitosamente.`);
+            await checkUserSession();
+            await renderizarConfiguracionMeLi();
+            await cargarDatos();
+        } else {
+            alert("Error al desvincular la cuenta: " + (data.error || "Ocurrió un error."));
+        }
+    } catch (err) {
+        alert("Error de conexión al desvincular cuenta: " + err.message);
     }
 }
 
@@ -2466,21 +2633,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    // 3. Verificar sesión y estado de vinculación
+    // 3. Poblar selectores con depósito Villa Celina
+    poblarSelectoresDepositos();
+
+    // 4. Verificar sesión y estado de vinculación
     const hasActiveSession = await checkUserSession();
 
-    // 4. Si acaba de vincular MeLi o es un usuario nuevo sin wizard, abrir el wizard
+    // 5. Si acaba de vincular MeLi o es un usuario nuevo sin wizard, abrir el wizard
     if (hasMlOk && currentUser) {
         abrirWizardOnboarding();
         return;
     }
 
-    // 5. Si la sesión está activa y ya completó el wizard, cargar datos reales de MeLi
+    // 6. Si la sesión está activa y ya completó el wizard, cargar datos reales de MeLi
     if (hasActiveSession) {
         cargarDatos();
     }
 
-    // 6. Verificar visibilidad del botón de instalación de aplicación en escritorio
+    // 7. Verificar visibilidad del botón de instalación de aplicación en escritorio
     checkPwaInstallState();
 });
 

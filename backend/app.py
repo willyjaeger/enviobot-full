@@ -793,13 +793,25 @@ def get_ml_accounts():
 @app.route("/api/full/ml/accounts/<int:acc_id>", methods=["DELETE"])
 @jwt_required()
 def delete_ml_account(acc_id):
-    """Desvincula una cuenta de MercadoLibre."""
+    """Desvincula una cuenta de MercadoLibre y limpia su inventario asociado."""
     user_id = int(get_jwt_identity())
     conn = get_db()
-    with conn.cursor() as cur:
-        cur.execute("DELETE FROM ml_credentials WHERE id=%s AND user_id=%s", (acc_id, user_id))
-    conn.close()
-    return jsonify({"ok": True, "message": "Cuenta desvinculada."}), 200
+    try:
+        with conn.cursor() as cur:
+            # 1. Eliminar pronósticos e items vinculados a esa credencial
+            cur.execute("""
+                DELETE FROM forecasts 
+                WHERE item_id IN (SELECT id FROM full_items WHERE ml_credential_id=%s AND user_id=%s)
+            """, (acc_id, user_id))
+            cur.execute("DELETE FROM full_items WHERE ml_credential_id=%s AND user_id=%s", (acc_id, user_id))
+            # 2. Eliminar credencial de MeLi
+            cur.execute("DELETE FROM ml_credentials WHERE id=%s AND user_id=%s", (acc_id, user_id))
+        return jsonify({"ok": True, "message": "Cuenta desvinculada exitosamente."}), 200
+    except Exception as e:
+        print(f"Error desvinculando cuenta MeLi: {e}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+    finally:
+        conn.close()
 
 # -------------------------------------------------------------
 # RUTAS DE CONTROL DE STOCK FULL Y PREDICCIÓN (CON MULTICUENTA)

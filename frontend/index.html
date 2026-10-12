@@ -28,7 +28,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261011_9">
+    <link rel="stylesheet" href="css/style.css?v=20261011_10">
 </head>
 <body>
 
@@ -49,7 +49,6 @@
                 <div class="user-info">
                     <span id="planBadge" class="plan-badge trial" onclick="abrirModalPlan()" title="Ver estado del plan y suscripción">30 días de prueba</span>
                     <select id="mlAccountSelect" class="depot-select" onchange="cambiarCuentaMeLi(this.value)" style="display: none; margin-left: 6px;"></select>
-                    <button id="btnConnectMeLiHeader" onclick="iniciarConexionMeLi()" class="btn btn-sm btn-meli" style="display:none; font-size:11.5px; padding: 4px 10px; margin-left: 6px;">+ Conectar MeLi</button>
                     <div class="user-email" id="userEmailText">Usuario</div>
                     <div class="top-actions">
                         <button id="themeToggleBtn" onclick="toggleTheme()" class="icon-btn" title="Alto contraste para pantallas con mucha luz">
@@ -199,15 +198,10 @@
                 <div class="depot-toolbar">
                     <div class="depot-selector-group">
                         <span style="font-size: 13px; font-weight: 700; color: var(--text2);">Depósito:</span>
-                        <select id="activeWarehouseSelect" class="depot-select" onchange="cambiarDeposito(this.value)">
-                            <option value="meli_full" selected>Mercado Envíos Full (Bs As)</option>
-                            <option value="cordoba">Depósito Córdoba</option>
-                            <option value="rosario">Hub Rosario</option>
-                            <option value="mdp">Depósito Mar del Plata</option>
+                        <span id="depotSingleLabelPill" style="font-size: 13px; font-weight: 700; color: var(--text);">Mercado Envíos Full (Villa Celina)</span>
+                        <select id="activeWarehouseSelect" class="depot-select" onchange="cambiarDeposito(this.value)" style="display: none;">
+                            <option value="meli_full" selected>Mercado Envíos Full (Villa Celina)</option>
                         </select>
-                        <button class="btn btn-secondary btn-sm" onclick="abrirModalNuevoDeposito()" title="Dar de alta un nuevo depósito o sucursal">
-                            + Nuevo Depósito
-                        </button>
                     </div>
 
                     <div class="depot-info-pill">
@@ -271,7 +265,10 @@
 
                 <!-- Card 2: Cuenta MercadoLibre -->
                 <div class="card">
-                    <h2>Conexión MercadoLibre</h2>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <h2 style="margin: 0;">Mercado Libre</h2>
+                        <button onclick="abrirConfiguracion('meli')" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px; font-weight: 600;" title="Administrar cuentas de Mercado Libre en Configuración">Gestionar</button>
+                    </div>
                     <div class="nested-box">
                         <div class="nested-title">
                             <span>Estado de Conexión</span>
@@ -279,10 +276,9 @@
                         </div>
                         <div style="font-size: 13.5px; color: var(--text2); line-height: 1.8;">
                             <div>Cuenta: <strong id="sidebarAccountName" style="color: var(--text);">Cargando...</strong></div>
-                            <div>Depósito: <strong id="sidebarDepotName" style="color: var(--text);">Mercado Envíos Full (Bs As)</strong></div>
+                            <div>Depósito: <strong id="sidebarDepotName" style="color: var(--text);">Mercado Envíos Full (Villa Celina)</strong></div>
                             <div>Último chequeo: <span id="lastSyncText">Al instante</span></div>
                         </div>
-
 
                         <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
                             <button id="btnCheckStockNow" onclick="sincronizarAhora()" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; font-weight: 700; font-size: 13px;">
@@ -316,7 +312,7 @@
             <!-- PASO 1: Depósito y Parámetros -->
             <div id="wizardStep1">
                 <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; font-size: 12.5px; color: var(--text2); line-height: 1.5;">
-                    Depósito predeterminado: <strong style="color: var(--text);">Mercado Envíos Full (Bs As)</strong> · Centro de Distribución Villa Madero.
+                    Depósito predeterminado: <strong style="color: var(--text);">Mercado Envíos Full (Villa Celina)</strong> · Centro de Almacenamiento Villa Celina.
                 </div>
 
                 <div class="form-group" style="margin-bottom: 14px;">
@@ -458,11 +454,11 @@
             <form onsubmit="guardarNuevoDeposito(event)">
                 <div class="form-group">
                     <label>Nombre del Depósito</label>
-                    <input type="text" id="newDepotName" placeholder="Ej: Depósito Mendoza" required>
+                    <input type="text" id="newDepotName" placeholder="Ej: Depósito Central Propio" required>
                 </div>
                 <div class="form-group">
                     <label>Ciudad / Provincia</label>
-                    <input type="text" id="newDepotCity" placeholder="Ej: Mendoza Capital" required>
+                    <input type="text" id="newDepotCity" placeholder="Ej: Buenos Aires" required>
                 </div>
                 <div class="form-group">
                     <label>Demora habitual del flete (Días de viaje del camión)</label>
@@ -581,8 +577,11 @@
 
             <!-- Pestañas de Configuración -->
             <div class="config-tabs">
-                <button class="config-tab-btn active" id="tabBtnGeneral" onclick="switchConfigTab('general')">
-                    Depósitos y Parámetros
+                <button class="config-tab-btn active" id="tabBtnMeli" onclick="switchConfigTab('meli')">
+                    Cuentas Mercado Libre
+                </button>
+                <button class="config-tab-btn" id="tabBtnGeneral" onclick="switchConfigTab('general')">
+                    Depósito y Parámetros
                 </button>
                 <button class="config-tab-btn" id="tabBtnWhatsapp" onclick="switchConfigTab('whatsapp')">
                     Alertas de WhatsApp (Equipo)
@@ -592,20 +591,69 @@
             <form id="configForm" onsubmit="guardarConfiguracion(event)" style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
                 <!-- Contenedor con Scroll Interno -->
                 <div class="modal-body-scrollable">
-                    <!-- TAB 1: Parámetros Generales y por Depósito -->
-                    <div id="configTabGeneral">
+                    <!-- TAB 1: Cuentas Mercado Libre (Conexión / Desconexión) -->
+                    <div id="configTabMeli">
+                        <div style="margin-bottom: 20px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                                <div>
+                                    <h4 style="font-size: 14.5px; font-weight: 700; color: var(--text);">Cuentas de Mercado Libre Vinculadas</h4>
+                                    <p style="font-size: 12.5px; color: var(--text2); margin-top: 2px;">
+                                        Administrá la conexión o desconexión de tus cuentas para sincronizar el stock de Full (Villa Celina).
+                                    </p>
+                                </div>
+                                <button type="button" onclick="iniciarConexionMeLi()" class="btn btn-sm" id="btnConnectMeLiModal" style="padding: 7px 14px; font-weight: 700; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                    <span>Conectar Mercado Libre</span>
+                                </button>
+                            </div>
+
+                            <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 14px; font-size: 12px; color: var(--text2); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                <div>
+                                    Cuentas vinculadas: <strong id="cfgMeliAccountsCount" style="color: var(--text);">0</strong> de <strong id="cfgMeliAccountsMax" style="color: var(--text);">3</strong> permitidas por tu plan.
+                                </div>
+                                <div>
+                                    Depósito oficial: <strong style="color: var(--text);">Mercado Envíos Full (Villa Celina)</strong>
+                                </div>
+                            </div>
+
+                            <table class="config-depots-table">
+                                <thead>
+                                    <tr>
+                                        <th>Cuenta MeLi</th>
+                                        <th style="width: 140px;">ID Vendedor</th>
+                                        <th style="text-align: center; width: 120px;">Estado</th>
+                                        <th style="text-align: right; width: 130px;">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cfgMeliAccountsTableBody">
+                                    <tr>
+                                        <td colspan="4" style="text-align: center; padding: 20px; color: var(--text2);">Cargando cuentas...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <div style="border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                                <div style="font-size: 12px; color: var(--text2);">
+                                    ¿Agregaste publicaciones o ingresos de mercadería recientemente?
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="sincronizarAhora()" style="font-size: 12px; font-weight: 600;">
+                                    Sincronizar Catálogo Ahora
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: Parámetros Generales y por Depósito -->
+                    <div id="configTabGeneral" style="display: none;">
                         <!-- Sección de Depósitos y Tiempos de Flete -->
                         <div style="margin-bottom: 20px;">
                             <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 8px;">
                                 <div>
-                                    <h4 style="font-size: 14px; font-weight: 700; color: var(--text);">Demora del Camión y Cobertura por Depósito</h4>
+                                    <h4 style="font-size: 14px; font-weight: 700; color: var(--text);">Parámetros del Centro de Distribución Villa Celina</h4>
                                     <p style="font-size: 12.5px; color: var(--text2); margin-top: 2px;">
-                                        La demora del flete se calcula por depósito de destino según la distancia a cada provincia.
+                                        Demora habitual del flete y días de stock objetivo a mantener en el depósito de Full.
                                     </p>
                                 </div>
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="cerrarConfiguracion(); abrirModalNuevoDeposito();">
-                                    + Nuevo Depósito
-                                </button>
                             </div>
 
                             <table class="config-depots-table">
@@ -719,10 +767,7 @@
                                 </select>
                                 <select id="newRecipDepot" class="filter-select" style="padding: 6px 10px; font-size: 12px;">
                                     <option value="all">Todos los depósitos</option>
-                                    <option value="meli_full">Solo MeLi Full (Bs As)</option>
-                                    <option value="cordoba">Solo Córdoba</option>
-                                    <option value="rosario">Solo Rosario</option>
-                                    <option value="mdp">Solo Mar del Plata</option>
+                                    <option value="meli_full">Mercado Envíos Full (Villa Celina)</option>
                                 </select>
                                 <button type="button" class="btn btn-sm" onclick="agregarDestinatarioWA()" style="background: var(--accent); color: #111; font-weight: 700; padding: 7px 12px;">
                                     Agregar
@@ -967,8 +1012,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261011_9"></script>
-    <script src="js/notifications.js?v=20261011_9"></script>
-    <script src="js/app.js?v=20261011_9"></script>
+    <script src="js/theme.js?v=20261011_10"></script>
+    <script src="js/notifications.js?v=20261011_10"></script>
+    <script src="js/app.js?v=20261011_10"></script>
 </body>
 </html>
