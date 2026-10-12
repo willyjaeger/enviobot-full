@@ -1,0 +1,2061 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EnvioBot — Admin</title>
+<style>
+  :root {
+    --bg: #0d0e12;
+    --surface: #16181f;
+    --surf2: #1e212a;
+    --border: rgba(255,255,255,0.08);
+    --accent: #f5a623;
+    --text: #e8e9ed;
+    --text2: #8a8d9a;
+    --good: #4CAF50;
+    --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  a { color: var(--accent); }
+  input, select, textarea, button { font-family: inherit; }
+
+  /* ── Login ─────────────────────────────────────────── */
+  #loginScreen {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .login-box {
+    width: 100%; max-width: 340px; padding: 32px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px;
+  }
+  .login-logo { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 800; margin-bottom: 4px; }
+  .login-tag { font-size: 12px; color: var(--text2); margin-bottom: 24px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 5px; }
+  .field input, .field select {
+    width: 100%; padding: 10px 12px; background: var(--surf2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; font-size: 14px;
+  }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
+  .btn {
+    background: var(--accent); color: #14100a; border: none; padding: 10px 16px;
+    border-radius: 6px; font-weight: 700; font-size: 13.5px; cursor: pointer;
+  }
+  .btn:hover { background: #ffb84d; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn-block { width: 100%; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-danger { background: transparent; border: 1px solid rgba(255,107,107,0.4); color: var(--bad); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  #loginMsg { font-size: 12.5px; color: var(--bad); margin-top: 10px; min-height: 16px; }
+
+  /* ── Layout ────────────────────────────────────────── */
+  #appShell { display: none; min-height: 100vh; }
+  .sidebar {
+    width: 210px; flex-shrink: 0; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 20px 0; overflow: hidden;
+    transition: width 0.15s ease, padding 0.15s ease;
+  }
+  .sidebar.collapsed { width: 0; padding-left: 0; padding-right: 0; border-right: none; }
+  .sidebar.collapsed * { pointer-events: none; }
+  .sidebar-brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 16px; padding: 0 20px 4px; white-space: nowrap; }
+  .sidebar-badge {
+    margin: 0 20px 22px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--accent); background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.25);
+    border-radius: 100px; padding: 3px 9px; display: inline-block; width: fit-content; margin-left: 20px;
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 20px; font-size: 13.5px; color: var(--text2);
+    cursor: pointer; border-left: 3px solid transparent; white-space: nowrap;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(255,255,255,0.02); }
+  .nav-item.active { color: var(--text); background: rgba(245,166,35,0.06); border-left-color: var(--accent); font-weight: 600; }
+  .sidebar-footer { margin-top: auto; padding: 16px 20px 0; border-top: 1px solid var(--border); white-space: nowrap; }
+  .sidebar-user { font-size: 12px; color: var(--text2); margin-bottom: 10px; word-break: break-all; }
+
+  .sidebar-collapse-btn {
+    background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text2);
+    cursor: pointer; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+    margin-left: auto; flex-shrink: 0;
+  }
+  .sidebar-collapse-btn:hover { color: var(--text); }
+  .sidebar-expand-btn {
+    display: none; position: fixed; top: 16px; left: 16px; z-index: 20;
+    width: 30px; height: 30px; align-items: center; justify-content: center;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text2); cursor: pointer;
+  }
+  .sidebar-expand-btn.visible { display: flex; }
+  .sidebar-expand-btn:hover { color: var(--text); }
+
+  /* min-width:0: sin esto, en un contenedor flex la columna principal se estira al ancho de la tabla y el
+     scroll horizontal de .table-wrap queda fuera de la pantalla (no se veía dónde termina la tabla). */
+  main { flex: 1; min-width: 0; padding: 32px 40px; max-width: none; }
+  .page-title { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+  .page-sub { font-size: 13px; color: var(--text2); margin-bottom: 26px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+  .card h3 { margin: 0 0 14px; font-size: 14px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: var(--text2); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .table-wrap { overflow-x: auto; }
+  /* Tablas anchas: la primera columna queda fija al desplazarse, así no se pierde de quién es la fila. */
+  #featBody td:first-child, #featHead th:first-child, #leadsBody td:first-child, #leadsHead th:first-child {
+    position: sticky; left: 0; z-index: 1; background: var(--surface);
+  }
+  td input, td select { background: var(--surf2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 5px 7px; font-size: 12.5px; }
+  .empty-row { text-align: center; color: var(--text2); padding: 24px; }
+  .err-row { text-align: center; color: var(--bad); padding: 24px; }
+  .pill { font-size: 10.5px; font-weight: 700; padding: 2px 8px; border-radius: 100px; }
+  .pill-good { background: rgba(76,175,80,0.15); color: var(--good); }
+  .pill-muted { background: rgba(255,255,255,0.06); color: var(--text2); }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .form-grid .full { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2.5"></rect><path d="M7 7V4.5A1.5 1.5 0 018.5 3h7A1.5 1.5 0 0117 4.5V7"></path><rect x="7" y="14" width="10" height="5" rx="1"></rect></svg>
+      EnvioBot
+    </div>
+    <div class="login-tag">Panel de administración</div>
+    <div class="field">
+      <label for="loginEmail">Email</label>
+      <input type="email" id="loginEmail" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="loginPassword">Contraseña</label>
+      <input type="password" id="loginPassword" autocomplete="current-password">
+    </div>
+    <button class="btn btn-block" onclick="doLogin()">Entrar</button>
+    <div id="loginMsg"></div>
+
+    <div style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border);">
+      <a href="#" onclick="toggleBootstrapForm(); return false;" style="font-size: 12px; color: var(--text2); text-decoration: underline;">¿Primera vez acá? Crear la cuenta de administrador</a>
+      <div id="bootstrapForm" style="display: none; margin-top: 14px;">
+        <div class="field">
+          <label for="bsFullName">Nombre</label>
+          <input type="text" id="bsFullName">
+        </div>
+        <div class="field">
+          <label for="bsEmail">Email</label>
+          <input type="email" id="bsEmail">
+        </div>
+        <div class="field">
+          <label for="bsPassword">Contraseña</label>
+          <input type="password" id="bsPassword">
+        </div>
+        <button class="btn btn-ghost btn-block" onclick="doBootstrap()">Crear cuenta</button>
+        <p style="font-size: 11px; color: var(--text2); margin-top: 8px;">
+          Solo funciona si todavía no existe ningún administrador. Si ya hay uno, pedile que te agregue desde acá adentro.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="appShell">
+  <button class="sidebar-expand-btn" id="sidebarExpandBtn" onclick="toggleSidebar()" title="Mostrar menú">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+  </button>
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="10" rx="2.5"></rect><path d="M7 7V4.5A1.5 1.5 0 018.5 3h7A1.5 1.5 0 0117 4.5V7"></path><rect x="7" y="14" width="10" height="5" rx="1"></rect></svg>
+      EnvioBot
+      <button class="sidebar-collapse-btn" onclick="toggleSidebar()" title="Ocultar menú">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+    </div>
+    <div class="sidebar-badge">Admin</div>
+    <div class="nav-item active" data-panel="panelUsers" onclick="showPanel('panelUsers')">Usuarios de EnvioBot</div>
+    <div class="nav-item" data-panel="panelFeatures" onclick="showPanel('panelFeatures')">Funcionalidades por cliente</div>
+    <div class="nav-item" data-panel="panelStats" onclick="showPanel('panelStats')">Estadísticas de venta</div>
+    <div class="nav-item" data-panel="panelLeads" onclick="showPanel('panelLeads')">Compradores de MercadoLibre</div>
+    <div class="nav-item" data-panel="panelPartners" onclick="showPanel('panelPartners')">Partners</div>
+    <div class="nav-item" data-panel="panelPlans" onclick="showPanel('panelPlans')">Planes y precios</div>
+    <div class="nav-item" data-panel="panelTestimonials" onclick="showPanel('panelTestimonials')">Testimonios</div>
+    <div class="nav-item" data-panel="panelEmail" onclick="showPanel('panelEmail')">Cuentas de Correo y Avisos</div>
+    <div class="nav-item" data-panel="panelAdmins" onclick="showPanel('panelAdmins')">Administradores</div>
+    <div class="nav-item" data-panel="panelDB" onclick="showPanel('panelDB')">Base de datos</div>
+    <div class="sidebar-footer">
+      <div class="sidebar-user" id="sidebarUser"></div>
+      <button class="btn btn-ghost btn-block btn-sm" onclick="logout()">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <main>
+    <div id="panelUsers" class="panel active">
+      <div class="page-title">Usuarios de EnvioBot</div>
+      <div class="page-sub">La gente que paga (o prueba) EnvioBot para usarlo — vendedores, no compradores. Para sumar un colaborador con acceso a este panel, andá a "Administradores" en el menú.</div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Email</th><th>Nombre</th><th>Negocio</th><th>Teléfono</th>
+                <th title="Habilitado para EnvioBot Pedidos" style="text-align:center;">Pedidos</th>
+                <th title="Habilitado para EnvioBot Full" style="text-align:center;">Full</th>
+                <th title="Cuenta bloqueada" style="text-align:center;">Bloqueado</th>
+                <th>Observaciones</th>
+                <th>Rubro</th>
+                <th>Plataforma</th><th>CUIT</th><th>Instagram</th><th>Facebook</th><th>X</th>
+                <th>Cant. Envíos</th><th title="Verde = prendida. Click para prender/apagar.">Autoprint</th><th>Agente</th>
+                <th>Plan</th><th>Estado</th><th>Vence prueba</th><th>Mail verif.</th>
+                <th>Referido por</th><th>Activo</th><th></th>
+              </tr>
+            </thead>
+            <tbody id="usersBody"><tr><td class="empty-row" colspan="20">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="panelFeatures" class="panel">
+      <div class="page-title">Funcionalidades por cliente</div>
+      <div class="page-sub">Decidís qué tiene cada cliente. Cada casilla muestra lo que tiene AHORA y de dónde sale: <b>auto</b> (lo decide una regla: beta, prueba gratis o el valor por defecto) o <b>manual</b> (lo pusiste vos y manda sobre todo). Tocar una casilla la deja manual; la cruz ✕ la devuelve a automático. "Abono de" hace que un usuario comparta las funciones del cliente principal — no cambia qué pedidos ni cuentas de ML ve. Un beta tester tiene todo, sin vencimiento. Quien está en prueba gratis lo tiene todo hasta que vence más <span id="featGracia">7</span> días de gracia.</div>
+      <div class="card" id="featDefaults" style="margin-bottom:12px;"></div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead id="featHead"></thead>
+            <tbody id="featBody"><tr><td class="empty-row" colspan="10">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="page-title" style="font-size:16px;margin-top:28px;">Todo lo que hace EnvioBot</div>
+      <div class="page-sub">Referencia de las funcionalidades del producto. "Se controla desde acá" = tiene su columna en la tabla de arriba. Las demás hoy las tienen todos los clientes: para poder apagarlas o venderlas por separado hay que programarles el interruptor (se hace una por una, como se hizo con la recompra).</div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Funcionalidad</th><th>Qué hace</th><th title="Sugerencia: las básicas hacen que el programa sirva para despachar; las otras pueden venderse aparte.">Sugerencia</th><th>Se controla desde acá</th></tr></thead>
+            <tbody id="featCatalog"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="panelStats" class="panel">
+      <div class="page-title">Estadísticas de venta</div>
+      <div class="page-sub">Cuánto vende de verdad cada cuenta y con qué impresora — dato interno, esto no lo ve el vendedor en su panel. Una fila por cuenta real de MercadoLibre, no por login: si varios logins de EnvioBot tienen conectada la misma cuenta (pasa cuando alguien suma un colaborador o una cuenta de prueba), se unifican en una sola fila. Solo cuenta pedidos con la etiqueta ya impresa (no lo pendiente). "Impresión (30d)" es éxito/latencia de los trabajos de impresión de todos los logins de esa cuenta.</div>
+      <div class="card">
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 4px;">
+          <div class="field" style="flex: 1; min-width: 200px; margin-bottom: 0;">
+            <label for="statsSearch">Buscar</label>
+            <input type="text" id="statsSearch" oninput="renderSellerStats()" placeholder="Cuenta, login, rubro, impresora...">
+          </div>
+          <div class="field" style="min-width: 180px; margin-bottom: 0;">
+            <label for="statsSort">Orden</label>
+            <select id="statsSort" onchange="renderSellerStats()">
+              <option value="venta_mes">Más vendido este mes</option>
+              <option value="venta_anio">Más vendido este año</option>
+              <option value="promedio_mensual">Mayor promedio mensual</option>
+              <option value="orders_count">Más pedidos impresos</option>
+              <option value="print_success_rate">Peor tasa de impresión</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Cuenta</th><th>Rubro</th><th>Impresora</th>
+                <th>Pedidos impresos</th><th>Venta este mes</th><th>Promedio mensual</th><th>Venta este año</th>
+                <th>Impresión (30d)</th>
+              </tr>
+            </thead>
+            <tbody id="statsBody"><tr><td class="empty-row" colspan="8">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="panelLeads" class="panel">
+      <div class="page-title">Compradores de MercadoLibre</div>
+      <div class="page-sub">Todos los compradores de TODOS los usuarios de EnvioBot, sin repetir (MercadoLibre no manda el email ni el DNI por API, pero sí el nombre real, teléfono y dirección del envío) — para prospectar, no son clientes de EnvioBot. Esta base crece con cada vendedor nuevo que se suscribe, así que está paginada y filtrada del lado del servidor.</div>
+
+      <div class="card">
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 4px;">
+          <div class="field" style="flex: 1; min-width: 200px; margin-bottom: 0;">
+            <label for="leadsSearch">Buscar</label>
+            <input type="text" id="leadsSearch" oninput="onLeadsFilterChange()" placeholder="Nombre, usuario, teléfono, ciudad, vendedor, cuenta ML...">
+          </div>
+          <div class="field" style="min-width: 180px; margin-bottom: 0;">
+            <label for="leadsSeller">Vendedor</label>
+            <select id="leadsSeller" onchange="onLeadsFilterChange()">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="field" style="margin-bottom: 0;">
+            <label for="leadsDateFrom">Desde</label>
+            <input type="date" id="leadsDateFrom" onchange="onLeadsFilterChange()">
+          </div>
+          <div class="field" style="margin-bottom: 0;">
+            <label for="leadsDateTo">Hasta</label>
+            <input type="date" id="leadsDateTo" onchange="onLeadsFilterChange()">
+          </div>
+          <div class="field" style="min-width: 170px; margin-bottom: 0;">
+            <label for="leadsSort">Orden</label>
+            <select id="leadsSort" onchange="onLeadsFilterChange()">
+              <option value="orders_desc">Más pedidos primero</option>
+              <option value="recent_desc">Compra más reciente</option>
+              <option value="name_asc">Nombre (A-Z)</option>
+              <option value="sellers_desc">Más vendedores distintos</option>
+            </select>
+          </div>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); cursor: pointer; white-space: nowrap; padding-bottom: 10px;">
+            <input type="checkbox" id="leadsOnlyRepeat" onchange="onLeadsFilterChange()" style="width: 15px; height: 15px; cursor: pointer;">
+            Solo con recompra
+          </label>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text2); cursor: pointer; white-space: nowrap; padding-bottom: 10px;" title="Deja afuera a los que MercadoLibre manda con el teléfono tapado (XXXXXXX)">
+            <input type="checkbox" id="leadsOnlyPhone" onchange="onLeadsFilterChange()" style="width: 15px; height: 15px; cursor: pointer;">
+            Con número de teléfono
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap;">
+          <div id="leadsCount" style="font-size: 12.5px; color: var(--text2);"></div>
+          <button class="btn btn-sm" onclick="exportLeads()" style="display: inline-flex; align-items: center; gap: 6px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="3" y1="9.5" x2="21" y2="9.5"></line><line x1="9" y1="9.5" x2="9" y2="20"></line><line x1="15" y1="9.5" x2="15" y2="20"></line><line x1="3" y1="14.5" x2="21" y2="14.5"></line></svg>
+            Exportar a Excel
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead id="leadsHead">
+              <tr>
+                <th>Cliente</th><th>Contacto</th><th>Cuenta(s) ML</th><th>Pedidos</th><th>Productos (SKU)</th>
+              </tr>
+            </thead>
+            <tbody id="leadsBody"><tr><td class="empty-row" colspan="5">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+        <div id="leadsLoadMoreBox" style="text-align: center; margin-top: 14px;"></div>
+      </div>
+    </div>
+
+    <div id="panelPartners" class="panel">
+      <div class="page-title">Partners</div>
+      <div class="page-sub">Vendedores de impresoras/insumos. Cada uno tiene un código propio para el link que reparten (<code>enviobot.com.ar/?ref=CODIGO</code>) y para cuando EnvioBot los recomienda a un usuario sin impresora.</div>
+
+      <div class="card">
+        <h3>Agregar partner</h3>
+        <div class="form-grid">
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Nombre</label>
+            <input type="text" id="pName" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Código de referido</label>
+            <input type="text" id="pRefCode" placeholder="ej: tscprint" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div class="full">
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Sitio web</label>
+            <input type="text" id="pWebsite" placeholder="https://..." style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div class="full">
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Descripción (opcional)</label>
+            <input type="text" id="pDescription" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+        </div>
+        <button class="btn" onclick="createPartner()">Agregar</button>
+        <div id="partnerFormMsg" style="font-size:12.5px;margin-top:8px;min-height:16px;"></div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Nombre</th><th>Código</th><th>Sitio</th><th>Clicks</th><th>Usuarios referidos</th><th>Estado</th><th></th></tr>
+            </thead>
+            <tbody id="partnersBody"><tr><td class="empty-row" colspan="7">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="panelPlans" class="panel">
+      <div class="page-title">Planes y precios</div>
+      <div class="page-sub">Lo que se ve en la sección "Precios" de la landing. Lo que guardes acá aparece en el sitio en el momento — no hay que tocar nada más.</div>
+
+      
+      <div class="card" style="border-top:3px solid var(--accent);">
+        <h3>2. Cuenta de Alertas de Stock Full (AlertaFull)</h3>
+        <div style="font-size:12.5px;color:var(--text2);margin-bottom:14px;line-height:1.7;">
+          Casilla exclusiva para los reportes diarios de reposición, fecha límite de colecta y avisos de quiebre crítico de stock en Mercado Envíos Full.
+        </div>
+
+        <div id="smtpFullEstado" style="font-size:13px;padding:10px 12px;border-radius:6px;margin-bottom:16px;"></div>
+
+        <div class="form-grid">
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Casilla (usuario)</label>
+            <input type="text" id="smtpFullUser" placeholder="alertafull@enviobot.com.ar" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Contraseña de esa casilla</label>
+            <input type="password" id="smtpFullPassword" placeholder="(sin cambios)" autocomplete="new-password" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Servidor de correo saliente</label>
+            <input type="text" id="smtpFullHost" placeholder="po000380.ferozo.com" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Puerto</label>
+            <input type="number" id="smtpFullPort" placeholder="465" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div class="full">
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Nombre que ve el que recibe</label>
+            <input type="text" id="smtpFullSenderName" placeholder="EnvioBot Full" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px;">
+          <button class="btn btn-ghost" onclick="testSmtpFull()">Probar conexión</button>
+          <button class="btn" onclick="saveSmtpFull()">Guardar</button>
+        </div>
+        <div id="smtpFullMsg" style="font-size:12.5px;margin-top:10px;min-height:16px;line-height:1.6;"></div>
+
+        <div style="border-top:1px solid var(--border);margin-top:18px;padding-top:14px;">
+          <div style="font-size:12.5px;font-weight:600;margin-bottom:8px;">Enviar alerta de prueba</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Envía un reporte de stock simulado a la casilla que indiques para verificar la recepción del diseño oficial.</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <input type="email" id="smtpFullTestTo" placeholder="tu@mail.com" style="flex:1;min-width:220px;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+            <button class="btn btn-ghost" onclick="sendTestAlertFull()">Enviar alerta de prueba</button>
+          </div>
+          <div id="smtpFullTestMsg" style="font-size:12.5px;margin-top:8px;min-height:16px;"></div>
+        </div>
+      </div>
+
+      <div class="card" style="border-left:3px solid var(--accent);">
+        <div style="font-size:12.5px;color:var(--text2);line-height:1.7;">
+          <b style="color:var(--text);">Cómo se usan los dos precios:</b><br>
+          <b>Precio mensual</b> — lo que paga por mes si paga mes a mes.<br>
+          <b>Precio anual</b> — lo que le queda <i>por mes</i> si paga el año adelantado (el sitio lo muestra como "/mes, facturado anual").<br>
+          <b>Precio en texto</b> — si lo completás, se muestra eso en vez de los números. Es para el plan "A medida", que no tiene precio publicado.<br>
+          Si dejás los dos precios vacíos y tampoco ponés texto, la landing muestra <code>$X.XXX</code> como está hoy.
+        </div>
+      </div>
+
+      <div id="plansList"></div>
+
+      <div class="card">
+        <h3>Agregar un plan</h3>
+        <div class="form-grid">
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Nombre</label>
+            <input type="text" id="newPlanName" placeholder="ej: Pro" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Orden en la página</label>
+            <input type="number" id="newPlanOrder" value="10" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+        </div>
+        <button class="btn" onclick="createPlan()">Agregar</button>
+        <div id="planFormMsg" style="font-size:12.5px;margin-top:8px;min-height:16px;"></div>
+      </div>
+    </div>
+
+    <div id="panelTestimonials" class="panel">
+      <div class="page-title">Testimonios</div>
+      <div class="page-sub">Lo que se ve en "Lo que dicen los primeros en probarlo". Los que manda la gente desde su panel entran como <b>Pendientes</b> y no salen publicados hasta que vos los aprobás.</div>
+
+      <div id="testimonialsList"></div>
+
+      <div class="card">
+        <h3>Cargar uno a mano</h3>
+        <div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Para los que te llegan por WhatsApp, por mail o te dicen en persona.</div>
+        <div class="form-grid">
+          <div class="full">
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Lo que dijo</label>
+            <textarea id="newTQuote" rows="3" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-family:inherit;font-size:13px;"></textarea>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Quién lo dijo</label>
+            <input type="text" id="newTName" placeholder="ej: Juan Pérez" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Rubro y lugar</label>
+            <input type="text" id="newTRole" placeholder="ej: Indumentaria, CABA" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+        </div>
+        <button class="btn" onclick="createTestimonial()">Agregar y publicar</button>
+        <div id="testimonialFormMsg" style="font-size:12.5px;margin-top:8px;min-height:16px;"></div>
+      </div>
+    </div>
+
+    <div id="panelEmail" class="panel">
+      <div class="page-title">Cuentas de Correo y Notificaciones</div>
+      <div class="page-sub">Configuración de las casillas SMTP de enviobot.com.ar para bienvenida, códigos de verificación y alertas matutinas de stock Full.</div>
+
+      <div class="card">
+        <h3>1. Cuenta de Bienvenida y Códigos (Hola)</h3>
+        <div style="font-size:12.5px;color:var(--text2);margin-bottom:14px;line-height:1.7;">
+          Los datos los sacás de DonWeb, en <b>Mis servicios → Correos → Datos de configuración</b>.
+          Mientras no haya contraseña cargada, los mails siguen saliendo por Brevo (desde un dominio prestado).
+        </div>
+
+        <div id="smtpEstado" style="font-size:13px;padding:10px 12px;border-radius:6px;margin-bottom:16px;"></div>
+
+        <div class="form-grid">
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Casilla (usuario)</label>
+            <input type="text" id="smtpUser" placeholder="hola@enviobot.com.ar" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Contraseña de esa casilla</label>
+            <input type="password" id="smtpPassword" placeholder="(sin cambios)" autocomplete="new-password" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Servidor de correo saliente</label>
+            <input type="text" id="smtpHost" placeholder="po000380.ferozo.com" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Puerto</label>
+            <input type="number" id="smtpPort" placeholder="465" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div class="full">
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Nombre que ve el que recibe</label>
+            <input type="text" id="smtpSenderName" placeholder="EnvioBot" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px;">
+          <button class="btn btn-ghost" onclick="testSmtp()">Probar conexión</button>
+          <button class="btn" onclick="saveSmtp()">Guardar</button>
+          <button class="btn btn-ghost" onclick="clearSmtpPassword()">Volver a Brevo</button>
+        </div>
+        <div id="smtpMsg" style="font-size:12.5px;margin-top:10px;min-height:16px;line-height:1.6;"></div>
+      </div>
+
+      <div class="card" style="border-left:3px solid var(--accent);">
+        <div style="font-size:12.5px;color:var(--text2);line-height:1.7;">
+          Dentro del texto podés usar dos marcadores, que se reemplazan solos cuando el mail sale:<br>
+          <code>{{saludo}}</code> — se convierte en "Hola Juan," (o "¡Hola!" si no dejó el nombre)<br>
+          <code>{{link}}</code> — el link para confirmar la cuenta. <b>Tiene que estar sí o sí</b>, si no el mail no sirve para nada.
+        </div>
+      </div>
+
+      <div class="card">
+        <div id="emailUsingDefault" style="display:none;font-size:12.5px;color:var(--text2);margin-bottom:14px;padding:10px 12px;background:var(--surf2);border-radius:6px;">
+          Todavía no editaste nada: abajo está el texto tal como viene en el sistema. Guardá para empezar a usar tu propia versión.
+        </div>
+
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Asunto</label>
+        <input type="text" id="emailSubject" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;margin-bottom:16px;">
+
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Cuerpo del mail (HTML)</label>
+        <textarea id="emailHtml" rows="16" spellcheck="false" style="width:100%;padding:10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.5;"></textarea>
+
+        <label style="font-size:12px;color:var(--text2);display:block;margin:16px 0 5px;">Versión en texto plano</label>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px;">La ven los programas de correo viejos, y ayuda a que el mail no caiga en spam. Si cambiás el de arriba, cambiá también este.</div>
+        <textarea id="emailText" rows="10" spellcheck="false" style="width:100%;padding:10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.5;"></textarea>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px;">
+          <button class="btn" onclick="saveWelcomeEmail()">Guardar</button>
+          <button class="btn btn-ghost" onclick="previewWelcomeEmail()">Ver cómo queda</button>
+          <button class="btn btn-ghost" onclick="restoreWelcomeEmail()">Volver al original</button>
+        </div>
+        <div id="emailMsg" style="font-size:12.5px;margin-top:10px;min-height:16px;"></div>
+      </div>
+
+      <div class="card" id="emailPreviewCard" style="display:none;">
+        <h3>Así lo va a ver</h3>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;">Con datos de ejemplo: el saludo dice "Hola Guillermo," y el botón no lleva a ningún lado.</div>
+        <iframe id="emailPreview" style="width:100%;height:620px;border:1px solid var(--border);border-radius:6px;background:#fff;"></iframe>
+      </div>
+
+      <div class="card">
+        <h3>Mandarte una prueba</h3>
+        <div style="font-size:12.5px;color:var(--text2);margin-bottom:12px;">Manda el mail tal como está guardado, para verlo en tu casilla de verdad. No crea ninguna cuenta ni activa nada.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input type="email" id="emailTestTo" placeholder="tu@mail.com" style="flex:1;min-width:220px;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          <button class="btn" onclick="sendTestWelcomeEmail()">Mandar prueba</button>
+        </div>
+        <div id="emailTestMsg" style="font-size:12.5px;margin-top:10px;min-height:16px;"></div>
+      </div>
+    </div>
+
+    <div id="panelAdmins" class="panel">
+      <div class="page-title">Administradores</div>
+      <div class="page-sub">Quiénes tienen acceso a este panel. Es una cuenta totalmente aparte de los usuarios de EnvioBot — no hace falta que nadie se registre como cliente para tener acceso acá.</div>
+
+      <div class="card">
+        <h3>Agregar administrador</h3>
+        <div class="form-grid">
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Nombre</label>
+            <input type="text" id="aFullName" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Email</label>
+            <input type="email" id="aEmail" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+          <div class="full">
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Contraseña</label>
+            <input type="password" id="aPassword" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+          </div>
+        </div>
+        <button class="btn" onclick="createAdmin()">Agregar</button>
+        <div id="adminFormMsg" style="font-size:12.5px;margin-top:8px;min-height:16px;"></div>
+      </div>
+
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Nombre</th><th>Email</th><th>Estado</th><th>Alta</th><th></th></tr>
+            </thead>
+            <tbody id="adminsBody"><tr><td class="empty-row" colspan="5">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div id="panelDB" class="panel">
+      <div class="page-title">Base de datos</div>
+      <div class="page-sub">Ver, editar y borrar cualquier dato de la base directamente — con cuidado, esto no tiene deshacer.</div>
+      <div class="card">
+        <div id="dbTableList" style="display:flex;flex-wrap:wrap;gap:8px;">Cargando tablas...</div>
+      </div>
+      <div class="card" id="dbTableCard" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 id="dbTableTitle" style="margin:0;"></h3>
+          <button class="btn btn-sm" onclick="openDbRowModal(null)">+ Nueva fila</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr id="dbTableHead"></tr></thead>
+            <tbody id="dbTableBody"><tr><td class="empty-row">Elegí una tabla arriba</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="dbRowModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px;max-width:520px;width:90%;max-height:85vh;overflow-y:auto;">
+    <h3 id="dbRowModalTitle" style="margin:0 0 14px;font-size:14px;"></h3>
+    <div id="dbRowModalFields" style="display:flex;flex-direction:column;gap:10px;"></div>
+    <div style="display:flex;gap:8px;margin-top:16px;">
+      <button class="btn" onclick="saveDbRow()">Guardar</button>
+      <button class="btn btn-ghost" onclick="closeDbRowModal()">Cancelar</button>
+    </div>
+    <div id="dbRowModalMsg" style="font-size:12.5px;margin-top:8px;min-height:16px;color:#ff6b6b;"></div>
+  </div>
+</div>
+
+<script>
+  const API_URL = window.location.protocol === 'file:'
+      ? 'http://localhost:5000/api'
+      : '/api';
+  let token = localStorage.getItem('admin_token');
+
+  function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+  }
+
+  async function api(path, options = {}) {
+    const r = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`, ...(options.headers || {}) }
+    });
+    return r.json();
+  }
+
+  async function doLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const msg = document.getElementById('loginMsg');
+    msg.textContent = '';
+    if (!email || !password) { msg.textContent = 'Completá email y contraseña.'; return; }
+
+    try {
+      const r = await fetch(`${API_URL}/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await r.json();
+      if (!data.ok) { msg.textContent = data.error || 'No se pudo iniciar sesión.'; return; }
+
+      token = data.token;
+      localStorage.setItem('admin_token', token);
+      localStorage.setItem('admin_email', data.email);
+      boot();
+    } catch (e) {
+      msg.textContent = 'Error de conexión con el servidor.';
+    }
+  }
+
+  function toggleBootstrapForm() {
+    const form = document.getElementById('bootstrapForm');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function doBootstrap() {
+    const full_name = document.getElementById('bsFullName').value.trim();
+    const email = document.getElementById('bsEmail').value.trim();
+    const password = document.getElementById('bsPassword').value;
+    const msg = document.getElementById('loginMsg');
+    msg.textContent = '';
+
+    if (!full_name || !email || !password) { msg.textContent = 'Completá nombre, email y contraseña.'; return; }
+
+    try {
+      const r = await fetch(`${API_URL}/admin/admins`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ full_name, email, password })
+      });
+      const data = await r.json();
+      if (!data.ok) { msg.textContent = data.error || 'No se pudo crear la cuenta.'; return; }
+      document.getElementById('loginEmail').value = email;
+      document.getElementById('loginPassword').value = password;
+      toggleBootstrapForm();
+      doLogin();
+    } catch (e) {
+      msg.textContent = 'Error de conexión con el servidor.';
+    }
+  }
+
+  function logout() {
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_email');
+    location.reload();
+  }
+
+  // ── Planes y precios ────────────────────────────────────────────────────
+  // Cada plan se edita en su propia tarjeta en vez de en una fila de tabla:
+  // la lista de características es de varias líneas y no entra en una celda.
+
+  const inputEstilo = 'width:100%;padding:8px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:13px;';
+  const labelEstilo = 'font-size:12px;color:var(--text2);display:block;margin-bottom:5px;';
+
+  async function loadPlans() {
+    const cont = document.getElementById('plansList');
+    cont.innerHTML = '<div class="card"><div class="empty-row">Cargando...</div></div>';
+    try {
+      const data = await api('/admin/plans');
+      if (!data.ok) { cont.innerHTML = `<div class="card"><div class="err-row">${escapeHtml(data.error || 'Error')}</div></div>`; return; }
+      if (!data.plans.length) { cont.innerHTML = '<div class="card"><div class="empty-row">Todavía no hay planes cargados.</div></div>'; return; }
+
+      cont.innerHTML = data.plans.map(p => `
+        <div class="card" data-plan="${p.id}">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;">
+            <h3 style="margin:0;">${escapeHtml(p.plan_name || 'Sin nombre')}${p.is_featured ? ' <span style="font-size:11px;color:var(--accent);">· destacado</span>' : ''}${p.is_active ? '' : ' <span style="font-size:11px;color:var(--text2);">· oculto</span>'}</h3>
+            <button class="btn btn-ghost btn-sm" onclick="deletePlan(${p.id}, '${escapeHtml(p.plan_name || '')}')">Borrar</button>
+          </div>
+          <div class="form-grid">
+            <div>
+              <label style="${labelEstilo}">Nombre</label>
+              <input id="pl_name_${p.id}" value="${escapeHtml(p.plan_name || '')}" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Orden en la página</label>
+              <input id="pl_order_${p.id}" type="number" value="${p.sort_order}" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Precio mensual (pagando mes a mes)</label>
+              <input id="pl_pm_${p.id}" type="number" step="0.01" value="${p.price_monthly === null ? '' : p.price_monthly}" placeholder="vacío = sin precio" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Precio anual (por mes, pagando el año)</label>
+              <input id="pl_py_${p.id}" type="number" step="0.01" value="${p.price_yearly === null ? '' : p.price_yearly}" placeholder="vacío = sin precio" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Precio en texto (gana sobre los números)</label>
+              <input id="pl_ptext_${p.id}" value="${escapeHtml(p.price_text || '')}" placeholder="ej: A medida" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Límite, debajo del precio</label>
+              <input id="pl_limit_${p.id}" value="${escapeHtml(p.limit_text || '')}" placeholder="ej: Hasta 100 pedidos por mes" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Texto del botón</label>
+              <input id="pl_cta_${p.id}" value="${escapeHtml(p.cta_label || '')}" placeholder="ej: Empezar gratis" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Cintita de arriba</label>
+              <input id="pl_badge_${p.id}" value="${escapeHtml(p.badge || '')}" placeholder="ej: Más elegido" style="${inputEstilo}">
+            </div>
+            <div class="full">
+              <label style="${labelEstilo}">Qué incluye — uno por renglón</label>
+              <textarea id="pl_feats_${p.id}" rows="4" style="${inputEstilo}font-family:inherit;">${escapeHtml((p.features || []).join('\n'))}</textarea>
+            </div>
+          </div>
+          <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:12px 0 14px;">
+            <label style="display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer;">
+              <input type="checkbox" id="pl_feat_${p.id}" ${p.is_featured ? 'checked' : ''}> Destacado (el del medio, resaltado)
+            </label>
+            <label style="display:flex;gap:7px;align-items:center;font-size:13px;cursor:pointer;">
+              <input type="checkbox" id="pl_active_${p.id}" ${p.is_active ? 'checked' : ''}> Visible en la landing
+            </label>
+          </div>
+          <button class="btn" onclick="savePlan(${p.id})">Guardar</button>
+          <span id="pl_msg_${p.id}" style="font-size:12.5px;margin-left:10px;"></span>
+        </div>
+      `).join('');
+    } catch (e) {
+      cont.innerHTML = `<div class="card"><div class="err-row">${escapeHtml(e.message)}</div></div>`;
+    }
+  }
+
+  async function savePlan(id) {
+    const v = (pref) => document.getElementById(`pl_${pref}_${id}`).value;
+    const msg = document.getElementById(`pl_msg_${id}`);
+    msg.textContent = 'Guardando...';
+    msg.style.color = 'var(--text2)';
+    const body = {
+      plan_name: v('name'),
+      sort_order: v('order') === '' ? 0 : Number(v('order')),
+      price_monthly: v('pm') === '' ? null : Number(v('pm')),
+      price_yearly: v('py') === '' ? null : Number(v('py')),
+      price_text: v('ptext'),
+      limit_text: v('limit'),
+      cta_label: v('cta'),
+      badge: v('badge'),
+      features: v('feats'),
+      is_featured: document.getElementById(`pl_feat_${id}`).checked,
+      is_active: document.getElementById(`pl_active_${id}`).checked,
+    };
+    const data = await api(`/admin/plans/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    if (data.ok) {
+      msg.textContent = '✓ Guardado — ya se ve en la landing';
+      msg.style.color = 'var(--good)';
+      setTimeout(loadPlans, 900);
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function createPlan() {
+    const msg = document.getElementById('planFormMsg');
+    const plan_name = document.getElementById('newPlanName').value.trim();
+    if (!plan_name) { msg.textContent = 'Poné un nombre.'; msg.style.color = 'var(--bad)'; return; }
+    const data = await api('/admin/plans', {
+      method: 'POST',
+      body: JSON.stringify({ plan_name, sort_order: Number(document.getElementById('newPlanOrder').value) || 0, is_active: false })
+    });
+    if (data.ok) {
+      msg.textContent = '✓ Creado, oculto por ahora — completalo abajo y tildá "Visible en la landing".';
+      msg.style.color = 'var(--good)';
+      document.getElementById('newPlanName').value = '';
+      loadPlans();
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function deletePlan(id, nombre) {
+    if (!confirm(`¿Borrar el plan "${nombre}"?\n\nSale de la landing para siempre. Si solo querés esconderlo un rato, destildá "Visible en la landing" y guardá.`)) return;
+    const data = await api(`/admin/plans/${id}`, { method: 'DELETE' });
+    if (data.ok) loadPlans(); else alert('✗ ' + (data.error || 'Error'));
+  }
+
+  // ── Testimonios ─────────────────────────────────────────────────────────
+
+  const T_ESTADOS = { pending: 'Pendiente — no se publicó', published: 'Publicado', hidden: 'Guardado, sin publicar' };
+
+  async function loadTestimonials() {
+    const cont = document.getElementById('testimonialsList');
+    cont.innerHTML = '<div class="card"><div class="empty-row">Cargando...</div></div>';
+    try {
+      const data = await api('/admin/testimonials');
+      if (!data.ok) { cont.innerHTML = `<div class="card"><div class="err-row">${escapeHtml(data.error || 'Error')}</div></div>`; return; }
+      if (!data.testimonials.length) { cont.innerHTML = '<div class="card"><div class="empty-row">Todavía no hay ninguno. Cargá el primero abajo.</div></div>'; return; }
+
+      const pendientes = data.testimonials.filter(t => t.status === 'pending').length;
+      const aviso = pendientes
+        ? `<div class="card" style="border-left:3px solid var(--accent);"><div style="font-size:13px;">Tenés <b>${pendientes}</b> ${pendientes === 1 ? 'mensaje nuevo' : 'mensajes nuevos'} sin revisar.</div></div>`
+        : '';
+
+      cont.innerHTML = aviso + data.testimonials.map(t => `
+        <div class="card"${t.status === 'pending' ? ' style="border-left:3px solid var(--accent);"' : ''}>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;">
+            <div style="font-size:12px;color:var(--text2);">
+              ${escapeHtml(T_ESTADOS[t.status] || t.status)}
+              ${t.user_email ? ` · lo mandó ${escapeHtml(t.user_email)} desde su panel` : ' · cargado a mano'}
+              ${t.created_at ? ` · ${new Date(t.created_at).toLocaleDateString('es-AR')}` : ''}
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="deleteTestimonial(${t.id})">Borrar</button>
+          </div>
+          <div class="form-grid">
+            <div class="full">
+              <label style="${labelEstilo}">Lo que dijo</label>
+              <textarea id="t_quote_${t.id}" rows="3" style="${inputEstilo}font-family:inherit;">${escapeHtml(t.quote || '')}</textarea>
+            </div>
+            <div>
+              <label style="${labelEstilo}">Quién lo dijo</label>
+              <input id="t_name_${t.id}" value="${escapeHtml(t.author_name || '')}" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Rubro y lugar</label>
+              <input id="t_role_${t.id}" value="${escapeHtml(t.author_role || '')}" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Iniciales del circulito</label>
+              <input id="t_init_${t.id}" value="${escapeHtml(t.initials || '')}" maxlength="4" style="${inputEstilo}">
+            </div>
+            <div>
+              <label style="${labelEstilo}">Orden en la página</label>
+              <input id="t_order_${t.id}" type="number" value="${t.sort_order || 0}" style="${inputEstilo}">
+            </div>
+            <div class="full">
+              <label style="${labelEstilo}">Estado</label>
+              <select id="t_status_${t.id}" style="${inputEstilo}">
+                ${Object.entries(T_ESTADOS).map(([v, l]) => `<option value="${v}" ${t.status === v ? 'selected' : ''}>${l}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <button class="btn" onclick="saveTestimonial(${t.id})">Guardar</button>
+            ${t.status !== 'published' ? `<button class="btn btn-ghost" style="margin-left:8px;" onclick="publishTestimonial(${t.id})">Publicar ahora</button>` : ''}
+            <span id="t_msg_${t.id}" style="font-size:12.5px;margin-left:10px;"></span>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      cont.innerHTML = `<div class="card"><div class="err-row">${escapeHtml(e.message)}</div></div>`;
+    }
+  }
+
+  async function saveTestimonial(id, extra) {
+    const msg = document.getElementById(`t_msg_${id}`);
+    if (msg) { msg.textContent = 'Guardando...'; msg.style.color = 'var(--text2)'; }
+    const body = Object.assign({
+      quote: document.getElementById(`t_quote_${id}`).value,
+      author_name: document.getElementById(`t_name_${id}`).value,
+      author_role: document.getElementById(`t_role_${id}`).value,
+      initials: document.getElementById(`t_init_${id}`).value,
+      sort_order: Number(document.getElementById(`t_order_${id}`).value) || 0,
+      status: document.getElementById(`t_status_${id}`).value,
+    }, extra || {});
+    const data = await api(`/admin/testimonials/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    if (data.ok) { setTimeout(loadTestimonials, 500); }
+    else if (msg) { msg.textContent = '✗ ' + (data.error || 'Error'); msg.style.color = 'var(--bad)'; }
+  }
+
+  function publishTestimonial(id) { saveTestimonial(id, { status: 'published' }); }
+
+  async function createTestimonial() {
+    const msg = document.getElementById('testimonialFormMsg');
+    const quote = document.getElementById('newTQuote').value.trim();
+    if (!quote) { msg.textContent = 'Escribí lo que dijo.'; msg.style.color = 'var(--bad)'; return; }
+    const data = await api('/admin/testimonials', {
+      method: 'POST',
+      body: JSON.stringify({
+        quote,
+        author_name: document.getElementById('newTName').value.trim(),
+        author_role: document.getElementById('newTRole').value.trim(),
+        status: 'published'
+      })
+    });
+    if (data.ok) {
+      msg.textContent = '✓ Publicado — ya se ve en la landing';
+      msg.style.color = 'var(--good)';
+      document.getElementById('newTQuote').value = '';
+      document.getElementById('newTName').value = '';
+      document.getElementById('newTRole').value = '';
+      loadTestimonials();
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function deleteTestimonial(id) {
+    if (!confirm('¿Borrarlo para siempre?\n\nSi solo querés sacarlo de la landing, cambiá el estado a "Guardado, sin publicar".')) return;
+    const data = await api(`/admin/testimonials/${id}`, { method: 'DELETE' });
+    if (data.ok) loadTestimonials(); else alert('✗ ' + (data.error || 'Error'));
+  }
+
+  // ── Desde qué casilla sale el correo ────────────────────────────────────
+  // La contraseña nunca vuelve del servidor: el campo se deja vacío y sólo
+  // se manda si el usuario escribió algo nuevo.
+
+  async function loadSmtp() {
+    const est = document.getElementById('smtpEstado');
+    try {
+      const data = await api('/admin/smtp');
+      if (!data.ok) { est.textContent = data.error || 'Error'; return; }
+      document.getElementById('smtpUser').value = data.user || '';
+      document.getElementById('smtpHost').value = data.host || '';
+      document.getElementById('smtpPort').value = data.port || 465;
+      document.getElementById('smtpSenderName').value = data.sender_name || '';
+      document.getElementById('smtpPassword').value = '';
+      document.getElementById('smtpPassword').placeholder =
+        data.tiene_password ? '(guardada — escribí acá sólo si la querés cambiar)' : 'pegá la contraseña';
+
+      if (data.activo) {
+        est.style.background = 'rgba(76,175,80,0.12)';
+        est.style.color = 'var(--good)';
+        est.innerHTML = `Los mails salen desde <b>${escapeHtml(data.user)}</b>, por tu propio servidor de correo.`;
+      } else if (data.brevo_disponible) {
+        est.style.background = 'rgba(245,166,35,0.10)';
+        est.style.color = 'var(--text)';
+        est.innerHTML = 'Los mails salen <b>por Brevo</b>, desde un dominio prestado. Cargá la contraseña de la casilla para que salgan desde tu dominio.';
+      } else {
+        est.style.background = 'rgba(244,67,54,0.12)';
+        est.style.color = 'var(--bad)';
+        est.innerHTML = 'No hay ninguna forma de mandar mails configurada — nadie está recibiendo el mail de bienvenida.';
+      }
+    } catch (e) {
+      est.textContent = e.message;
+    }
+  }
+
+  function _smtpBody(conPassword) {
+    const body = {
+      host: document.getElementById('smtpHost').value.trim(),
+      port: Number(document.getElementById('smtpPort').value) || 465,
+      user: document.getElementById('smtpUser').value.trim(),
+      sender_name: document.getElementById('smtpSenderName').value.trim(),
+    };
+    const pass = document.getElementById('smtpPassword').value;
+    if (conPassword && pass) body.password = pass;
+    return body;
+  }
+
+  async function testSmtp() {
+    const msg = document.getElementById('smtpMsg');
+    msg.textContent = 'Probando...';
+    msg.style.color = 'var(--text2)';
+    const data = await api('/admin/smtp/test', { method: 'POST', body: JSON.stringify(_smtpBody(true)) });
+    if (data.ok) {
+      msg.textContent = '✓ ' + (data.mensaje || 'Conectado.') + ' Ahora dale Guardar.';
+      msg.style.color = 'var(--good)';
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'No se pudo conectar');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function saveSmtp() {
+    const msg = document.getElementById('smtpMsg');
+    msg.textContent = 'Guardando...';
+    msg.style.color = 'var(--text2)';
+    const data = await api('/admin/smtp', { method: 'PUT', body: JSON.stringify(_smtpBody(true)) });
+    if (data.ok) {
+      msg.textContent = '✓ Guardado. Mandate una prueba acá abajo para confirmar que llega.';
+      msg.style.color = 'var(--good)';
+      document.getElementById('smtpPassword').value = '';
+      loadSmtp();
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function clearSmtpPassword() {
+    if (!confirm('¿Volver a mandar por Brevo?\n\nSe borra la contraseña guardada y los mails vuelven a salir desde el dominio prestado de Brevo, no desde el tuyo.')) return;
+    const msg = document.getElementById('smtpMsg');
+    const data = await api('/admin/smtp', { method: 'PUT', body: JSON.stringify({ borrar_password: true }) });
+    if (data.ok) {
+      msg.textContent = '✓ Listo, los mails vuelven a salir por Brevo.';
+      msg.style.color = 'var(--good)';
+      loadSmtp();
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+
+  // ── Alertas de Stock Full (alertafull) ───────────────────────────────────
+  async function loadSmtpFull() {
+    const est = document.getElementById('smtpFullEstado');
+    if (!est) return;
+    try {
+      const data = await api('/admin/smtp-full');
+      if (!data.ok) { est.textContent = data.error || 'Error'; return; }
+      document.getElementById('smtpFullUser').value = data.user || 'alertafull@enviobot.com.ar';
+      document.getElementById('smtpFullHost').value = data.host || 'po000380.ferozo.com';
+      document.getElementById('smtpFullPort').value = data.port || 465;
+      document.getElementById('smtpFullSenderName').value = data.sender_name || 'EnvioBot Full';
+      document.getElementById('smtpFullPassword').value = '';
+      document.getElementById('smtpFullPassword').placeholder =
+        data.tiene_password ? '(guardada — escribí acá sólo si la querés cambiar)' : 'pegá la contraseña de alertafull';
+
+      if (data.activo) {
+        est.style.background = 'rgba(76,175,80,0.12)';
+        est.style.color = 'var(--good)';
+        est.innerHTML = `Las alertas de stock Full salen desde <b>${escapeHtml(data.user)}</b> vía SMTP.`;
+      } else {
+        est.style.background = 'rgba(244,67,54,0.12)';
+        est.style.color = 'var(--bad)';
+        est.innerHTML = 'Falta ingresar la contraseña de la casilla <b>alertafull@enviobot.com.ar</b> para habilitar el despacho de alertas.';
+      }
+    } catch (e) {
+      est.textContent = e.message;
+    }
+  }
+
+  function _smtpFullBody(conPassword) {
+    const body = {
+      host: document.getElementById('smtpFullHost').value.trim(),
+      port: Number(document.getElementById('smtpFullPort').value) || 465,
+      user: document.getElementById('smtpFullUser').value.trim(),
+      sender_name: document.getElementById('smtpFullSenderName').value.trim(),
+    };
+    const pass = document.getElementById('smtpFullPassword').value;
+    if (conPassword && pass) body.password = pass;
+    return body;
+  }
+
+  async function testSmtpFull() {
+    const msg = document.getElementById('smtpFullMsg');
+    msg.textContent = 'Probando conexión...';
+    msg.style.color = 'var(--text2)';
+    const data = await api('/admin/smtp-full/test', { method: 'POST', body: JSON.stringify(_smtpFullBody(true)) });
+    if (data.ok) {
+      msg.textContent = '✓ ' + (data.mensaje || 'Conexión exitosa.') + ' Dale a Guardar para aplicar.';
+      msg.style.color = 'var(--good)';
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'No se pudo conectar');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function saveSmtpFull() {
+    const msg = document.getElementById('smtpFullMsg');
+    msg.textContent = 'Guardando...';
+    msg.style.color = 'var(--text2)';
+    const data = await api('/admin/smtp-full', { method: 'PUT', body: JSON.stringify(_smtpFullBody(true)) });
+    if (data.ok) {
+      msg.textContent = '✓ Guardado exitosamente. Podés enviar una alerta de prueba abajo para confirmar.';
+      msg.style.color = 'var(--good)';
+      document.getElementById('smtpFullPassword').value = '';
+      loadSmtpFull();
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error guardando');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function sendTestAlertFull() {
+    const dest = (document.getElementById('smtpFullTestTo').value || '').trim();
+    const msg = document.getElementById('smtpFullTestMsg');
+    if (!dest || !dest.includes('@')) {
+      msg.textContent = 'Ingresá un email válido para la prueba.';
+      msg.style.color = 'var(--bad)';
+      return;
+    }
+    msg.textContent = 'Enviando alerta de prueba...';
+    msg.style.color = 'var(--text2)';
+    try {
+      const data = await api('/admin/smtp-full/send-test', {
+        method: 'POST',
+        body: JSON.stringify({ email: dest })
+      });
+      if (data.ok) {
+        msg.textContent = '✓ ' + (data.mensaje || 'Enviado correctamente.');
+        msg.style.color = 'var(--good)';
+      } else {
+        msg.textContent = '✗ ' + (data.error || 'Error');
+        msg.style.color = 'var(--bad)';
+      }
+    } catch (e) {
+      msg.textContent = '✗ ' + e.message;
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+
+  // ── Mail de bienvenida ──────────────────────────────────────────────────
+
+  async function loadWelcomeEmail() {
+    const msg = document.getElementById('emailMsg');
+    msg.textContent = '';
+    try {
+      const data = await api('/admin/welcome-email');
+      if (!data.ok) { msg.textContent = '✗ ' + (data.error || 'Error'); msg.style.color = 'var(--bad)'; return; }
+      document.getElementById('emailSubject').value = data.subject || '';
+      document.getElementById('emailHtml').value = data.html || '';
+      document.getElementById('emailText').value = data.text || '';
+      document.getElementById('emailUsingDefault').style.display = data.usando_default ? 'block' : 'none';
+    } catch (e) {
+      msg.textContent = '✗ ' + e.message;
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function saveWelcomeEmail() {
+    const msg = document.getElementById('emailMsg');
+    const html = document.getElementById('emailHtml').value;
+    if (!html.includes('{{link}}')) {
+      msg.textContent = '✗ Falta {{link}} en el cuerpo del mail — sin eso el que se registra no tiene cómo confirmar su cuenta.';
+      msg.style.color = 'var(--bad)';
+      return;
+    }
+    msg.textContent = 'Guardando...';
+    msg.style.color = 'var(--text2)';
+    const data = await api('/admin/welcome-email', {
+      method: 'PUT',
+      body: JSON.stringify({
+        subject: document.getElementById('emailSubject').value,
+        html,
+        text: document.getElementById('emailText').value
+      })
+    });
+    if (data.ok) {
+      msg.textContent = '✓ Guardado — el próximo que se registre recibe esta versión';
+      msg.style.color = 'var(--good)';
+      document.getElementById('emailUsingDefault').style.display = 'none';
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  function previewWelcomeEmail() {
+    const html = document.getElementById('emailHtml').value
+      .replaceAll('{{saludo}}', 'Hola Guillermo,')
+      .replaceAll('{{link}}', '#');
+    document.getElementById('emailPreviewCard').style.display = 'block';
+    document.getElementById('emailPreview').srcdoc =
+      '<body style="margin:0;padding:20px;background:#fff;">' + html + '</body>';
+    document.getElementById('emailPreviewCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  async function restoreWelcomeEmail() {
+    if (!confirm('¿Volver al texto original?\n\nSe pierde lo que hayas escrito acá y vuelve el que trae el sistema.')) return;
+    const msg = document.getElementById('emailMsg');
+    const data = await api('/admin/welcome-email', { method: 'PUT', body: JSON.stringify({ restaurar: true }) });
+    if (data.ok) {
+      msg.textContent = '✓ Volvió el texto original';
+      msg.style.color = 'var(--good)';
+      loadWelcomeEmail();
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  async function sendTestWelcomeEmail() {
+    const msg = document.getElementById('emailTestMsg');
+    const email = document.getElementById('emailTestTo').value.trim();
+    if (!email.includes('@')) { msg.textContent = 'Poné una dirección válida.'; msg.style.color = 'var(--bad)'; return; }
+    msg.textContent = 'Mandando...';
+    msg.style.color = 'var(--text2)';
+    const data = await api('/admin/welcome-email/test', { method: 'POST', body: JSON.stringify({ email }) });
+    if (data.ok) {
+      msg.textContent = '✓ Salió. Puede tardar un minuto en llegar. Ojo: manda lo GUARDADO, no lo que tenés escrito sin guardar.';
+      msg.style.color = 'var(--good)';
+    } else {
+      msg.textContent = '✗ ' + (data.error || 'Error');
+      msg.style.color = 'var(--bad)';
+    }
+  }
+
+  function showPanel(id) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelector(`.nav-item[data-panel="${id}"]`).classList.add('active');
+    if (id === 'panelUsers') loadUsers();
+    if (id === 'panelFeatures') loadFeatures();
+    if (id === 'panelStats') loadSellerStats();
+    if (id === 'panelLeads') loadLeads();
+    if (id === 'panelPartners') loadPartners();
+    if (id === 'panelPlans') loadPlans();
+    if (id === 'panelTestimonials') loadTestimonials();
+    if (id === 'panelEmail') { loadSmtp(); loadSmtpFull(); loadWelcomeEmail(); }
+    if (id === 'panelAdmins') loadAdmins();
+    if (id === 'panelDB') loadDbTables();
+  }
+
+  const STATUS_LABELS = {
+    trial: 'En prueba gratis', active: 'Activo — al día', past_due: 'Pago atrasado',
+    suspended: 'Suspendido', cancelled: 'Dado de baja'
+  };
+
+  async function loadUsers() {
+    const tbody = document.getElementById('usersBody');
+    try {
+      const data = await api('/admin/users');
+      if (!data.ok) { tbody.innerHTML = `<tr><td class="err-row" colspan="20">${escapeHtml(data.error || 'Error')}</td></tr>`; return; }
+      if (!data.users.length) { tbody.innerHTML = '<tr><td class="empty-row" colspan="20">Sin usuarios todavía.</td></tr>'; return; }
+
+      tbody.innerHTML = data.users.map(u => {
+        const trialValue = u.trial_ends_at ? u.trial_ends_at.slice(0, 10) : '';
+        const statusOptions = Object.entries(STATUS_LABELS).map(([v, l]) =>
+          `<option value="${v}" ${u.subscription_status === v ? 'selected' : ''}>${l}</option>`
+        ).join('');
+        const platformOptions = ['ml', 'tn', 'both'].map(v =>
+          `<option value="${v}" ${u.platform === v ? 'selected' : ''}>${v}</option>`
+        ).join('');
+        return `
+          <tr>
+            <td><input value="${escapeHtml(u.email || '')}" onblur="updateUser(${u.id}, {email: this.value})" style="width:150px;"></td>
+            <td><input value="${escapeHtml(u.full_name || '')}" onblur="updateUser(${u.id}, {full_name: this.value})" style="width:100px;"></td>
+            <td><input value="${escapeHtml(u.business_name || '')}" onblur="updateUser(${u.id}, {business_name: this.value})" style="width:100px;"></td>
+            <td><input value="${escapeHtml(u.phone || '')}" onblur="updateUser(${u.id}, {phone: this.value})" style="width:90px;"></td>
+            <td style="text-align:center;">
+              <input type="checkbox" ${u.has_pedidos ? 'checked' : ''} onchange="updateUser(${u.id}, {has_pedidos: this.checked ? 1 : 0})" title="Habilitar/deshabilitar Pedidos">
+            </td>
+            <td style="text-align:center;">
+              <input type="checkbox" ${u.has_full ? 'checked' : ''} onchange="updateUser(${u.id}, {has_full: this.checked ? 1 : 0})" title="Habilitar/deshabilitar Full">
+            </td>
+            <td style="text-align:center;">
+              <input type="checkbox" ${u.is_blocked ? 'checked' : ''} onchange="updateUser(${u.id}, {is_blocked: this.checked ? 1 : 0})" title="Bloquear cuenta">
+            </td>
+            <td>
+              <input value="${escapeHtml(u.admin_notes || '')}" onblur="updateUser(${u.id}, {admin_notes: this.value})" placeholder="Notas..." style="width:130px;">
+            </td>
+            <td><input value="${escapeHtml(u.rubro || '')}" onblur="updateUser(${u.id}, {rubro: this.value})" style="width:90px;"></td>
+            <td><select onchange="updateUser(${u.id}, {platform: this.value})">${platformOptions}</select></td>
+            <td><input value="${escapeHtml(u.cuit || '')}" onblur="updateUser(${u.id}, {cuit: this.value})" style="width:90px;"></td>
+            <td><input value="${escapeHtml(u.instagram || '')}" onblur="updateUser(${u.id}, {instagram: this.value})" style="width:90px;"></td>
+            <td><input value="${escapeHtml(u.facebook || '')}" onblur="updateUser(${u.id}, {facebook: this.value})" style="width:90px;"></td>
+            <td><input value="${escapeHtml(u.x_handle || '')}" onblur="updateUser(${u.id}, {x_handle: this.value})" style="width:80px;"></td>
+            <td>${u.orders_count}</td>
+            <td style="text-align:center;">
+              <button onclick="toggleAutoprint(${u.id})" title="${u.autoprint_enabled ? 'Autoimpresión prendida — click para apagar' : 'Autoimpresión apagada — click para prender'}"
+                style="width:14px;height:14px;border-radius:50%;padding:0;border:1px solid var(--border);cursor:pointer;background:${u.autoprint_enabled ? '#2ecc71' : 'var(--surf2)'};"></button>
+            </td>
+            <td style="white-space:nowrap;">${u.agent_version ? escapeHtml(u.agent_version) : '—'}</td>
+            <td><input value="${escapeHtml(u.plan_tier || 'trial')}" onblur="updateUser(${u.id}, {plan_tier: this.value})" style="width:80px;" title="trial = plan base (1 dispositivo). plus = permite sumar un dispositivo 'viewer' más."></td>
+            <td><select onchange="updateUser(${u.id}, {subscription_status: this.value})">${statusOptions}</select></td>
+            <td><input type="date" value="${trialValue}" onchange="updateUser(${u.id}, {trial_ends_at: this.value})" style="width:130px;"></td>
+            <td>${u.email_verified ? '<span class="pill pill-good">✓</span>' : '<span class="pill pill-muted">—</span>'}</td>
+            <td>${u.referred_by_partner_name ? escapeHtml(u.referred_by_partner_name) : '—'}</td>
+            <td><input type="checkbox" ${u.active ? 'checked' : ''} onchange="updateUser(${u.id}, {active: this.checked})"></td>
+            <td><button class="btn btn-ghost btn-sm" style="color:#ff6b6b;" onclick="deleteUser(${u.id}, event)">Borrar</button></td>
+          </tr>
+        `;
+      }).join('');
+    } catch (e) {
+      tbody.innerHTML = '<tr><td class="err-row" colspan="20">Error de conexión.</td></tr>';
+    }
+  }
+
+  async function updateUser(id, patch) {
+    const data = await api(`/admin/users/${id}`, { method: 'PUT', body: JSON.stringify(patch) });
+    if (!data.ok) alert('✗ Error: ' + data.error);
+  }
+
+  async function toggleAutoprint(id) {
+    const data = await api(`/admin/users/${id}/toggle-autoprint`, { method: 'PATCH' });
+    if (!data.ok) { alert('✗ Error: ' + data.error); return; }
+    // Si la cuenta tiene otros logins compartiendo la misma cuenta ML,
+    // prenderlo acá apaga el de ellos (solo uno puede estar prendido) —
+    // recargamos toda la tabla para que se note.
+    loadUsers();
+  }
+
+  async function deleteUser(id, event) {
+    // El email vive en la primera celda de esa misma fila — lo leemos del
+    // DOM ya escapado en vez de meterlo de nuevo en el HTML del botón.
+    const row = event.target.closest('tr');
+    const email = row.querySelector('td').textContent;
+    if (!confirm(`¿Borrar a "${email}" y todos sus pedidos/config/credenciales? No se puede deshacer.`)) return;
+    const data = await api(`/admin/users/${id}`, { method: 'DELETE' });
+    if (!data.ok) { alert('✗ Error: ' + data.error); return; }
+    loadUsers();
+  }
+
+  let _featData = null;
+
+  // Referencia de lo que hace el producto. `code` coincide con la columna de la tabla cuando ya tiene interruptor.
+  const CATALOGO_FUNCIONES = [
+    { code: 'recompra', nombre: 'Detección de recompra', base: false,
+      desc: 'Marca "Recompra #N" cuando un comprador ya había comprado antes, para tratarlo distinto.' },
+    { nombre: 'Avisos de ventas en el celular', base: false,
+      desc: 'El dueño recibe una notificación en el teléfono cada vez que entra una venta, sin estar frente a la PC.' },
+    { nombre: 'Varias cuentas de MercadoLibre', base: false,
+      desc: 'Maneja más de una tienda de ML desde el mismo usuario.' },
+    { nombre: 'Usuarios (colaboradores)', base: false,
+      desc: 'Suma personas de su equipo con acceso a la misma cuenta (por ejemplo, quien empaca).' },
+    { nombre: 'Impresión automática', base: true,
+      desc: 'No tiene que apretar nada: entra la venta en MercadoLibre y la etiqueta sale sola en la impresora.' },
+    { nombre: 'Impresión térmica y A4', base: true,
+      desc: 'Elige con qué imprime: térmica (impresora de etiquetas) o A4 (hoja común, con la etiqueta arriba y el detalle del pedido abajo).' },
+    { nombre: 'Aviso de pedidos cancelados', base: true,
+      desc: 'Si un comprador cancela un pedido que ya se imprimió, sale un cartel y una etiqueta de aviso para sacarlo antes de despacharlo.' },
+    { nombre: 'Flex programado', base: true,
+      desc: 'ML habilita la etiqueta de los Flex "para mañana" recién cerca de las 20 hs del día anterior. Con esta función el pedido aparece igual apenas se vende, con el cartel "Etiqueta programada", y sale solo cuando ML la libera. Sin ella el pedido NO se pierde, pero el vendedor no lo vería en EnvioBot hasta esa hora. Por eso conviene dejarla siempre incluida.' },
+    { nombre: 'Sonido de pedido nuevo', base: true,
+      desc: 'Un "beep" cuando llega un pedido, para enterarse sin mirar la pantalla (cada usuario lo prende o apaga).' },
+    { nombre: 'Tope de pedidos por mes', base: false,
+      desc: 'Límite de pedidos impresos por mes según el plan. Todavía no está programado.' },
+  ];
+
+  function pintarCatalogoFunciones(controlables) {
+    const tb = document.getElementById('featCatalog');
+    if (!tb) return;
+    tb.innerHTML = CATALOGO_FUNCIONES.map(f => {
+      const si = f.code && controlables.includes(f.code);
+      return `<tr><td style="white-space:nowrap;">${escapeHtml(f.nombre)}</td><td style="max-width:560px;color:var(--text2);">${escapeHtml(f.desc)}</td>
+        <td>${f.base ? '<span class="pill pill-good">Siempre incluida</span>' : '<span class="pill pill-muted">Puede ser un plus</span>'}</td>
+        <td>${si ? '<span class="pill pill-good">Sí</span>' : '<span class="pill pill-muted">Todavía no — la tienen todos</span>'}</td></tr>`;
+    }).join('');
+  }
+
+  async function loadFeatures() {
+    const body = document.getElementById('featBody');
+    try {
+      const data = await api('/admin/funcionalidades');
+      if (!data.ok) { body.innerHTML = `<tr><td class="err-row" colspan="10">${escapeHtml(data.error || 'Error')}</td></tr>`; return; }
+      _featData = data;
+      pintarCatalogoFunciones(data.features.map(f => f.code));
+      document.getElementById('featGracia').textContent = data.gracia_dias;
+
+      document.getElementById('featDefaults').innerHTML =
+        '<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">Por defecto — lo que tiene un cliente sin excepción manual y sin regla (beta / prueba) que se la dé. Hoy dejalo prendido: así nadie pierde lo que ya usa. Apagalo el día que quieras venderla.</div>' +
+        data.features.map(f =>
+          `<label style="margin-right:18px;font-size:13px;"><input type="checkbox" ${f.por_defecto ? 'checked' : ''} onchange="setFeatureDefault('${escapeHtml(f.code)}', this.checked)"> ${escapeHtml(f.label)}</label>`
+        ).join('');
+
+      document.getElementById('featHead').innerHTML =
+        '<tr><th>Cliente / usuario</th><th>Abono de</th><th title="Beta tester: tiene todo, sin vencimiento.">Beta</th><th>Estado</th>' +
+        data.features.map(f => `<th title="${escapeHtml(f.description || '')}">${escapeHtml(f.label)}</th>`).join('') + '</tr>';
+
+      const principales = data.users.filter(u => !u.abono_de);
+      body.innerHTML = data.users.map(u => {
+        const dependiente = !!u.abono_de;
+        const opts = ['<option value="">(propio)</option>'].concat(
+          principales.filter(p => p.id !== u.id).map(p =>
+            `<option value="${p.id}" ${u.abono_de === p.id ? 'selected' : ''}>${escapeHtml(p.business_name || p.email)}</option>`)
+        ).join('');
+        const status = (STATUS_LABELS[u.subscription_status] || '—') +
+          (u.subscription_status === 'trial' && u.trial_ends_at ? ` (vence ${u.trial_ends_at.slice(0, 10)})` : '');
+        const cells = data.features.map(f => {
+          const c = u.cells[f.code];
+          if (dependiente) {
+            return `<td style="color:var(--text2);font-size:12px;">${c.activa ? '✓' : '—'} <span title="Usa el abono de ${escapeHtml(u.abono_de_label || '')}">hereda</span></td>`;
+          }
+          const origen = c.origen === 'manual' ? 'manual' : `auto · ${c.origen}`;
+          const reset = c.manual
+            ? ` <a href="#" title="Volver a automático" onclick="setFeature(${u.id}, '${escapeHtml(f.code)}', 'auto'); return false;" style="color:var(--text2);">✕</a>` : '';
+          return `<td style="white-space:nowrap;"><input type="checkbox" ${c.activa ? 'checked' : ''} onchange="setFeature(${u.id}, '${escapeHtml(f.code)}', this.checked ? 'on' : 'off')">
+            <span style="font-size:11px;color:${c.manual ? 'var(--accent-text, #f5a623)' : 'var(--text2)'};">${escapeHtml(origen)}</span>${reset}</td>`;
+        }).join('');
+        return `<tr style="${dependiente ? 'opacity:.85;' : ''}">
+          <td>${dependiente ? '↳ ' : ''}${escapeHtml(u.business_name || u.email)}<div style="font-size:11px;color:var(--text2);">${escapeHtml(u.email)}</div></td>
+          <td><select onchange="setAbono(${u.id}, {abono_de: this.value ? Number(this.value) : null})">${opts}</select></td>
+          <td style="text-align:center;"><input type="checkbox" ${u.is_beta ? 'checked' : ''} ${dependiente ? 'disabled' : ''} onchange="setAbono(${u.id}, {is_beta: this.checked})"></td>
+          <td style="font-size:12px;">${dependiente ? '—' : escapeHtml(status)}</td>
+          ${cells}
+        </tr>`;
+      }).join('');
+    } catch (e) {
+      body.innerHTML = '<tr><td class="err-row" colspan="10">Error de conexión.</td></tr>';
+    }
+  }
+
+  async function setFeature(userId, code, mode) {
+    const data = await api(`/admin/users/${userId}/funcionalidad`, { method: 'PUT', body: JSON.stringify({ code, mode }) });
+    if (!data.ok) alert('✗ Error: ' + data.error);
+    loadFeatures();
+  }
+
+  async function setAbono(userId, patch) {
+    const data = await api(`/admin/users/${userId}/abono`, { method: 'PUT', body: JSON.stringify(patch) });
+    if (!data.ok) alert('✗ Error: ' + data.error);
+    loadFeatures();
+  }
+
+  async function setFeatureDefault(code, value) {
+    const data = await api(`/admin/funcionalidades/${encodeURIComponent(code)}`, { method: 'PUT', body: JSON.stringify({ por_defecto: value }) });
+    if (!data.ok) alert('✗ Error: ' + data.error);
+    loadFeatures();
+  }
+
+  function formatARS(n) {
+    return '$' + Math.round(n || 0).toLocaleString('es-AR');
+  }
+
+  let _sellerStats = [];
+
+  async function loadSellerStats() {
+    const tbody = document.getElementById('statsBody');
+    try {
+      const data = await api('/admin/stats/sellers');
+      if (!data.ok) { tbody.innerHTML = `<tr><td class="err-row" colspan="8">${escapeHtml(data.error || 'Error')}</td></tr>`; return; }
+      _sellerStats = data.sellers;
+      renderSellerStats();
+    } catch (e) {
+      tbody.innerHTML = '<tr><td class="err-row" colspan="8">Error de conexión.</td></tr>';
+    }
+  }
+
+  function renderSellerStats() {
+    const tbody = document.getElementById('statsBody');
+    if (!_sellerStats.length) { tbody.innerHTML = '<tr><td class="empty-row" colspan="8">Sin cuentas todavía.</td></tr>'; return; }
+
+    const q = (document.getElementById('statsSearch').value || '').trim().toLowerCase();
+    const sortKey = document.getElementById('statsSort').value;
+
+    let rows = _sellerStats;
+    if (q) {
+      rows = rows.filter(s => [s.cuenta, s.rubro, s.printer_name]
+        .some(v => (v || '').toLowerCase().includes(q)));
+    }
+    rows = rows.slice().sort((a, b) => sortKey === 'print_success_rate'
+      // "Peor" primero: 0% antes que una cuenta sin datos todavía (null va al final).
+      ? (a.print_success_rate ?? 101) - (b.print_success_rate ?? 101)
+      : (b[sortKey] || 0) - (a[sortKey] || 0));
+
+    if (!rows.length) { tbody.innerHTML = '<tr><td class="empty-row" colspan="8">Nada con ese filtro.</td></tr>'; return; }
+
+    tbody.innerHTML = rows.map(s => {
+      const impresora = s.printer_name
+        ? `${escapeHtml(s.printer_name)}${s.detected_driver ? ` <span style="color:var(--text2);font-size:11px;">(${escapeHtml(s.detected_driver)})</span>` : ''}`
+        : '—';
+      const impresion = s.print_jobs_30d
+        ? `${s.print_success_rate}% éxito <span style="color:var(--text2);font-size:11px;">(${s.print_jobs_30d} trabajo${s.print_jobs_30d > 1 ? 's' : ''}${s.print_avg_seconds != null ? `, ${s.print_avg_seconds}s prom.` : ''})</span>`
+        : '—';
+      return `
+        <tr>
+          <td>${escapeHtml(s.cuenta || '—')}</td>
+          <td>${escapeHtml(s.rubro || '—')}</td>
+          <td>${impresora}</td>
+          <td>${s.orders_count}</td>
+          <td>${formatARS(s.venta_mes)}</td>
+          <td>${formatARS(s.promedio_mensual)}</td>
+          <td>${formatARS(s.venta_anio)}</td>
+          <td>${impresion}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // Esta base crece con cada vendedor nuevo que se suscribe a EnvioBot —
+  // paginado y filtrado del lado del servidor desde el arranque, no como
+  // la versión vieja que traía todo de una (ver /api/admin/leads en
+  // backend/app.py, _query_admin_leads).
+  let _leadsState = { offset: 0, limit: 50, total: 0, repeatTotal: 0, items: [], hasMore: false, loading: false };
+  let _leadsDebounce = null;
+  let _leadsSellersLoaded = false;
+
+  async function loadLeadsSellerOptions() {
+    if (_leadsSellersLoaded) return;
+    _leadsSellersLoaded = true;
+    try {
+      const data = await api('/admin/users');
+      if (!data.ok) return;
+      const sel = document.getElementById('leadsSeller');
+      data.users
+        .slice()
+        .sort((a, b) => (a.business_name || a.email).localeCompare(b.business_name || b.email, 'es'))
+        .forEach(u => {
+          const opt = document.createElement('option');
+          opt.value = u.id;
+          opt.textContent = u.business_name || u.email;
+          sel.appendChild(opt);
+        });
+    } catch (e) { /* no bloquea la pantalla si falla */ }
+  }
+
+  function onLeadsFilterChange() {
+    clearTimeout(_leadsDebounce);
+    _leadsDebounce = setTimeout(() => loadLeads(true), 300);
+  }
+
+  function _leadsParams() {
+    const q = (document.getElementById('leadsSearch').value || '').trim();
+    const sellerId = document.getElementById('leadsSeller').value;
+    const dateFrom = document.getElementById('leadsDateFrom').value;
+    const dateTo = document.getElementById('leadsDateTo').value;
+    const onlyRepeat = document.getElementById('leadsOnlyRepeat').checked;
+    const onlyPhone = document.getElementById('leadsOnlyPhone').checked;
+    const sort = document.getElementById('leadsSort').value;
+    const params = new URLSearchParams({ limit: _leadsState.limit, offset: _leadsState.offset, sort });
+    if (q) params.set('q', q);
+    if (sellerId) params.set('seller_id', sellerId);
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo) params.set('date_to', dateTo);
+    if (onlyRepeat) params.set('only_repeat', '1');
+    if (onlyPhone) params.set('only_with_phone', '1');
+    return params;
+  }
+
+  async function loadLeads(reset) {
+    if (reset === undefined) reset = true;
+    loadLeadsSellerOptions();
+    if (_leadsState.loading) return;
+    _leadsState.loading = true;
+
+    const tbody = document.getElementById('leadsBody');
+    const loadMoreBox = document.getElementById('leadsLoadMoreBox');
+    if (reset) {
+      _leadsState.offset = 0;
+      _leadsState.items = [];
+      tbody.innerHTML = '<tr><td class="empty-row" colspan="5">Cargando...</td></tr>';
+    }
+    loadMoreBox.innerHTML = '';
+
+    try {
+      const data = await api(`/admin/leads?${_leadsParams()}`);
+      if (!data.ok) { tbody.innerHTML = `<tr><td class="err-row" colspan="5">${escapeHtml(data.error || 'Error')}</td></tr>`; return; }
+      _leadsState.items = _leadsState.items.concat(data.leads || []);
+      _leadsState.total = data.total || 0;
+      _leadsState.repeatTotal = data.repeat_total || 0;
+      _leadsState.repeatStats = data.repeat_stats || null;
+      _leadsState.hasMore = !!data.has_more;
+      _leadsState.offset = _leadsState.items.length;
+      renderLeadsTable();
+    } catch (e) {
+      tbody.innerHTML = '<tr><td class="err-row" colspan="5">Error de conexión.</td></tr>';
+    } finally {
+      _leadsState.loading = false;
+    }
+  }
+
+  function renderLeadsTable() {
+    const tbody = document.getElementById('leadsBody');
+    const countEl = document.getElementById('leadsCount');
+    const loadMoreBox = document.getElementById('leadsLoadMoreBox');
+    const leads = _leadsState.items;
+
+    if (!leads.length) {
+      countEl.textContent = '';
+      tbody.innerHTML = '<tr><td class="empty-row" colspan="5">Ningún comprador coincide con los filtros.</td></tr>';
+      loadMoreBox.innerHTML = '';
+      return;
+    }
+
+    let resumen = `${leads.length} de ${_leadsState.total} compradores — ${_leadsState.repeatTotal} con recompra`;
+    const rs = _leadsState.repeatStats;
+    if (rs && rs.ticket_promedio != null) {
+      const cobertura = rs.compras ? rs.compras_con_monto / rs.compras : 1;
+      resumen += ` · los que recompran gastan en promedio ${formatARS(rs.ticket_promedio)} por compra (sobre ${rs.compras_con_monto} de ${rs.compras} compras con monto conocido`
+        + (cobertura < 0.7 ? ' — todavía incompleto, no tomarlo como cifra final' : '') + ')';
+    }
+    countEl.textContent = resumen;
+
+    const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+
+    tbody.innerHTML = leads.map((l, idx) => {
+      const displayName = l.name || `Comprador ${l.buyer_id}`;
+      const nickname = (l.nickname && l.nickname !== displayName)
+        ? `<div style="font-size: 11px; color: var(--text2);">@${escapeHtml(l.nickname)}</div>` : '';
+      const badge = l.orders_count > 1
+        ? `<span class="pill pill-good" style="margin-left: 6px;">Recompra x${l.orders_count}</span>` : '';
+      const addressParts = [l.address, [l.city, l.state].filter(Boolean).join(', ')].filter(Boolean);
+      const rowId = `lead-orders-${idx}`;
+      const ordersDetail = (l.orders || []).map(o =>
+        `<div>Pack ID: ${escapeHtml(String(o.display_order_id || o.id))} — ${escapeHtml(o.seller || '')}${o.account ? ` (${escapeHtml(o.account)})` : ''} — ${fmtDate(o.created_at)}</div>`
+      ).join('') || '<div>—</div>';
+      const items = (l.items || []).map(it =>
+        `${it.qty} Un.${it.sku ? ` SKU ${escapeHtml(it.sku)}` : ''} ${escapeHtml(it.title)}`
+      ).join('<br>');
+      return `
+        <tr style="vertical-align: top;">
+          <td style="white-space: nowrap;">
+            <div>${escapeHtml(displayName)}${badge}</div>
+            ${nickname}
+          </td>
+          <td style="font-size: 12px; color: var(--text2); max-width: 220px;">
+            ${l.phone ? `<div>${escapeHtml(l.phone)}</div>` : ''}
+            ${addressParts.map(p => `<div>${escapeHtml(p)}</div>`).join('') || '<div>—</div>'}
+          </td>
+          <td style="font-size: 12px; color: var(--text2); max-width: 160px;">${escapeHtml(l.accounts || '—')}</td>
+          <td style="font-size: 12px;">
+            <a href="#" onclick="const d=document.getElementById('${rowId}'); d.style.display = d.style.display === 'none' ? 'block' : 'none'; return false;" style="white-space: nowrap;">${l.orders_count} pedido${l.orders_count > 1 ? 's' : ''} ▾</a>
+            ${l.total_spent != null ? `<div style="color: var(--text2); white-space: nowrap; margin-top: 2px;">Gastó ${formatARS(l.total_spent)}${l.avg_ticket != null && l.orders_with_value > 1 ? ` · prom. ${formatARS(l.avg_ticket)}` : ''}${l.orders_with_value < l.orders_count ? ` <span title="Algunos pedidos viejos no tienen el monto guardado: el total es parcial.">(parcial)</span>` : ''}</div>` : ''}
+            <div id="${rowId}" style="display: none; margin-top: 6px; color: var(--text2); min-width: 260px; max-width: 360px;">${ordersDetail}</div>
+          </td>
+          <td style="font-size: 12px; color: var(--text2); max-width: 320px;">${items || '—'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    loadMoreBox.innerHTML = _leadsState.hasMore
+      ? `<a href="#" onclick="loadLeads(false); return false;" style="font-size: 12px;">Cargar más compradores (${_leadsState.total - leads.length} más) ▾</a>`
+      : '';
+  }
+
+  async function exportLeads() {
+    try {
+      const r = await fetch(`${API_URL}/admin/leads/export?${_leadsParams()}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!r.ok) { alert('No se pudo generar el Excel.'); return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'EnvioBot-Clientes-Admin.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('No se pudo generar el Excel.');
+    }
+  }
+
+  async function loadPartners() {
+    const tbody = document.getElementById('partnersBody');
+    try {
+      const data = await api('/admin/partners');
+      if (!data.ok) { tbody.innerHTML = `<tr><td class="err-row" colspan="7">${escapeHtml(data.error || 'Error')}</td></tr>`; return; }
+      if (!data.partners.length) { tbody.innerHTML = '<tr><td class="empty-row" colspan="7">Todavía no cargaste ningún partner.</td></tr>'; return; }
+      tbody.innerHTML = data.partners.map(p => `
+        <tr>
+          <td>${escapeHtml(p.name)}</td>
+          <td><code>${escapeHtml(p.ref_code)}</code></td>
+          <td><a href="${escapeHtml(p.website_url)}" target="_blank" rel="noopener">${escapeHtml(p.website_url)}</a></td>
+          <td>${p.clicks_count}</td>
+          <td>${p.referred_users_count}</td>
+          <td><span class="pill ${p.is_active ? 'pill-good' : 'pill-muted'}">${p.is_active ? 'Activo' : 'Inactivo'}</span></td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-ghost btn-sm" onclick="togglePartner(${p.id}, ${!p.is_active})">${p.is_active ? 'Desactivar' : 'Activar'}</button>
+            <button class="btn btn-danger btn-sm" onclick="deletePartner(${p.id}, '${escapeHtml(p.name).replace(/'/g, "\\'")}')">Borrar</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      tbody.innerHTML = '<tr><td class="err-row" colspan="7">Error de conexión.</td></tr>';
+    }
+  }
+
+  async function createPartner() {
+    const name = document.getElementById('pName').value.trim();
+    const ref_code = document.getElementById('pRefCode').value.trim();
+    const website_url = document.getElementById('pWebsite').value.trim();
+    const description = document.getElementById('pDescription').value.trim();
+    const msg = document.getElementById('partnerFormMsg');
+    msg.style.color = '';
+    msg.textContent = '';
+
+    if (!name || !ref_code || !website_url) {
+      msg.style.color = 'var(--bad)';
+      msg.textContent = 'Nombre, código y sitio web son obligatorios.';
+      return;
+    }
+
+    const data = await api('/admin/partners', { method: 'POST', body: JSON.stringify({ name, ref_code, website_url, description }) });
+    if (!data.ok) {
+      msg.style.color = 'var(--bad)';
+      msg.textContent = data.error;
+      return;
+    }
+    document.getElementById('pName').value = '';
+    document.getElementById('pRefCode').value = '';
+    document.getElementById('pWebsite').value = '';
+    document.getElementById('pDescription').value = '';
+    loadPartners();
+  }
+
+  async function togglePartner(id, activate) {
+    const data = await api(`/admin/partners/${id}`, { method: 'PUT', body: JSON.stringify({ is_active: activate }) });
+    if (!data.ok) { alert('✗ Error: ' + data.error); return; }
+    loadPartners();
+  }
+
+  async function deletePartner(id, name) {
+    if (!confirm(`¿Borrar el partner "${name}"? No se puede deshacer.`)) return;
+    const data = await api(`/admin/partners/${id}`, { method: 'DELETE' });
+    if (!data.ok) { alert('✗ Error: ' + data.error); return; }
+    loadPartners();
+  }
+
+  async function loadAdmins() {
+    const tbody = document.getElementById('adminsBody');
+    try {
+      const data = await api('/admin/admins');
+      if (!data.ok) { tbody.innerHTML = `<tr><td class="err-row" colspan="5">${escapeHtml(data.error || 'Error')}</td></tr>`; return; }
+      if (!data.admins.length) { tbody.innerHTML = '<tr><td class="empty-row" colspan="5">No hay administradores todavía.</td></tr>'; return; }
+      tbody.innerHTML = data.admins.map(a => `
+        <tr>
+          <td>${escapeHtml(a.full_name || '')}</td>
+          <td>${escapeHtml(a.email)}</td>
+          <td><span class="pill ${a.active ? 'pill-good' : 'pill-muted'}">${a.active ? 'Activo' : 'Inactivo'}</span></td>
+          <td>${a.created_at ? new Date(a.created_at).toLocaleDateString('es-AR') : ''}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="toggleAdmin(${a.id}, ${!a.active})">${a.active ? 'Desactivar' : 'Activar'}</button></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      tbody.innerHTML = '<tr><td class="err-row" colspan="5">Error de conexión.</td></tr>';
+    }
+  }
+
+  async function createAdmin() {
+    const full_name = document.getElementById('aFullName').value.trim();
+    const email = document.getElementById('aEmail').value.trim();
+    const password = document.getElementById('aPassword').value;
+    const msg = document.getElementById('adminFormMsg');
+    msg.style.color = '';
+    msg.textContent = '';
+
+    if (!full_name || !email || !password) {
+      msg.style.color = 'var(--bad)';
+      msg.textContent = 'Nombre, email y contraseña son obligatorios.';
+      return;
+    }
+
+    const data = await api('/admin/admins', { method: 'POST', body: JSON.stringify({ full_name, email, password }) });
+    if (!data.ok) {
+      msg.style.color = 'var(--bad)';
+      msg.textContent = data.error;
+      return;
+    }
+    document.getElementById('aFullName').value = '';
+    document.getElementById('aEmail').value = '';
+    document.getElementById('aPassword').value = '';
+    loadAdmins();
+  }
+
+  // ── Base de datos: editor genérico de cualquier tabla ─────────────────────
+  let _dbCurrentTable = null;
+  let _dbCurrentColumns = [];
+  let _dbCurrentPk = [];
+  let _dbEditingPk = null; // null = fila nueva; si no, {col: valor, ...}
+
+  async function loadDbTables() {
+    const list = document.getElementById('dbTableList');
+    const data = await api('/admin/db/tables');
+    if (!data.ok) { list.textContent = 'Error: ' + data.error; return; }
+    list.innerHTML = '';
+    data.tables.forEach(t => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-sm';
+      btn.textContent = `${t.name} (${t.count})`;
+      btn.onclick = () => loadDbTable(t.name);
+      list.appendChild(btn);
+    });
+  }
+
+  // Arma filas/formularios con el DOM (createElement + .value/.textContent)
+  // en vez de strings de HTML — los datos reales tienen comillas dobles
+  // (columnas JSON) y comillas simples (direcciones, nombres), y meterlas
+  // sin escapar dentro de un atributo value="..." u onclick='...' corta el
+  // atributo a la mitad y rompe todo. Con el DOM no hace falta escapar nada.
+  async function loadDbTable(name) {
+    const card = document.getElementById('dbTableCard');
+    const head = document.getElementById('dbTableHead');
+    const body = document.getElementById('dbTableBody');
+    card.style.display = 'block';
+    document.getElementById('dbTableTitle').textContent = name;
+    body.innerHTML = '<tr><td class="empty-row">Cargando...</td></tr>';
+
+    const data = await api(`/admin/db/tables/${name}`);
+    if (!data.ok) { body.innerHTML = `<tr><td class="empty-row">${escapeHtml(data.error)}</td></tr>`; return; }
+
+    _dbCurrentTable = name;
+    _dbCurrentColumns = data.columns;
+    _dbCurrentPk = data.primary_key;
+
+    head.innerHTML = '';
+    data.columns.forEach(c => { const th = document.createElement('th'); th.textContent = c; head.appendChild(th); });
+    head.appendChild(document.createElement('th'));
+
+    body.innerHTML = '';
+    if (!data.rows.length) {
+      body.innerHTML = `<tr><td class="empty-row" colspan="${data.columns.length + 1}">Sin filas todavía.</td></tr>`;
+      return;
+    }
+
+    data.rows.forEach(row => {
+      const tr = document.createElement('tr');
+      data.columns.forEach(c => {
+        const td = document.createElement('td');
+        td.style.cssText = 'max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        const v = row[c];
+        if (v === null) {
+          td.innerHTML = '<span style="color:var(--text2)">NULL</span>';
+        } else {
+          td.textContent = String(v);
+          td.title = String(v);
+        }
+        tr.appendChild(td);
+      });
+      const actionTd = document.createElement('td');
+      actionTd.style.whiteSpace = 'nowrap';
+      const editBtn = document.createElement('button');
+      editBtn.className = 'btn btn-ghost btn-sm';
+      editBtn.textContent = 'Editar';
+      editBtn.onclick = () => openDbRowModal(row);
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn btn-ghost btn-sm';
+      delBtn.style.color = '#ff6b6b';
+      delBtn.textContent = 'Borrar';
+      delBtn.onclick = () => deleteDbRow(row);
+      actionTd.appendChild(editBtn);
+      actionTd.appendChild(delBtn);
+      tr.appendChild(actionTd);
+      body.appendChild(tr);
+    });
+  }
+
+  function openDbRowModal(row) {
+    _dbEditingPk = row ? Object.fromEntries(_dbCurrentPk.map(k => [k, row[k]])) : null;
+    document.getElementById('dbRowModalTitle').textContent = row ? `Editar fila de "${_dbCurrentTable}"` : `Nueva fila en "${_dbCurrentTable}"`;
+    document.getElementById('dbRowModalMsg').textContent = '';
+    const fields = document.getElementById('dbRowModalFields');
+    fields.innerHTML = '';
+    _dbCurrentColumns.forEach(c => {
+      const isPk = _dbCurrentPk.includes(c);
+      const value = row ? (row[c] === null ? '' : row[c]) : '';
+
+      const wrap = document.createElement('div');
+      const label = document.createElement('label');
+      label.style.cssText = 'font-size:11px;color:var(--text2);display:block;margin-bottom:4px;';
+      label.textContent = c + (isPk ? ' (clave)' : '');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.dataset.col = c;
+      input.value = String(value);
+      input.disabled = !!(row && isPk); // no se cambia la PK de una fila existente
+      input.style.cssText = 'width:100%;padding:8px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;box-sizing:border-box;';
+      wrap.appendChild(label);
+      wrap.appendChild(input);
+      fields.appendChild(wrap);
+    });
+    document.getElementById('dbRowModal').style.display = 'flex';
+  }
+
+  function closeDbRowModal() {
+    document.getElementById('dbRowModal').style.display = 'none';
+  }
+
+  async function saveDbRow() {
+    const msg = document.getElementById('dbRowModalMsg');
+    const inputs = document.querySelectorAll('#dbRowModalFields input');
+    const data = {};
+    inputs.forEach(inp => { if (!inp.disabled) data[inp.dataset.col] = inp.value; });
+
+    let result;
+    if (_dbEditingPk) {
+      result = await api(`/admin/db/tables/${_dbCurrentTable}/rows`, {
+        method: 'PUT', body: JSON.stringify({ pk: _dbEditingPk, data })
+      });
+    } else {
+      result = await api(`/admin/db/tables/${_dbCurrentTable}/rows`, {
+        method: 'POST', body: JSON.stringify({ data })
+      });
+    }
+    if (!result.ok) { msg.textContent = result.error; return; }
+    closeDbRowModal();
+    loadDbTable(_dbCurrentTable);
+  }
+
+  async function deleteDbRow(row) {
+    if (!confirm('¿Borrar esta fila? No se puede deshacer.')) return;
+    const pk = Object.fromEntries(_dbCurrentPk.map(k => [k, row[k]]));
+    const result = await api(`/admin/db/tables/${_dbCurrentTable}/rows`, {
+      method: 'DELETE', body: JSON.stringify({ pk })
+    });
+    if (!result.ok) { alert('✗ Error: ' + result.error); return; }
+    loadDbTable(_dbCurrentTable);
+  }
+
+  async function toggleAdmin(id, activate) {
+    const data = await api(`/admin/admins/${id}`, { method: 'PUT', body: JSON.stringify({ active: activate }) });
+    if (!data.ok) { alert('✗ Error: ' + data.error); return; }
+    loadAdmins();
+  }
+
+  function toggleSidebar() {
+    const collapsed = document.getElementById('sidebar').classList.toggle('collapsed');
+    document.getElementById('sidebarExpandBtn').classList.toggle('visible', collapsed);
+    try { localStorage.setItem('admin_sidebar_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+  }
+
+  function boot() {
+    document.getElementById('loginScreen').style.display = 'none';
+    if (localStorage.getItem('admin_sidebar_collapsed') === '1') {
+      document.getElementById('sidebar').classList.add('collapsed');
+      document.getElementById('sidebarExpandBtn').classList.add('visible');
+    }
+    document.getElementById('appShell').style.display = 'flex';
+    document.getElementById('sidebarUser').textContent = localStorage.getItem('admin_email') || '';
+    loadUsers();
+  }
+
+  (async function init() {
+    if (!token) return;
+    const check = await api('/admin/admins');
+    if (check.ok) {
+      boot();
+    } else {
+      localStorage.removeItem('admin_token');
+      localStorage.removeItem('admin_email');
+      token = null;
+    }
+  })();
+
+  // ── Ver la contraseña ────────────────────────────────────────────────
+  // Escribir a ciegas una contraseña que no se puede revisar es la forma más
+  // fácil de que alguien se trabe en la primera pantalla sin entender por
+  // qué. El ojito la muestra mientras lo tenés apretado del lado del ojo.
+  //
+  // El ícono es SVG de trazo, del mismo estilo que el logo. Se dibuja acá y
+  // no se pega en el HTML para que los dos estados (ver / no ver) queden
+  // juntos y no se desincronicen.
+  const _OJO_ABIERTO = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+  const _OJO_TACHADO = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><line x1="3" y1="3" x2="21" y2="21"></line></svg>';
+
+  function ponerOjito(input) {
+    if (!input || input.dataset.ojito === '1') return;
+    input.dataset.ojito = '1';
+
+    // El input queda envuelto para poder clavar el botón adentro, a la
+    // derecha, sin tocar el ancho ni el alto que ya tenía.
+    const caja = document.createElement('div');
+    caja.style.cssText = 'position: relative; display: block;';
+    input.parentNode.insertBefore(caja, input);
+    caja.appendChild(input);
+    input.style.paddingRight = '40px';
+
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.setAttribute('aria-label', 'Ver la contraseña');
+    boton.title = 'Ver la contraseña';
+    boton.innerHTML = _OJO_ABIERTO;
+    boton.style.cssText = [
+      'position: absolute', 'right: 8px', 'top: 50%',
+      'transform: translateY(-50%)', 'background: none', 'border: none',
+      'padding: 4px', 'cursor: pointer', 'color: var(--text2)',
+      'display: flex', 'align-items: center', 'line-height: 0'
+    ].join(';');
+    // El margen de abajo del input (si lo tenía) ahora vive en la caja, así
+    // el botón queda centrado sobre el campo y no sobre campo+margen.
+    const margen = getComputedStyle(input).marginBottom;
+    if (margen && margen !== '0px') {
+      caja.style.marginBottom = margen;
+      input.style.marginBottom = '0';
+    }
+    boton.addEventListener('click', () => {
+      const viendo = input.type === 'text';
+      input.type = viendo ? 'password' : 'text';
+      boton.innerHTML = viendo ? _OJO_ABIERTO : _OJO_TACHADO;
+      boton.title = viendo ? 'Ver la contraseña' : 'Ocultar la contraseña';
+      boton.setAttribute('aria-label', boton.title);
+      input.focus();
+    });
+    caja.appendChild(boton);
+  }
+
+  document.querySelectorAll('input[type="password"]').forEach(ponerOjito);
+
+
+</script>
+</body>
+</html>

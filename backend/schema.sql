@@ -56,22 +56,29 @@ CREATE TABLE IF NOT EXISTS user_settings (
 CREATE TABLE IF NOT EXISTS full_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
+    ml_credential_id INT NULL,
     item_id VARCHAR(50) NOT NULL,                      -- MLA123456789
     variation_id VARCHAR(50) NULL,
-    inventory_id VARCHAR(50) NULL,                     -- Inventory ID de MeLi
+    variation_name VARCHAR(150) NULL,                  -- ej: Color: Negro / Talle: 42
+    inventory_id VARCHAR(50) NULL,                     -- Inventory ID de MeLi en bodega Full
     sku VARCHAR(100) NULL,
     title VARCHAR(255) NOT NULL,
     thumbnail VARCHAR(350) NULL,
     permalink VARCHAR(500) NULL,
-    current_stock_full INT NOT NULL DEFAULT 0,          -- Stock disponible en depósito de MeLi
-    lead_time_override INT NULL,                       -- Plazo específico para este SKU (opcional)
-    safety_stock_override INT NULL,                    -- Buffer específico para este SKU (opcional)
+    listing_type_id VARCHAR(50) NULL,                  -- gold_special (Clásica), gold_pro (Premium)
+    is_catalog BOOLEAN NOT NULL DEFAULT FALSE,         -- true si compite en Catálogo / Buy Box
+    status VARCHAR(30) NOT NULL DEFAULT 'active',      -- active, paused, closed
+    current_stock_full INT NOT NULL DEFAULT 0,         -- Stock APTO disponible en depósito de MeLi
+    not_available_stock_full INT NOT NULL DEFAULT 0,    -- Stock retenido/dañado en depósito de MeLi
+    lead_time_override INT NULL,                       -- Tiempo de preparación específico para este SKU
+    safety_stock_override INT NULL,                    -- Buffer específico para este SKU
     is_monitored BOOLEAN NOT NULL DEFAULT TRUE,
     last_synced_at TIMESTAMP NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_user_item_var (user_id, item_id, variation_id),
     INDEX idx_user_sku (user_id, sku),
+    INDEX idx_user_inv (user_id, inventory_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

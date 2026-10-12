@@ -1,14 +1,19 @@
 import os
+import sys
 import subprocess
 import paramiko
 
 def main():
     print("=== 1. COMMITTING LOCAL CHANGES ===")
+    commit_msg = " ".join(sys.argv[1:]).strip() if len(sys.argv) > 1 else "feat: consolidacion stock fisico Full sin duplicados y restauracion de tiempo de preparacion"
     try:
-        subprocess.run(["git", "add", "."], check=True)
-        subprocess.run(["git", "commit", "-m", "Separar suscripcion EnvioBot Pedidos de Full, activar 30 dias de prueba gratis y flujo OAuth MeLi"], check=False)
-        subprocess.run(["git", "push", "origin", "main"], check=True)
-        print("Git push exitoso a origin/main.")
+        subprocess.run(["git", "add", "."], check=False)
+        subprocess.run(["git", "commit", "-m", commit_msg], check=False)
+        res = subprocess.run(["git", "push", "origin", "main"], check=False)
+        if res.returncode == 0:
+            print("Git push exitoso a origin/main.")
+        else:
+            print("Aviso: Git push termino con codigo distinto de 0 (posiblemente al dia o verificar red).")
     except Exception as e:
         print(f"Aviso git local: {e}")
 

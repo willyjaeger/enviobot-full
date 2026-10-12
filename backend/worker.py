@@ -73,15 +73,49 @@ def get_valid_token_for_cred(conn, cred):
         return cred.get("ml_access_token")
     return refresh_ml_token(conn, cred["id"], cred.get("ml_refresh_token"))
 
-def fetch_full_publications(access_token, meli_user_id):
-    """Recupera todas las publicaciones del vendedor en Fulfillment (Full)."""
+def fetch_fulfillment_stock(access_token, inventory_id, stock_cache):
+    """
+    Consulta el stock físico real y no disponible en depósitos de Full (Villa Celina)
+    para un inventory_id específico. Utiliza stock_cache para no duplicar llamadas.
+    """
+    if not inventory_id:
+        return None
+    if inventory_id in stock_cache:
+        return stock_cache[inventory_id]
+
     headers = {"Authorization": f"Bearer {access_token}"}
-    all_items = []
+    url = f"{MELI_API}/inventories/{inventory_id}/stock/fulfillment"
+    try:
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            avail = data.get("available_quantity", 0)
+            not_avail = data.get("not_available_quantity", 0)
+            tot = data.get("total", avail + not_avail)
+            res = (avail, not_avail, tot)
+            stock_cache[inventory_id] = res
+            return res
+        else:
+            stock_cache[inventory_id] = None
+            return None
+    except Exception as e:
+        print(f"Error consultando stock fulfillment (inv_id: {inventory_id}): {e}")
+        stock_cache[inventory_id] = None
+        return None
+
+def fetch_full_publications(access_token, meli_user_id):
+    """
+    Recupera todas las publicaciones del vendedor en Fulfillment (Full) activas o pausadas.
+    Desglosa variaciones con su inventory_id correspondiente para evitar pérdida de datos.
+    """
+    headers = {"Authorization": f"Bearer {access_token}"}
+    all_flat_items = []
     limit = 50
     offset = 0
 
     while True:
-        url = f"{MELI_API}/users/{meli_user_id}/items/search?logistic_type=fulfillment&limit={limit}&offset={offset}"
+        # Filtrar active y paused para omitir publicaciones closed (finalizadas viejas)
+        url = f"{MELI_API}/users/{meli_user_id}/items/search?logistic_type=fulfillment&status=active,paused&limit={limit}&offset={offset}"
         try:
             r = requests.get(url, headers=headers, timeout=12)
             if r.status_code == 401:
@@ -103,7 +137,64 @@ def fetch_full_publications(access_token, meli_user_id):
                 if m_resp.status_code == 200:
                     for entry in m_resp.json():
                         if entry.get("code") == 200:
-                            all_items.append(entry.get("body"))
+                            body = entry.get("body", {})
+                            item_id = body.get("id")
+                            title = body.get("title", "")
+                            status = body.get("status", "active")
+                            listing_type = body.get("listing_type_id") or "gold_special"
+                            is_catalog = bool(body.get("catalog_listing"))
+                            thumbnail = body.get("thumbnail")
+                            permalink = body.get("permalink")
+                            parent_inv_id = body.get("inventory_id")
+
+                            # Resolver SKU principal (seller_custom_field o atributo SELLER_SKU)
+                            base_sku = (body.get("seller_custom_field") or "").strip()
+                            if not base_sku:
+                                for attr in body.get("attributes", []):
+                                    if attr.get("id") in ("SELLER_SKU", "SKU"):
+                                        base_sku = (attr.get("value_name") or "").strip()
+                                        if base_sku:
+                                            break
+
+                            variations = body.get("variations", [])
+                            if variations:
+                                for v in variations:
+                                    var_id = str(v.get("id"))
+                                    var_inv_id = v.get("inventory_id") or parent_inv_id
+                                    var_sku = (v.get("seller_custom_field") or "").strip() or base_sku
+                                    var_combs = v.get("attribute_combinations", [])
+                                    var_name = " / ".join(f"{c.get('name')}: {c.get('value_name')}" for c in var_combs) if var_combs else None
+                                    var_declared_stock = v.get("available_quantity", 0)
+
+                                    all_flat_items.append({
+                                        "item_id": item_id,
+                                        "variation_id": var_id,
+                                        "variation_name": var_name,
+                                        "inventory_id": var_inv_id,
+                                        "sku": var_sku,
+                                        "title": title,
+                                        "thumbnail": thumbnail,
+                                        "permalink": permalink,
+                                        "listing_type_id": listing_type,
+                                        "is_catalog": is_catalog,
+                                        "status": status,
+                                        "declared_stock": var_declared_stock
+                                    })
+                            else:
+                                all_flat_items.append({
+                                    "item_id": item_id,
+                                    "variation_id": None,
+                                    "variation_name": None,
+                                    "inventory_id": parent_inv_id,
+                                    "sku": base_sku,
+                                    "title": title,
+                                    "thumbnail": thumbnail,
+                                    "permalink": permalink,
+                                    "listing_type_id": listing_type,
+                                    "is_catalog": is_catalog,
+                                    "status": status,
+                                    "declared_stock": body.get("available_quantity", 0)
+                                })
 
             offset += limit
             if offset >= data.get("paging", {}).get("total", 0):
@@ -112,10 +203,9 @@ def fetch_full_publications(access_token, meli_user_id):
             print(f"Error consultando items Full: {e}")
             break
 
+    return all_flat_items
 
-    return all_items
-
-def calculate_sales_velocity(access_token, meli_user_id, item_id):
+def calculate_sales_velocity(access_token, meli_user_id, item_id, variation_id=None):
     """Calcula unidades vendidas en los últimos 7, 15 y 30 días."""
     headers = {"Authorization": f"Bearer {access_token}"}
     now = datetime.utcnow()
@@ -143,7 +233,11 @@ def calculate_sales_velocity(access_token, meli_user_id, item_id):
                 order_dt = now
 
             for item_ordered in order.get("order_items", []):
-                if item_ordered.get("item", {}).get("id") == item_id:
+                ord_item = item_ordered.get("item", {})
+                if ord_item.get("id") == item_id:
+                    # Si filtramos por variación específica
+                    if variation_id and ord_item.get("variation_id") and str(ord_item.get("variation_id")) != str(variation_id):
+                        continue
                     qty = item_ordered.get("quantity", 1)
                     sales_30d += qty
                     if order_dt >= t_15d:
@@ -156,83 +250,115 @@ def calculate_sales_velocity(access_token, meli_user_id, item_id):
         return 0, 0, 0
 
 def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
-    """Sincroniza una cuenta de MercadoLibre específica."""
+    """
+    Sincroniza el catálogo en Fulfillment con exactitud física desde el WMS de Mercado Libre.
+    Aplica desglose de stock disponible real, retenciones y tiempo de preparación de pedidos.
+    """
     conn = get_db()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
             settings = cur.fetchone() or {
-                "default_lead_time_days": 7,
-                "default_safety_stock_days": 3,
+                "default_lead_time_days": 5,
+                "default_safety_stock_days": 2,
                 "target_coverage_days": 30
             }
-            default_lt = settings["default_lead_time_days"]
-            default_ss = settings["default_safety_stock_days"]
-            target_cov = settings["target_coverage_days"]
+            default_lt = settings.get("default_lead_time_days", 5)       # Tiempo para preparar pedido
+            default_ss = settings.get("default_safety_stock_days", 2)      # Colchón de seguridad
+            default_transit = 2                                            # Demora flete Villa Celina
+            target_cov = settings.get("target_coverage_days", 30)
 
         items = fetch_full_publications(access_token, meli_user_id)
         if items is None:
             return
 
+        stock_cache = {}
         today = datetime.utcnow().date()
-        for item in items:
-            item_id = item.get("id")
-            title = item.get("title", "")
-            sku = item.get("seller_custom_field") or ""
-            stock = item.get("available_quantity", 0)
-            thumbnail = item.get("thumbnail")
-            permalink = item.get("permalink")
+        for it in items:
+            item_id = it["item_id"]
+            var_id = it["variation_id"]
+            var_name = it["variation_name"]
+            inv_id = it["inventory_id"]
+            sku = it["sku"]
+            title = it["title"]
+            thumbnail = it["thumbnail"]
+            permalink = it["permalink"]
+            listing_type_id = it["listing_type_id"]
+            is_catalog = it["is_catalog"]
+            status = it["status"]
+            declared_stock = it["declared_stock"]
+
+            # Obtener stock físico real desde la API de inventarios de MeLi
+            stock_info = fetch_fulfillment_stock(access_token, inv_id, stock_cache)
+            if stock_info:
+                stock_real, not_available, _ = stock_info
+            else:
+                stock_real = declared_stock
+                not_available = 0
 
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO full_items 
-                    (user_id, ml_credential_id, item_id, sku, title, thumbnail, permalink, current_stock_full, last_synced_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    (user_id, ml_credential_id, item_id, variation_id, variation_name, inventory_id, sku, title, thumbnail, permalink, 
+                     listing_type_id, is_catalog, status, current_stock_full, not_available_stock_full, last_synced_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                     ON DUPLICATE KEY UPDATE
                         ml_credential_id = VALUES(ml_credential_id),
+                        variation_name = VALUES(variation_name),
+                        inventory_id = VALUES(inventory_id),
                         sku = VALUES(sku),
                         title = VALUES(title),
                         thumbnail = VALUES(thumbnail),
                         permalink = VALUES(permalink),
+                        listing_type_id = VALUES(listing_type_id),
+                        is_catalog = VALUES(is_catalog),
+                        status = VALUES(status),
                         current_stock_full = VALUES(current_stock_full),
+                        not_available_stock_full = VALUES(not_available_stock_full),
                         last_synced_at = NOW()
-                """, (user_id, cred_id, item_id, sku, title, thumbnail, permalink, stock))
+                """, (user_id, cred_id, item_id, var_id, var_name, inv_id, sku, title, thumbnail, permalink,
+                      listing_type_id, is_catalog, status, stock_real, not_available))
 
-                cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s", (user_id, item_id))
+                # Leer overrides específicos si existen
+                if var_id:
+                    cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s AND variation_id=%s", (user_id, item_id, var_id))
+                else:
+                    cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s AND variation_id IS NULL", (user_id, item_id))
                 irow = cur.fetchone()
-                lt = irow["lead_time_override"] if irow and irow["lead_time_override"] is not None else default_lt
-                ss = irow["safety_stock_override"] if irow and irow["safety_stock_override"] is not None else default_ss
+                lt = irow["lead_time_override"] if irow and irow.get("lead_time_override") is not None else default_lt
+                ss = irow["safety_stock_override"] if irow and irow.get("safety_stock_override") is not None else default_ss
 
-            # Calcular ventas y pronóstico
-            v7, v15, v30 = calculate_sales_velocity(access_token, meli_user_id, item_id)
+            # Calcular ventas y ritmo de demanda
+            v7, v15, v30 = calculate_sales_velocity(access_token, meli_user_id, item_id, var_id)
             vpd = round((0.50 * (v7 / 7.0)) + (0.35 * (v15 / 15.0)) + (0.15 * (v30 / 30.0)), 2)
 
+            total_advance = lt + ss + default_transit
             if vpd > 0:
-                days_left = round(stock / vpd, 1)
+                days_left = round(stock_real / vpd, 1)
                 stockout_date = today + timedelta(days=int(days_left))
-                days_until_prep = days_left - (lt + ss)
+                days_until_prep = days_left - total_advance
                 reorder_deadline = today + timedelta(days=max(0, int(days_until_prep)))
-                suggested_restock = max(0, int(round((target_cov * vpd) - stock)))
+                suggested_restock = max(0, int(round((target_cov * vpd) - stock_real)))
             else:
                 days_left = 999.0
                 stockout_date = None
                 reorder_deadline = None
                 suggested_restock = 0
 
-            if stock <= 0:
-                status = 'out_of_stock'
-            elif days_left <= lt:
-                status = 'critical'
-            elif days_left <= (lt + ss):
-                status = 'warning'
+            if stock_real <= 0:
+                calc_status = 'out_of_stock'
+            elif days_left <= (lt + default_transit):
+                calc_status = 'critical'
+            elif days_left <= total_advance:
+                calc_status = 'warning'
             else:
-                status = 'ok'
+                calc_status = 'ok'
 
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO forecasts 
-                    (user_id, item_id, sales_last_7d, sales_last_15d, sales_last_30d, vpd_weighted, days_left, stockout_date, reorder_deadline_date, suggested_restock_units, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (user_id, item_id, variation_id, sales_last_7d, sales_last_15d, sales_last_30d, vpd_weighted, days_left, stockout_date, reorder_deadline_date, suggested_restock_units, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         sales_last_7d = VALUES(sales_last_7d),
                         sales_last_15d = VALUES(sales_last_15d),
@@ -244,9 +370,9 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
                         suggested_restock_units = VALUES(suggested_restock_units),
                         status = VALUES(status),
                         updated_at = NOW()
-                """, (user_id, item_id, v7, v15, v30, vpd, days_left, stockout_date, reorder_deadline, suggested_restock, status))
+                """, (user_id, item_id, var_id, v7, v15, v30, vpd, days_left, stockout_date, reorder_deadline, suggested_restock, calc_status))
 
-        print(f"[{datetime.now()}] Sync completada: user_id={user_id}, cred_id={cred_id}, {len(items)} items procesados.")
+        print(f"[{datetime.now()}] Sync completada: user_id={user_id}, cred_id={cred_id}, {len(items)} items/variantes procesados.")
     finally:
         conn.close()
 

@@ -792,6 +792,75 @@ table.stock-table tr:hover td {
     color: var(--text);
 }
 
+/* ── Badges de Canales de Venta (Consolidación Full) ── */
+.channels-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+
+.channel-pill {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+    transition: opacity 0.15s ease;
+}
+
+.channel-pill:hover {
+    opacity: 0.85;
+}
+
+.badge-ch-classic {
+    background: rgba(59, 130, 246, 0.14);
+    border: 1px solid rgba(59, 130, 246, 0.35);
+    color: #60a5fa;
+}
+
+.badge-ch-pro {
+    background: rgba(168, 85, 247, 0.14);
+    border: 1px solid rgba(168, 85, 247, 0.35);
+    color: #c084fc;
+}
+
+.badge-ch-catalog {
+    background: rgba(16, 185, 129, 0.14);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    color: #34d399;
+}
+
+.not-avail-pill {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: #f59e0b;
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+.variation-tag {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(245, 166, 35, 0.1);
+    border: 1px solid rgba(245, 166, 35, 0.25);
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+    font-weight: 600;
+    vertical-align: middle;
+}
+
 /* ── Banner de Próxima Colecta en Widget ─────────── */
 .proxima-colecta-banner {
     background: rgba(245, 166, 35, 0.07);

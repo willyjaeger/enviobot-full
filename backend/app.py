@@ -135,6 +135,36 @@ def init_verification_tables():
                     cur.execute("ALTER TABLE user_features ADD COLUMN admin_notes TEXT NULL")
             except Exception:
                 pass
+
+            # Asegurar columnas de inventario físico y consolidación en full_items
+            full_items_cols = [
+                ("ml_credential_id", "INT NULL"),
+                ("variation_id", "VARCHAR(50) NULL"),
+                ("variation_name", "VARCHAR(150) NULL"),
+                ("inventory_id", "VARCHAR(50) NULL"),
+                ("listing_type_id", "VARCHAR(50) NULL"),
+                ("is_catalog", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("status", "VARCHAR(30) NOT NULL DEFAULT 'active'"),
+                ("current_stock_full", "INT NOT NULL DEFAULT 0"),
+                ("not_available_stock_full", "INT NOT NULL DEFAULT 0"),
+                ("lead_time_override", "INT NULL"),
+                ("safety_stock_override", "INT NULL"),
+            ]
+            for col_name, col_def in full_items_cols:
+                try:
+                    cur.execute(f"SHOW COLUMNS FROM full_items LIKE '{col_name}'")
+                    if not cur.fetchone():
+                        cur.execute(f"ALTER TABLE full_items ADD COLUMN {col_name} {col_def}")
+                except Exception:
+                    pass
+
+            try:
+                cur.execute("SHOW COLUMNS FROM ml_credentials LIKE 'ml_nickname'")
+                if not cur.fetchone():
+                    cur.execute("ALTER TABLE ml_credentials ADD COLUMN ml_nickname VARCHAR(100) NULL AFTER ml_user_id")
+            except Exception:
+                pass
+
         conn.close()
     except Exception as e:
         print(f"[Verification Tables Init Notice] {e}")
@@ -844,7 +874,9 @@ def get_full_items():
 
         query = """
             SELECT 
-                i.id, i.item_id, i.sku, i.title, i.thumbnail, i.permalink, i.current_stock_full,
+                i.id, i.item_id, i.variation_id, i.variation_name, i.inventory_id,
+                i.sku, i.title, i.thumbnail, i.permalink, i.listing_type_id, i.is_catalog,
+                i.status AS item_status, i.current_stock_full, i.not_available_stock_full,
                 i.ml_credential_id,
                 c.ml_nickname AS account_nickname,
                 COALESCE(i.lead_time_override, %s) AS effective_lead_time,
@@ -853,61 +885,172 @@ def get_full_items():
                 f.vpd_weighted, f.days_left, f.stockout_date, f.reorder_deadline_date,
                 f.suggested_restock_units, f.status, f.updated_at
             FROM full_items i
-            LEFT JOIN forecasts f ON f.user_id = i.user_id AND f.item_id = i.item_id
+            LEFT JOIN forecasts f ON f.user_id = i.user_id AND f.item_id = i.item_id 
+                 AND ( (i.variation_id IS NULL AND f.variation_id IS NULL) OR (f.variation_id = i.variation_id) )
             LEFT JOIN ml_credentials c ON c.id = i.ml_credential_id
             WHERE i.user_id = %s AND i.is_monitored = 1
         """
-        params = [settings["default_lead_time_days"], settings["default_safety_stock_days"], user_id]
+        default_lt = settings.get("default_lead_time_days", 5)
+        default_ss = settings.get("default_safety_stock_days", 2)
+        params = [default_lt, default_ss, user_id]
 
         if account_filter and account_filter != "all":
             query += " AND i.ml_credential_id = %s"
             params.append(int(account_filter))
 
+        cur.execute(query, tuple(params))
+        raw_items = cur.fetchall()
+
+        # ── Algoritmo de Consolidación por Producto Físico en Full ─────────────
+        # Unifica publicaciones hermanas (Clásica, Premium, Catálogo) que comparten el mismo
+        # stock físico en Full (mismo inventory_id o SKU) para evitar filas duplicadas.
+        consolidated = {}
+        for row in raw_items:
+            inv = (row.get("inventory_id") or "").strip()
+            sku = (row.get("sku") or "").strip().upper()
+            var_id = str(row.get("variation_id") or "").strip()
+
+            if inv:
+                group_key = f"inv_{inv}"
+            elif sku:
+                group_key = f"sku_{sku}_{var_id}"
+            else:
+                group_key = f"item_{row['item_id']}_{var_id}"
+
+            listing_type = row.get("listing_type_id") or "gold_special"
+            is_cat = bool(row.get("is_catalog"))
+            if is_cat:
+                type_label = "Catálogo"
+            elif listing_type == "gold_pro":
+                type_label = "Premium"
+            else:
+                type_label = "Clásica"
+
+            channel_info = {
+                "item_id": row["item_id"],
+                "listing_type": listing_type,
+                "type_label": type_label,
+                "is_catalog": is_cat,
+                "status": row.get("item_status") or "active",
+                "permalink": row.get("permalink") or "#"
+            }
+
+            if group_key not in consolidated:
+                consolidated[group_key] = {
+                    "id": row["id"],
+                    "item_id": row["item_id"],
+                    "variation_id": row.get("variation_id"),
+                    "variation_name": row.get("variation_name"),
+                    "inventory_id": row.get("inventory_id"),
+                    "sku": row.get("sku") or "",
+                    "title": row.get("title") or "",
+                    "thumbnail": row.get("thumbnail"),
+                    "permalink": row.get("permalink"),
+                    "ml_credential_id": row.get("ml_credential_id"),
+                    "account_nickname": row.get("account_nickname"),
+                    "effective_lead_time": row.get("effective_lead_time") if row.get("effective_lead_time") is not None else default_lt,
+                    "effective_buffer": row.get("effective_buffer") if row.get("effective_buffer") is not None else default_ss,
+                    "effective_transit": 2, # Demora habitual hacia Villa Celina
+                    "current_stock_full": row.get("current_stock_full", 0),
+                    "not_available_stock_full": row.get("not_available_stock_full", 0),
+                    "sales_last_7d": row.get("sales_last_7d") or 0,
+                    "sales_last_15d": row.get("sales_last_15d") or 0,
+                    "sales_last_30d": row.get("sales_last_30d") or 0,
+                    "channels": [channel_info],
+                    "target_coverage_days": settings.get("target_coverage_days", 30)
+                }
+            else:
+                c_item = consolidated[group_key]
+                c_item["current_stock_full"] = max(c_item["current_stock_full"], row.get("current_stock_full", 0))
+                c_item["not_available_stock_full"] = max(c_item["not_available_stock_full"], row.get("not_available_stock_full", 0))
+                c_item["sales_last_7d"] += (row.get("sales_last_7d") or 0)
+                c_item["sales_last_15d"] += (row.get("sales_last_15d") or 0)
+                c_item["sales_last_30d"] += (row.get("sales_last_30d") or 0)
+                if not any(ch["item_id"] == channel_info["item_id"] for ch in c_item["channels"]):
+                    c_item["channels"].append(channel_info)
+
+        # ── Recalcular Métricas Consolidadas y Semáforos ──────────────────────────
+        today = datetime.utcnow().date()
+        target_cov = settings.get("target_coverage_days", 30)
+        output_items = []
+
+        for c_item in consolidated.values():
+            s7 = c_item["sales_last_7d"]
+            s15 = c_item["sales_last_15d"]
+            s30 = c_item["sales_last_30d"]
+            stock = c_item["current_stock_full"]
+            lt = c_item["effective_lead_time"]
+            ss = c_item["effective_buffer"]
+            transit = c_item["effective_transit"]
+            total_advance = lt + ss + transit
+
+            vpd = round((0.50 * (s7 / 7.0)) + (0.35 * (s15 / 15.0)) + (0.15 * (s30 / 30.0)), 2)
+            c_item["vpd_weighted"] = vpd
+
+            if vpd > 0:
+                days_left = round(stock / vpd, 1)
+                c_item["days_left"] = days_left
+                stockout_date = today + timedelta(days=int(days_left))
+                c_item["stockout_date"] = stockout_date.isoformat()
+                days_until_prep = days_left - total_advance
+                reorder_deadline = today + timedelta(days=max(0, int(days_until_prep)))
+                c_item["reorder_deadline_date"] = reorder_deadline.isoformat()
+                c_item["suggested_restock_units"] = max(0, int(round((target_cov * vpd) - stock)))
+            else:
+                c_item["days_left"] = 999.0
+                c_item["stockout_date"] = None
+                c_item["reorder_deadline_date"] = None
+                c_item["suggested_restock_units"] = 0
+
+            if stock <= 0:
+                c_item["status"] = "out_of_stock"
+            elif c_item["days_left"] <= (lt + transit):
+                c_item["status"] = "critical"
+            elif c_item["days_left"] <= total_advance:
+                c_item["status"] = "warning"
+            else:
+                c_item["status"] = "ok"
+
+            output_items.append(c_item)
+
+        # ── Aplicar Filtros de Estado y Búsqueda sobre el Catálogo Consolidado ──
         if status_filter:
             if status_filter == "action_required":
-                query += " AND f.status IN ('warning', 'critical', 'out_of_stock')"
+                output_items = [x for x in output_items if x["status"] in ("warning", "critical", "out_of_stock")]
             else:
-                query += " AND f.status = %s"
-                params.append(status_filter)
+                output_items = [x for x in output_items if x["status"] == status_filter]
 
         if search:
-            query += " AND (i.title LIKE %s OR i.sku LIKE %s OR i.item_id LIKE %s)"
-            like_s = f"%{search}%"
-            params.extend([like_s, like_s, like_s])
+            s_low = search.lower()
+            filtered_by_search = []
+            for itm in output_items:
+                match = (s_low in itm["title"].lower() or 
+                         s_low in itm["sku"].lower() or 
+                         s_low in itm["item_id"].lower() or
+                         any(s_low in ch["item_id"].lower() for ch in itm.get("channels", [])))
+                if match:
+                    filtered_by_search.append(itm)
+            output_items = filtered_by_search
 
-        query += """
-            ORDER BY 
-                CASE f.status 
-                    WHEN 'out_of_stock' THEN 1
-                    WHEN 'critical' THEN 2
-                    WHEN 'warning' THEN 3
-                    ELSE 4
-                END,
-                f.days_left ASC
-        """
-        cur.execute(query, tuple(params))
-        items = cur.fetchall()
+        # Ordenamiento prioritario por urgencia y cobertura restante
+        status_priority = {'out_of_stock': 1, 'critical': 2, 'warning': 3, 'ok': 4}
+        output_items.sort(key=lambda x: (status_priority.get(x["status"], 5), x["days_left"]))
 
-        # Resumen de contadores
-        cur.execute("""
-            SELECT 
-                COUNT(*) AS total_monitored,
-                SUM(CASE WHEN f.status = 'ok' THEN 1 ELSE 0 END) AS count_ok,
-                SUM(CASE WHEN f.status = 'warning' THEN 1 ELSE 0 END) AS count_warning,
-                SUM(CASE WHEN f.status IN ('critical', 'out_of_stock') THEN 1 ELSE 0 END) AS count_critical
-            FROM full_items i
-            LEFT JOIN forecasts f ON f.user_id = i.user_id AND f.item_id = i.item_id
-            WHERE i.user_id = %s AND i.is_monitored = 1
-        """, (user_id,))
-        summary = cur.fetchone()
+        # Resumen consolidado para las tarjetas de KPI
+        summary = {
+            "total_monitored": len(output_items),
+            "count_ok": sum(1 for x in output_items if x["status"] == "ok"),
+            "count_warning": sum(1 for x in output_items if x["status"] == "warning"),
+            "count_critical": sum(1 for x in output_items if x["status"] in ("critical", "out_of_stock"))
+        }
 
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()
 
     return jsonify({
         "ok": True,
-        "items": items,
-        "summary": summary or {"total_monitored": 0, "count_ok": 0, "count_warning": 0, "count_critical": 0},
+        "items": output_items,
+        "summary": summary,
         "settings": settings,
         "plan_info": plan_info
     }), 200
@@ -915,7 +1058,7 @@ def get_full_items():
 @app.route("/api/full/items/<int:item_id>", methods=["PUT"])
 @jwt_required()
 def update_item(item_id):
-    """Actualiza Lead Time o Buffer particular de un producto."""
+    """Actualiza Tiempo de Preparación (Lead Time) o Buffer particular de un producto."""
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
     lt = data.get("lead_time_override")
@@ -934,9 +1077,11 @@ def update_item(item_id):
         it = cur.fetchone()
         if it:
             cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
-            s = cur.fetchone() or {"default_lead_time_days": 7, "default_safety_stock_days": 3}
-            effective_lt = lt if lt is not None else s["default_lead_time_days"]
-            effective_ss = ss if ss is not None else s["default_safety_stock_days"]
+            s = cur.fetchone() or {"default_lead_time_days": 5, "default_safety_stock_days": 2}
+            effective_lt = lt if lt is not None else s.get("default_lead_time_days", 5)
+            effective_ss = ss if ss is not None else s.get("default_safety_stock_days", 2)
+            transit = 2 # Villa Celina
+            total_advance = effective_lt + effective_ss + transit
 
             cur.execute("SELECT vpd_weighted, days_left FROM forecasts WHERE user_id=%s AND item_id=%s", (user_id, it["item_id"]))
             fc = cur.fetchone()
@@ -946,13 +1091,13 @@ def update_item(item_id):
                 today = datetime.utcnow().date()
                 if stock <= 0:
                     new_status = 'out_of_stock'
-                elif dl <= effective_lt:
+                elif dl <= (effective_lt + transit):
                     new_status = 'critical'
-                elif dl <= (effective_lt + effective_ss):
+                elif dl <= total_advance:
                     new_status = 'warning'
                 else:
                     new_status = 'ok'
-                reorder_deadline = today + timedelta(days=max(0, int(dl - effective_lt - effective_ss)))
+                reorder_deadline = today + timedelta(days=max(0, int(dl - total_advance)))
                 cur.execute("""
                     UPDATE forecasts 
                     SET status=%s, reorder_deadline_date=%s, updated_at=NOW()

@@ -28,7 +28,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261011_10">
+    <link rel="stylesheet" href="css/style.css?v=20261012_1">
 </head>
 <body>
 
@@ -671,32 +671,40 @@
                             </table>
                         </div>
 
-                        <!-- Parámetros Generales de Alarma -->
+                        <!-- Parámetros Generales de Preparación y Alarma -->
                         <div style="border-top: 1px solid var(--border); padding-top: 16px;">
-                            <h4 style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px;">Parámetros Generales de Alarma</h4>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                            <h4 style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px;">Parámetros de Preparación y Alarma</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                                 <div class="form-group">
-                                    <label>Colchón de seguridad general</label>
+                                    <label>Tiempo para preparar el pedido (Lead Time)</label>
+                                    <div style="display: inline-flex; align-items: center; gap: 6px;">
+                                        <input type="number" id="cfgLeadTime" class="input-days-2digit" value="5" min="0" max="99" oninput="if(this.value.length>2) this.value=this.value.slice(0,2);" required>
+                                        <span style="color: var(--text2); font-size: 12px; font-weight: 600;">días</span>
+                                    </div>
+                                    <small>Días que necesitás para fabricar, empaquetar y rotular los bultos antes del flete.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>Colchón de seguridad general (Buffer)</label>
                                     <div style="display: inline-flex; align-items: center; gap: 6px;">
                                         <input type="number" id="cfgSafetyStock" class="input-days-2digit" value="2" min="0" max="99" oninput="if(this.value.length>2) this.value=this.value.slice(0,2);" required>
                                         <span style="color: var(--text2); font-size: 12px; font-weight: 600;">días</span>
                                     </div>
                                     <small>Días de margen por si el camión se atrasa o MeLi demora en recepcionar los bultos.</small>
                                 </div>
-                                <div class="form-group">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                        <label style="margin: 0;">Email para Alarma Diaria Matutina</label>
-                                        <div style="display: flex; align-items: center; gap: 6px;">
-                                            <span id="cfgEmailVerifiedBadge" class="badge badge-warn" style="font-size: 10px;">Pendiente</span>
-                                            <button type="button" id="btnVerifyEmailModal" class="btn btn-secondary btn-sm" onclick="abrirModalVerificarEmail()" style="font-size: 11px; padding: 2px 7px; display: inline-flex;">Confirmar Código</button>
-                                        </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <label style="margin: 0;">Email para Alarma Diaria Matutina</label>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <span id="cfgEmailVerifiedBadge" class="badge badge-warn" style="font-size: 10px;">Pendiente</span>
+                                        <button type="button" id="btnVerifyEmailModal" class="btn btn-secondary btn-sm" onclick="abrirModalVerificarEmail()" style="font-size: 11px; padding: 2px 7px; display: inline-flex;">Confirmar Código</button>
                                     </div>
-                                    <div style="display: flex; gap: 8px;">
-                                        <input type="email" id="cfgEmail" placeholder="admin@tutienda.com.ar" value="ventas@tienda.com.ar" style="flex: 1;">
-                                        <button type="button" class="btn btn-secondary btn-sm" id="btnTestEmail" onclick="probarEmailSaliente()" style="white-space: nowrap;">Probar Envío</button>
-                                    </div>
-                                    <small>Resumen matutino de publicaciones que alcanzaron su fecha límite de reposición.</small>
                                 </div>
+                                <div style="display: flex; gap: 8px;">
+                                    <input type="email" id="cfgEmail" placeholder="admin@tutienda.com.ar" value="ventas@tienda.com.ar" style="flex: 1;">
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btnTestEmail" onclick="probarEmailSaliente()" style="white-space: nowrap;">Probar Envío</button>
+                                </div>
+                                <small>Resumen matutino de publicaciones que alcanzaron su fecha límite de reposición.</small>
                             </div>
                         </div>
 
@@ -1012,8 +1020,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261011_10"></script>
-    <script src="js/notifications.js?v=20261011_10"></script>
-    <script src="js/app.js?v=20261011_10"></script>
+    <script src="js/theme.js?v=20261012_1"></script>
+    <script src="js/notifications.js?v=20261012_1"></script>
+    <script src="js/app.js?v=20261012_1"></script>
 </body>
 </html>

@@ -259,15 +259,22 @@ function adaptarItemDesdeBackend(raw) {
     return {
         id: raw.id,
         item_id: raw.item_id,
+        variation_id: raw.variation_id || null,
+        variation_name: raw.variation_name || null,
+        inventory_id: raw.inventory_id || null,
         sku: raw.sku,
         title: raw.title,
         thumbnail: raw.thumbnail,
         permalink: raw.permalink,
         current_stock: raw.current_stock_full || 0,
-        transit_delay_days: raw.effective_lead_time || 5,
+        not_available_stock: raw.not_available_stock_full || 0,
+        lead_time_days: raw.effective_lead_time !== undefined ? raw.effective_lead_time : 5, // TIEMPO PREPARACIÓN
+        transit_delay_days: raw.effective_transit !== undefined ? raw.effective_transit : 2, // DEMORA FLETE
+        buffer_days: raw.effective_buffer !== undefined ? raw.effective_buffer : 2,         // COLCHÓN SEGURIDAD
         target_stock_days: raw.target_coverage_days || 30,
-        buffer_days: raw.effective_buffer || 2,
-        vpd: raw.vpd_weighted || 0
+        vpd: raw.vpd_weighted || 0,
+        channels: raw.channels || [],
+        account_nickname: raw.account_nickname || ""
     };
 }
 
@@ -278,8 +285,10 @@ function recalcularTodo() {
     itemsData.forEach(it => {
         const stock = it.current_stock;
         const vpd = it.vpd;
-        const transit = it.transit_delay_days;
-        const buffer = it.buffer_days || 2;
+        const prep = it.lead_time_days || 5;       // Tiempo para preparar/empaquetar
+        const transit = it.transit_delay_days || 2; // Demora del flete / camión
+        const buffer = it.buffer_days || 2;        // Colchón de seguridad
+        const totalAdvance = prep + transit + buffer;
 
         if (vpd > 0) {
             it.days_left = Math.round((stock / vpd) * 10) / 10;
@@ -288,8 +297,8 @@ function recalcularTodo() {
             stockoutDate.setDate(stockoutDate.getDate() + Math.floor(it.days_left));
             it.stockout_date = stockoutDate.toISOString().split('T')[0];
 
-            // Fecha tope para despachar (Días restantes - Demora camión - Buffer)
-            const daysToDeadline = it.days_left - transit - buffer;
+            // Fecha tope para empezar a preparar (Días restantes - Total anticipación)
+            const daysToDeadline = it.days_left - totalAdvance;
             const deadlineDate = new Date(today);
             deadlineDate.setDate(deadlineDate.getDate() + Math.floor(daysToDeadline));
             it.reorder_deadline_date = deadlineDate.toISOString().split('T')[0];
@@ -299,14 +308,14 @@ function recalcularTodo() {
             it.reorder_deadline_date = null;
         }
 
-        // Semáforo:
+        // Semáforo incorporando preparación y flete:
         if (stock <= 0) {
             it.status = 'out_of_stock';
-        } else if (it.days_left <= transit) {
-            // Ya no llega a tiempo el camión antes de quebrar
+        } else if (it.days_left <= (prep + transit)) {
+            // Ya no llega a tiempo con preparación + camión antes del quiebre
             it.status = 'critical';
-        } else if (it.days_left <= (transit + buffer)) {
-            // Momento justo de armar y mandar la colecta
+        } else if (it.days_left <= totalAdvance) {
+            // Ventana para empezar a preparar el pedido y agendar colecta
             it.status = 'warning';
         } else {
             it.status = 'ok';
@@ -499,6 +508,11 @@ function renderizarTabla() {
             badgeHtml = '<span class="badge badge-danger">Sin Stock</span>';
         }
 
+        const prep = it.lead_time_days || 5;
+        const transit = it.transit_delay_days || 2;
+        const buffer = it.buffer_days || 2;
+        const totalAdvance = prep + transit + buffer;
+
         const diasRestantesText = it.days_left >= 900 ? 'Sin ventas' : `${it.days_left} d`;
 
         // FECHA DE QUIEBRE ESTIMADA
@@ -509,27 +523,25 @@ function renderizarTabla() {
             quiebraElHtml = '<span style="color: var(--text2);">Sin ventas</span>';
         } else {
             const quiebreFecha = formatearFecha(it.stockout_date);
-            const isDanger = it.days_left <= it.transit_delay_days;
-            const isWarning = it.days_left <= (it.transit_delay_days + (it.buffer_days || 2));
+            const isDanger = it.days_left <= (prep + transit);
+            const isWarning = it.days_left <= totalAdvance;
             const color = isDanger ? 'var(--danger)' : (isWarning ? 'var(--accent-text)' : 'var(--text)');
             quiebraElHtml = `<strong style="color: ${color};">${quiebreFecha}</strong>`;
         }
 
-        // CUÁNDO PEDIR COLECTA EN MELI
+        // CUÁNDO PEDIR COLECTA EN MELI (considerando tiempo de preparación + camión + buffer)
         let fechaColectaHtml = '—';
         if (it.reorder_deadline_date) {
-            const transit = it.transit_delay_days || 5;
-            const buffer = it.buffer_days || 2;
-            const daysToDeadline = it.days_left - transit - buffer;
+            const daysToDeadline = it.days_left - totalAdvance;
             const roundedDays = Math.max(1, Math.round(daysToDeadline));
 
             if (it.current_stock <= 0 || daysToDeadline <= 0) {
                 fechaColectaHtml = `
-                    <span class="badge-date-today" title="Pedí la colecta hoy en MercadoLibre para no quebrar">PEDIR HOY (${formatearFecha(it.reorder_deadline_date)})</span>
+                    <span class="badge-date-today" title="Preparar y pedir turno en MeLi hoy para no quebrar">PEDIR HOY (${formatearFecha(it.reorder_deadline_date)})</span>
                 `;
             } else if (daysToDeadline <= 3) {
                 fechaColectaHtml = `
-                    <span class="badge-date-soon" title="Día límite para pedir turno en MeLi">Pedir el ${formatearFecha(it.reorder_deadline_date)} (en ${roundedDays} d)</span>
+                    <span class="badge-date-soon" title="Día límite para iniciar preparación y pedir turno en MeLi">Pedir el ${formatearFecha(it.reorder_deadline_date)} (en ${roundedDays} d)</span>
                 `;
             } else {
                 fechaColectaHtml = `
@@ -540,22 +552,43 @@ function renderizarTabla() {
 
         const thumbSrc = it.thumbnail || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="%238a8d9a" stroke-width="1.5"%3E%3Crect x="3" y="3" width="18" height="18" rx="2"/%3E%3C/svg%3E';
 
+        // Badges de canales de venta hermanas (Clásica / Premium / Catálogo)
+        let channelsHtml = '';
+        if (it.channels && it.channels.length > 0) {
+            channelsHtml = '<span class="channels-container">';
+            it.channels.forEach(ch => {
+                const typeLabel = ch.is_catalog ? 'Catálogo' : (ch.type_label || (ch.listing_type === 'gold_pro' ? 'Premium' : 'Clásica'));
+                const badgeClass = ch.is_catalog ? 'badge-ch-catalog' : (ch.listing_type === 'gold_pro' ? 'badge-ch-pro' : 'badge-ch-classic');
+                channelsHtml += `<a href="${ch.permalink}" target="_blank" class="channel-pill ${badgeClass}" title="Publicación ${typeLabel}: ${ch.item_id}" onclick="event.stopPropagation();">${typeLabel}</a>`;
+            });
+            channelsHtml += '</span>';
+        } else {
+            channelsHtml = `<a href="${it.permalink || '#'}" target="_blank" style="color: var(--text2); text-decoration: underline;" onclick="event.stopPropagation();">${it.item_id}</a>`;
+        }
+
+        const varTagHtml = it.variation_name ? `<span class="variation-tag" title="Variante">${it.variation_name}</span>` : '';
+        const notAvailHtml = it.not_available_stock > 0 ? `<span class="not-avail-pill" title="${it.not_available_stock} unidades retenidas/no aptas en Full">+${it.not_available_stock} no disponibles</span>` : '';
+
         tr.innerHTML = `
             <td>
                 <div class="product-cell">
                     <img src="${thumbSrc}" class="product-thumb" alt="Foto">
                     <div>
-                        <div class="product-title" title="${it.title}">${it.title}</div>
+                        <div class="product-title" title="${it.title}">
+                            <span>${it.title}</span>${varTagHtml}
+                        </div>
                         <div class="product-meta">
                             <span>SKU: <strong>${it.sku || 'Sin SKU'}</strong></span> · 
-                            <a href="${it.permalink || '#'}" target="_blank" style="color: var(--text2); text-decoration: underline;">${it.item_id}</a>
+                            ${channelsHtml}
                         </div>
                     </div>
                 </div>
             </td>
-            <td class="num-cell"><strong>${it.current_stock}</strong> un.</td>
+            <td class="num-cell">
+                <strong>${it.current_stock}</strong> un.${notAvailHtml}
+            </td>
             <td class="num-cell">${it.vpd} un./d</td>
-            <td class="num-cell" style="font-weight: 700; color: ${it.days_left <= it.transit_delay_days ? 'var(--danger)' : 'var(--text)'};">
+            <td class="num-cell" style="font-weight: 700; color: ${it.days_left <= (prep + transit) ? 'var(--danger)' : 'var(--text)'};">
                 ${diasRestantesText}
             </td>
             <td class="num-cell" style="white-space: nowrap;">
@@ -929,6 +962,10 @@ async function cargarSettingsBackend() {
         const data = await res.json();
         if (data.ok && data.settings) {
             const s = data.settings;
+            const leadEl = document.getElementById('cfgLeadTime');
+            if (leadEl && s.default_lead_time_days !== undefined) {
+                leadEl.value = s.default_lead_time_days;
+            }
             const safetyEl = document.getElementById('cfgSafetyStock');
             if (safetyEl && s.default_safety_stock_days !== undefined) {
                 safetyEl.value = s.default_safety_stock_days;
@@ -1506,6 +1543,7 @@ function mostrarInfoUpgrade() {
 
 function guardarConfiguracion(e) {
     e.preventDefault();
+    const lt = parseInt(document.getElementById('cfgLeadTime').value, 10) || 5;
     const ss = parseInt(document.getElementById('cfgSafetyStock').value, 10) || 2;
     const email = document.getElementById('cfgEmail').value;
 
@@ -1533,6 +1571,7 @@ function guardarConfiguracion(e) {
     // Actualizar publicaciones del depósito activo actual
     const activeWh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
     itemsData.forEach(it => {
+        it.lead_time_days = lt;
         it.transit_delay_days = activeWh.defaultTransit;
         it.target_stock_days = activeWh.defaultTarget;
         it.buffer_days = ss;
@@ -1546,6 +1585,7 @@ function guardarConfiguracion(e) {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
             body: JSON.stringify({
+                default_lead_time_days: lt,
                 default_safety_stock_days: ss,
                 alert_email: email
             })
