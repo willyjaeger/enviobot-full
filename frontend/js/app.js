@@ -738,79 +738,180 @@ function onFilterChange(val) {
     renderizarTabla();
 }
 
-// ── MODAL: Armar Colecta / Envío Agrupado ──────────────────────────
-function abrirModalColecta() {
-    const modal = document.getElementById('colectaModal');
-    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
-    document.getElementById('colectaDestinoText').textContent = wh.name;
+// ── MODAL: Colectas y Envíos Inbound a Full (Etapa 2) ──────────────────
+let userInboundEnabled = false;
+let userIsAdmin = false;
+let colectaBoxUnits = new Map(); // id -> units_per_box
+let inboundShipmentsList = [];
 
-    // Inicializar mapa de selección con los que requieren reposición
+async function verificarEstadoInboundUsuario() {
+    const token = getToken();
+    if (!token) return false;
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/status`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.ok) {
+            userInboundEnabled = Boolean(data.has_inbound);
+            userIsAdmin = Boolean(data.is_admin);
+            return userInboundEnabled;
+        }
+    } catch (e) {
+        console.warn("Aviso verificando status inbound:", e);
+    }
+    return false;
+}
+
+async function abrirModalColecta() {
+    const modal = document.getElementById('colectaModal');
+    if (!modal) return;
+    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+    const destText = document.getElementById('colectaDestinoText');
+    if (destText) destText.textContent = wh.name;
+
+    // Verificar permisos del módulo pago en backend
+    await verificarEstadoInboundUsuario();
+
+    // Inicializar mapa de selección y unidades por defecto
     colectaSelectedItems.clear();
-    const targetGlobalDays = parseInt(document.getElementById('colectaDiasSelect').value, 10) || 30;
+    colectaBoxUnits.clear();
+
+    const targetGlobalDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+    const transit = wh.defaultTransit || 3;
+    const daysFactor = targetGlobalDays + leadTime + transit;
 
     itemsData.forEach(it => {
-        const units = Math.max(0, Math.round((targetGlobalDays * it.vpd) - it.current_stock));
-        // Seleccionar por defecto si está en warning o critical, o si tiene unidades faltantes
-        const shouldCheck = (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || units > 0);
+        const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        // Seleccionar por defecto si requiere reposición o tiene riesgo
+        const shouldCheck = (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || suggested > 0);
         if (shouldCheck) {
-            colectaSelectedItems.set(it.id, units);
+            colectaSelectedItems.set(it.id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
+            // Estimación de unidades por caja máster (ej: 20 o múltiplo)
+            const defaultUnitsBox = suggested >= 50 ? 25 : (suggested >= 20 ? 10 : 0);
+            colectaBoxUnits.set(it.id, defaultUnitsBox);
         }
     });
 
-    // Actualizar fechas dinámicas del cronograma de MeLi
+    // Fechas estimadas dinámicas
     const today = new Date();
     const pickupDate = new Date(today);
-    pickupDate.setDate(pickupDate.getDate() + 2); // 48hs habitual de turno MeLi
+    pickupDate.setDate(pickupDate.getDate() + Math.max(1, leadTime));
     const arrivalDate = new Date(pickupDate);
-    arrivalDate.setDate(arrivalDate.getDate() + (wh.defaultTransit || 3));
+    arrivalDate.setDate(arrivalDate.getDate() + transit);
 
     const askEl = document.getElementById('timelineAskDate');
     const pickupEl = document.getElementById('timelinePickupDate');
     const arrivalEl = document.getElementById('timelineArrivalDate');
 
     if (askEl) askEl.textContent = `PEDIR HOY (${today.getDate()}/${today.getMonth() + 1})`;
-    if (pickupEl) pickupEl.textContent = `Retiro estimado: ${pickupDate.getDate()}/${pickupDate.getMonth() + 1}`;
-    if (arrivalEl) arrivalEl.textContent = `Disponible en ${wh.city || wh.name}: ${arrivalDate.getDate()}/${arrivalDate.getMonth() + 1}`;
+    if (pickupEl) pickupEl.textContent = `Retiro: ${pickupDate.getDate()}/${pickupDate.getMonth() + 1}`;
+    if (arrivalEl) arrivalEl.textContent = `Disponible Full: ${arrivalDate.getDate()}/${arrivalDate.getMonth() + 1}`;
 
+    const fechaRetiroInput = document.getElementById('colectaFechaRetiroInput');
+    if (fechaRetiroInput && !fechaRetiroInput.value) {
+        fechaRetiroInput.value = pickupDate.toISOString().split('T')[0];
+    }
+
+    switchColectaTab('planificar');
     renderizarFilasColecta();
     modal.style.display = 'flex';
+
+    // Cargar historial en segundo plano para badge
+    cargarHistorialColectas(true);
 }
 
 function cerrarModalColecta() {
-    document.getElementById('colectaModal').style.display = 'none';
+    const modal = document.getElementById('colectaModal');
+    if (modal) modal.style.display = 'none';
+}
+
+function switchColectaTab(tab) {
+    const tabPlan = document.getElementById('colectaTabPlanificar');
+    const tabHist = document.getElementById('colectaTabHistorial');
+    const btnPlan = document.getElementById('btnTabPlanificarColecta');
+    const btnHist = document.getElementById('btnTabHistorialColecta');
+
+    if (tab === 'planificar') {
+        if (tabPlan) tabPlan.style.display = 'flex';
+        if (tabHist) tabHist.style.display = 'none';
+        if (btnPlan) {
+            btnPlan.style.background = 'var(--accent)';
+            btnPlan.style.color = '#111';
+            btnPlan.className = 'btn btn-sm';
+        }
+        if (btnHist) {
+            btnHist.style.background = '';
+            btnHist.style.color = '';
+            btnHist.className = 'btn btn-secondary btn-sm';
+        }
+    } else {
+        if (tabPlan) tabPlan.style.display = 'none';
+        if (tabHist) tabHist.style.display = 'flex';
+        if (btnPlan) {
+            btnPlan.style.background = '';
+            btnPlan.style.color = '';
+            btnPlan.className = 'btn btn-secondary btn-sm';
+        }
+        if (btnHist) {
+            btnHist.style.background = 'var(--accent)';
+            btnHist.style.color = '#111';
+            btnHist.className = 'btn btn-sm';
+        }
+        cargarHistorialColectas();
+    }
 }
 
 function recalcularColecta() {
-    const targetDays = parseInt(document.getElementById('colectaDiasSelect').value, 10) || 30;
+    const targetDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+    const transit = wh.defaultTransit || 3;
+    const daysFactor = targetDays + leadTime + transit;
+
     itemsData.forEach(it => {
         if (colectaSelectedItems.has(it.id)) {
-            const units = Math.max(0, Math.round((targetDays * it.vpd) - it.current_stock));
-            colectaSelectedItems.set(it.id, units);
+            const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+            colectaSelectedItems.set(it.id, suggested > 0 ? suggested : 1);
         }
     });
     renderizarFilasColecta();
 }
 
 function toggleSelectAllColecta(checked) {
-    const targetDays = parseInt(document.getElementById('colectaDiasSelect').value, 10) || 30;
+    const targetDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+    const transit = wh.defaultTransit || 3;
+    const daysFactor = targetDays + leadTime + transit;
+
     colectaSelectedItems.clear();
     if (checked) {
         itemsData.forEach(it => {
-            const units = Math.max(0, Math.round((targetDays * it.vpd) - it.current_stock));
-            colectaSelectedItems.set(it.id, units);
+            const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+            colectaSelectedItems.set(it.id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
+            if (!colectaBoxUnits.has(it.id)) {
+                colectaBoxUnits.set(it.id, 0);
+            }
         });
     }
     renderizarFilasColecta();
 }
 
 function toggleItemColecta(id, checked) {
-    const targetDays = parseInt(document.getElementById('colectaDiasSelect').value, 10) || 30;
+    const targetDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
     const it = itemsData.find(x => x.id === id);
     if (!it) return;
 
     if (checked) {
-        const units = Math.max(0, Math.round((targetDays * it.vpd) - it.current_stock));
-        colectaSelectedItems.set(id, units);
+        const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+        const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+        const transit = wh.defaultTransit || 3;
+        const daysFactor = targetDays + leadTime + transit;
+        const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        colectaSelectedItems.set(id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
+        if (!colectaBoxUnits.has(id)) colectaBoxUnits.set(id, 0);
     } else {
         colectaSelectedItems.delete(id);
     }
@@ -823,33 +924,89 @@ function cambiarUnidadesColecta(id, val) {
     actualizarTotalColecta();
 }
 
+function cambiarUnidadesPorCajaColecta(id, val) {
+    const cant = Math.max(0, parseInt(val, 10) || 0);
+    colectaBoxUnits.set(id, cant);
+    actualizarTotalColecta();
+}
+
 function renderizarFilasColecta() {
     const tbody = document.getElementById('colectaTableBody');
+    if (!tbody) return;
     tbody.innerHTML = '';
-    const targetDays = parseInt(document.getElementById('colectaDiasSelect').value, 10) || 30;
+
+    const targetDays = parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30;
+    const leadTime = parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2;
+    const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
+    const transit = wh.defaultTransit || 3;
+    const daysFactor = targetDays + leadTime + transit;
 
     itemsData.forEach(it => {
         const isSelected = colectaSelectedItems.has(it.id);
-        const suggestedUnits = colectaSelectedItems.get(it.id) !== undefined ? 
-            colectaSelectedItems.get(it.id) : 
-            Math.max(0, Math.round((targetDays * it.vpd) - it.current_stock));
+        const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        const unitsToSend = colectaSelectedItems.get(it.id) !== undefined ? colectaSelectedItems.get(it.id) : suggested;
+        const unitsPerBox = colectaBoxUnits.get(it.id) || 0;
+        const boxesEst = unitsPerBox > 0 ? Math.ceil(unitsToSend / unitsPerBox) : (unitsToSend > 0 ? 1 : 0);
+
+        // Canales badges
+        let channelBadges = '';
+        if (Array.isArray(it.channels) && it.channels.length > 0) {
+            channelBadges = it.channels.map(ch => {
+                const label = ch.type === 'clasica' ? 'Clásica' : (ch.type === 'premium' ? 'Premium' : 'Catálogo');
+                return `<span class="channel-badge ${ch.type}" style="font-size: 10px; padding: 1px 5px;">${label}</span>`;
+            }).join(' ');
+        }
+
+        const thumbImg = it.thumbnail 
+            ? `<img src="${it.thumbnail}" alt="" style="width: 32px; height: 32px; object-fit: contain; border-radius: 4px; background: #fff; padding: 1px; border: 1px solid var(--border); flex-shrink: 0;">`
+            : '';
 
         const tr = document.createElement('tr');
+        tr.style.opacity = isSelected ? '1' : '0.65';
         tr.innerHTML = `
-            <td style="text-align: center;">
+            <td style="text-align: center; vertical-align: middle;">
                 <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleItemColecta(${it.id}, this.checked)">
             </td>
-            <td>
-                <strong>${it.title}</strong><br>
-                <small style="color: var(--text2);">SKU: ${it.sku || 'Sin SKU'} | ID: ${it.item_id}</small>
+            <td style="vertical-align: middle;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    ${thumbImg}
+                    <div style="min-width: 0;">
+                        <strong style="color: var(--text); font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px;">${it.title}</strong>
+                        <div style="font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                            <span>SKU: <strong>${it.sku || 'Sin SKU'}</strong></span>
+                            <span>·</span>
+                            <span>Inv: <code>${it.inventory_id || it.item_id}</code></span>
+                            ${channelBadges}
+                            ${it.variation_name ? `<span>· <em>${it.variation_name}</em></span>` : ''}
+                        </div>
+                    </div>
+                </div>
             </td>
-            <td style="text-align: right;"><strong>${it.current_stock}</strong> un.</td>
-            <td style="text-align: right;">${it.vpd} un./d</td>
-            <td style="text-align: right;">${it.transit_delay_days} días</td>
-            <td style="text-align: center;">
+            <td style="text-align: right; vertical-align: middle;">
+                <strong>${it.current_stock}</strong> un.
+            </td>
+            <td style="text-align: right; vertical-align: middle; color: var(--text2);">
+                ${it.vpd} un./d
+            </td>
+            <td style="text-align: right; vertical-align: middle;">
+                <span style="color: ${suggested > 0 ? 'var(--accent)' : 'var(--good)'}; font-weight: 700;">${suggested}</span> un.
+            </td>
+            <td style="text-align: center; vertical-align: middle;">
                 <input type="number" min="0" class="unit-input-colecta" 
-                       value="${suggestedUnits}" 
-                       onchange="cambiarUnidadesColecta(${it.id}, this.value)"> un.
+                       value="${unitsToSend}" 
+                       onchange="cambiarUnidadesColecta(${it.id}, this.value)"
+                       style="width: 75px; text-align: center; font-weight: 700;">
+            </td>
+            <td style="text-align: center; vertical-align: middle;">
+                <input type="number" min="0" class="unit-input-colecta" 
+                       value="${unitsPerBox}" 
+                       placeholder="0"
+                       title="Unidades por caja máster (0 para caja mixta)"
+                       onchange="cambiarUnidadesPorCajaColecta(${it.id}, this.value)"
+                       style="width: 65px; text-align: center; font-size: 12px;">
+            </td>
+            <td style="text-align: center; vertical-align: middle; font-weight: 700; color: #64b5f6;" id="rowBoxes_${it.id}">
+                ${boxesEst} cj.
             </td>
         `;
         tbody.appendChild(tr);
@@ -859,47 +1016,76 @@ function renderizarFilasColecta() {
 }
 
 function actualizarTotalColecta() {
-    let total = 0;
-    colectaSelectedItems.forEach(units => { total += units; });
-    document.getElementById('colectaTotalUnits').textContent = `${total} un.`;
+    let totalUnits = 0;
+    let totalSkus = 0;
+    let totalBoxes = 0;
+
+    colectaSelectedItems.forEach((units, id) => {
+        if (units > 0) {
+            totalUnits += units;
+            totalSkus += 1;
+            const unitsPerBox = colectaBoxUnits.get(id) || 0;
+            const boxes = unitsPerBox > 0 ? Math.ceil(units / unitsPerBox) : 1;
+            totalBoxes += boxes;
+
+            const rowBoxEl = document.getElementById(`rowBoxes_${id}`);
+            if (rowBoxEl) rowBoxEl.textContent = `${boxes} cj.`;
+        }
+    });
+
+    const skusEl = document.getElementById('colectaTotalSkus');
+    const unitsEl = document.getElementById('colectaTotalUnits');
+    const boxesEl = document.getElementById('colectaTotalBoxes');
+
+    if (skusEl) skusEl.textContent = totalSkus;
+    if (unitsEl) unitsEl.textContent = `${totalUnits} un.`;
+    if (boxesEl) boxesEl.textContent = `${totalBoxes} cajas`;
 }
 
-// ── Acciones de Colecta: Copiar, Exportar, Imprimir ─────────────────
 function copiarListaColecta() {
-    const wh = WAREHOUSES[currentWarehouse].name;
-    let texto = `COLECTA ENVIOBOT - ${wh.toUpperCase()}\n`;
+    const wh = (WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full).name;
+    let texto = `PLAN DE COLECTA ENVIOBOT FULL - ${wh.toUpperCase()}\n`;
     texto += `Fecha: ${new Date().toLocaleDateString('es-AR')}\n`;
-    texto += `------------------------------------------------\n`;
+    texto += `================================================\n`;
 
-    let total = 0;
+    let totalUnits = 0;
+    let totalBoxes = 0;
     itemsData.forEach(it => {
         if (colectaSelectedItems.has(it.id)) {
-            const units = colectaSelectedItems.get(it.id);
+            const units = colectaSelectedItems.get(it.id) || 0;
             if (units > 0) {
-                texto += `• [${it.sku || it.item_id}] ${it.title}: ${units} unidades\n`;
-                total += units;
+                const uBox = colectaBoxUnits.get(it.id) || 0;
+                const boxes = uBox > 0 ? Math.ceil(units / uBox) : 1;
+                totalUnits += units;
+                totalBoxes += boxes;
+                texto += `• [SKU: ${it.sku || it.item_id}] ${it.title}\n`;
+                texto += `  Cant: ${units} un. | Cajas: ${boxes} (${uBox > 0 ? `${uBox} un/cj` : 'Bulto mixto'})\n`;
             }
         }
     });
 
-    texto += `------------------------------------------------\n`;
-    texto += `TOTAL BULTOS A DESPACHAR: ${total} unidades\n`;
+    texto += `================================================\n`;
+    texto += `TOTAL: ${totalUnits} unidades en ${totalBoxes} bultos\n`;
 
     navigator.clipboard.writeText(texto).then(() => {
-        alert("Lista de bultos copiada al portapapeles. Podés pegarla en tu planilla o en MercadoLibre.");
+        alert("Lista de colecta copiada al portapapeles. Lista para compartir con transporte o pegar en planilla.");
     }).catch(() => {
         alert("Lista:\n\n" + texto);
     });
 }
 
 function exportarColectaCSV() {
-    const wh = WAREHOUSES[currentWarehouse].name;
-    let csv = `\uFEFFDestino,SKU,ID Publicacion,Titulo,Stock Actual,Venta Diaria,Demora Camion,Unidades a Mandar\n`;
+    const wh = (WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full).name;
+    let csv = `\uFEFFDestino,SKU,Item ID,Inventory ID,Titulo,Stock Actual Full,VPD,Unidades Despachar,Unidades x Caja,Cajas Estimadas\n`;
 
     itemsData.forEach(it => {
         if (colectaSelectedItems.has(it.id)) {
-            const units = colectaSelectedItems.get(it.id);
-            csv += `"${wh}","${it.sku || ''}","${it.item_id}","${it.title.replace(/"/g, '""')}",${it.current_stock},${it.vpd},${it.transit_delay_days},${units}\n`;
+            const units = colectaSelectedItems.get(it.id) || 0;
+            if (units > 0) {
+                const uBox = colectaBoxUnits.get(it.id) || 0;
+                const boxes = uBox > 0 ? Math.ceil(units / uBox) : 1;
+                csv += `"${wh}","${it.sku || ''}","${it.item_id}","${it.inventory_id || ''}","${(it.title || '').replace(/"/g, '""')}",${it.current_stock},${it.vpd},${units},${uBox},${boxes}\n`;
+            }
         }
     });
 
@@ -907,28 +1093,243 @@ function exportarColectaCSV() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `colecta_${currentWarehouse}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", `colecta_full_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 }
 
-function imprimirColecta() {
-    window.print();
-}
+// ── Confirmar y Despachar Envío a Backend (Etapa 2) ───────────────────
+async function confirmarDespachoColecta() {
+    let totalUnits = 0;
+    colectaSelectedItems.forEach(u => totalUnits += u);
 
-function confirmarDespachoColecta() {
-    let total = 0;
-    colectaSelectedItems.forEach(u => total += u);
-    if (total === 0) {
-        alert("Seleccioná al menos un producto para despachar.");
+    if (totalUnits === 0) {
+        alert("Seleccioná al menos un producto e indicá unidades mayores a 0 para despachar.");
         return;
     }
 
-    if (confirm(`¿Confirmás el despacho de ${total} unidades hacia ${WAREHOUSES[currentWarehouse].name}?\n\nEl stock en camino quedará registrado y las alarmas se silenciarán hasta la llegada del flete.`)) {
-        alert("Despacho confirmado con éxito. Las unidades han sido marcadas 'En Tránsito'.");
-        cerrarModalColecta();
+    // Comprobar monetización: si no tiene el módulo y no es admin, abrir modal comercial
+    if (!userInboundEnabled && !userIsAdmin) {
+        const modalUp = document.getElementById('modalInboundUpgrade');
+        if (modalUp) modalUp.style.display = 'flex';
+        return;
     }
+
+    // Usuario habilitado -> Proceder con la creación del envío
+    await crearEnvioInboundBackend();
+}
+
+async function crearEnvioInboundBackend() {
+    const token = getToken();
+    if (!token) {
+        alert("Por favor iniciá sesión para registrar la colecta.");
+        return;
+    }
+
+    const itemsToSend = [];
+    itemsData.forEach(it => {
+        if (colectaSelectedItems.has(it.id)) {
+            const units = colectaSelectedItems.get(it.id) || 0;
+            if (units > 0) {
+                const unitsPerBox = colectaBoxUnits.get(it.id) || 0;
+                const boxCount = unitsPerBox > 0 ? Math.ceil(units / unitsPerBox) : 1;
+                itemsToSend.push({
+                    item_id: it.item_id,
+                    inventory_id: it.inventory_id,
+                    variation_id: it.variation_id,
+                    variation_name: it.variation_name,
+                    sku: it.sku,
+                    title: it.title,
+                    current_full_stock: it.current_stock,
+                    vpd: it.vpd,
+                    suggested_units: Math.round(it.vpd * 30),
+                    units_to_send: units,
+                    units_per_box: unitsPerBox,
+                    box_count: boxCount
+                });
+            }
+        }
+    });
+
+    const payload = {
+        destination_warehouse: 'meli_full',
+        target_coverage_days: parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30,
+        lead_time_days: parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2,
+        transit_days: (WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full).defaultTransit || 3,
+        packaging_type: document.getElementById('colectaPackagingSelect')?.value || 'cajas_master',
+        carrier_notes: document.getElementById('colectaCarrierNotes')?.value || '',
+        pickup_date: document.getElementById('colectaFechaRetiroInput')?.value || null,
+        items: itemsToSend
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+            if (data.requires_upgrade) {
+                const modalUp = document.getElementById('modalInboundUpgrade');
+                if (modalUp) modalUp.style.display = 'flex';
+                return;
+            }
+            alert(`Error creando envío: ${data.error || 'Verifique los datos.'}`);
+            return;
+        }
+
+        const shipment = data.shipment;
+        alert(`¡Colecta ${shipment.shipment_code} creada con éxito!\n\nSe programaron ${shipment.total_units} unidades en ${shipment.total_boxes} bultos hacia Villa Celina.`);
+
+        // Abrir Remito oficial en pestaña nueva para imprimir
+        window.open(`${API_BASE}/full/inbound/shipments/${shipment.id}/remito-html`, '_blank');
+
+        // Cambiar a la pestaña de Historial
+        switchColectaTab('historial');
+    } catch (err) {
+        alert("Error de conexión al crear el envío: " + err.message);
+    }
+}
+
+async function cargarHistorialColectas(soloBadge = false) {
+    const token = getToken();
+    const container = document.getElementById('colectaHistorialContainer');
+    const badge = document.getElementById('colectaHistorialBadge');
+    if (!token) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.shipments)) {
+            inboundShipmentsList = data.shipments;
+            if (badge) badge.textContent = inboundShipmentsList.length;
+
+            if (soloBadge) return;
+
+            if (!container) return;
+            if (inboundShipmentsList.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: var(--text2);">
+                        <div style="font-size: 32px; margin-bottom: 8px;">📦</div>
+                        <strong>No hay envíos registrados todavía.</strong><br>
+                        Planificá tu primer despacho desde la pestaña "Planificar Nuevo Envío".
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = inboundShipmentsList.map(sh => {
+                const statusMap = {
+                    'scheduled': { text: 'Programado / Por Retirar', color: '#64b5f6', bg: 'rgba(33, 150, 243, 0.15)' },
+                    'in_transit': { text: 'En Camino a Villa Celina', color: '#ffb74d', bg: 'rgba(255, 152, 0, 0.15)' },
+                    'delivered': { text: 'Ingresado en Full', color: '#81c784', bg: 'rgba(76, 175, 80, 0.15)' },
+                    'cancelled': { text: 'Cancelado', color: '#9e9e9e', bg: 'rgba(158, 158, 158, 0.15)' }
+                };
+                const st = statusMap[sh.status] || { text: sh.status, color: '#fff', bg: '#333' };
+
+                return `
+                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <strong style="font-size: 15px; color: var(--text);">${sh.shipment_code}</strong>
+                                    <span style="background: ${st.bg}; color: ${st.color}; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">
+                                        ${st.text}
+                                    </span>
+                                </div>
+                                <div style="font-size: 12px; color: var(--text2); margin-top: 3px;">
+                                    Fecha retiro: <strong>${sh.pickup_date || 'A coordinar'}</strong> · Destino: ${sh.destination_name}
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 6px;">
+                                <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="window.open('${API_BASE}/full/inbound/shipments/${sh.id}/remito-html', '_blank')">
+                                    🖨️ Ver Remito Oficial
+                                </button>
+                                <select onchange="cambiarEstadoEnvioInbound(${sh.id}, this.value)" class="filter-select" style="padding: 4px 8px; font-size: 11px;">
+                                    <option value="scheduled" ${sh.status === 'scheduled' ? 'selected' : ''}>Programado</option>
+                                    <option value="in_transit" ${sh.status === 'in_transit' ? 'selected' : ''}>En Camino</option>
+                                    <option value="delivered" ${sh.status === 'delivered' ? 'selected' : ''}>Ingresado</option>
+                                    <option value="cancelled" ${sh.status === 'cancelled' ? 'selected' : ''}>Cancelar</option>
+                                </select>
+                                <button type="button" class="btn btn-secondary btn-sm" title="Eliminar envío" onclick="eliminarEnvioInbound(${sh.id})">✕</button>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 16px; font-size: 12px; color: var(--text); padding-top: 8px; border-top: 1px dashed var(--border); flex-wrap: wrap;">
+                            <div>Total SKUs: <strong>${sh.total_items}</strong></div>
+                            <div>Unidades totales: <strong style="color: var(--accent);">${sh.total_units} un.</strong></div>
+                            <div>Bultos: <strong>${sh.total_boxes} cajas</strong> (${sh.packaging_type})</div>
+                            ${sh.carrier_notes ? `<div>Obs: <em>${sh.carrier_notes}</em></div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+    } catch (e) {
+        if (container) container.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 20px;">Error cargando historial: ${e.message}</div>`;
+    }
+}
+
+async function cambiarEstadoEnvioInbound(shipmentId, status) {
+    const token = getToken();
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments/${shipmentId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            cargarHistorialColectas();
+        } else {
+            alert(data.error || "No se pudo actualizar el estado.");
+        }
+    } catch (err) {
+        alert("Error de conexión: " + err.message);
+    }
+}
+
+async function eliminarEnvioInbound(shipmentId) {
+    if (!confirm("¿Seguro que deseás eliminar este registro de colecta?")) return;
+    const token = getToken();
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments/${shipmentId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.ok) {
+            cargarHistorialColectas();
+        } else {
+            alert(data.error || "No se pudo eliminar el envío.");
+        }
+    } catch (err) {
+        alert("Error de conexión: " + err.message);
+    }
+}
+
+function cerrarModalInboundUpgrade() {
+    const modal = document.getElementById('modalInboundUpgrade');
+    if (modal) modal.style.display = 'none';
+}
+
+function solicitarActivacionInboundWhatsApp() {
+    const telefono = "5491148462800";
+    const texto = encodeURIComponent("¡Hola Guillermo! Me interesa activar el Módulo Pago de Colectas y Envíos a Full de EnvioBot para mi cuenta. ¿Cómo hacemos?");
+    window.open(`https://wa.me/${telefono}?text=${texto}`, '_blank');
 }
 
 // ── Modal de Configuración General y Pestañas ───────────────────────
@@ -2798,6 +3199,10 @@ function renderClientesAdmin(clients) {
             ? `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Habilitado</span>`
             : `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Sin acceso</span>`;
 
+        const inboundBadge = c.has_inbound 
+            ? `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Habilitado</span>`
+            : `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Sin acceso</span>`;
+
         const blockBadge = c.is_blocked
             ? `<span style="color: #ef4444; font-weight: 700; font-size: 11px;">Bloqueado</span>`
             : `<span style="color: var(--text2); font-size: 11px;">Activo</span>`;
@@ -2820,6 +3225,12 @@ function renderClientesAdmin(clients) {
                 <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
                     <input type="checkbox" id="chkAdminFull_${c.id}" ${c.has_full ? 'checked' : ''} onchange="adminToggleFull(${c.id}, this.checked)" style="cursor: pointer; width: 16px; height: 16px;">
                     <span id="badgeAdminFull_${c.id}">${fullBadge}</span>
+                </label>
+            </td>
+            <td style="padding: 10px 12px; text-align: center; vertical-align: middle;">
+                <label style="display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="chkAdminInbound_${c.id}" ${c.has_inbound ? 'checked' : ''} onchange="adminToggleInbound(${c.id}, this.checked)" style="cursor: pointer; width: 16px; height: 16px;">
+                    <span id="badgeAdminInbound_${c.id}">${inboundBadge}</span>
                 </label>
             </td>
             <td style="padding: 10px 12px; text-align: center; vertical-align: middle;">
@@ -2909,6 +3320,45 @@ async function adminToggleFull(userId, enable) {
             }
         } else {
             alert(data.error || 'No se pudo actualizar el estado de Full.');
+            if (chk) chk.checked = !enable;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        if (chk) chk.checked = !enable;
+    } finally {
+        if (chk) chk.disabled = false;
+    }
+}
+
+async function adminToggleInbound(userId, enable) {
+    const token = getToken();
+    const chk = document.getElementById(`chkAdminInbound_${userId}`);
+    const badge = document.getElementById(`badgeAdminInbound_${userId}`);
+    if (!token) return;
+
+    if (chk) chk.disabled = true;
+
+    try {
+        const res = await fetch(`${API_BASE}/full/admin/clients/${userId}/toggle-inbound`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ enable })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            const c = adminClientsData.find(item => item.id === userId);
+            if (c) c.has_inbound = enable;
+
+            if (badge) {
+                badge.innerHTML = enable
+                    ? `<span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Habilitado</span>`
+                    : `<span style="background: rgba(239, 68, 68, 0.15); color: #ef4444; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Sin acceso</span>`;
+            }
+        } else {
+            alert(data.error || 'No se pudo actualizar el estado de Colectas.');
             if (chk) chk.checked = !enable;
         }
     } catch (err) {

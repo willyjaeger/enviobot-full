@@ -31,6 +31,7 @@ from whatsapp_service import (
 )
 from alerts_engine import procesar_alertas_usuario
 from email_service import enviar_email_prueba, enviar_email_bienvenida_verificacion
+from inbound_service import render_remito_html
 
 load_dotenv()
 
@@ -165,6 +166,58 @@ def init_verification_tables():
             except Exception:
                 pass
 
+            # Tablas de Colectas e Inbound Shipments a Mercado Libre Full
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS inbound_shipments (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    ml_credential_id INT NULL,
+                    shipment_code VARCHAR(50) NOT NULL UNIQUE,
+                    destination_warehouse VARCHAR(50) NOT NULL DEFAULT 'meli_full',
+                    destination_name VARCHAR(150) NOT NULL DEFAULT 'Mercado Envíos Full (Villa Celina)',
+                    status ENUM('draft', 'scheduled', 'in_transit', 'delivered', 'cancelled') NOT NULL DEFAULT 'scheduled',
+                    target_coverage_days INT NOT NULL DEFAULT 30,
+                    lead_time_days INT NOT NULL DEFAULT 2,
+                    transit_days INT NOT NULL DEFAULT 3,
+                    total_items INT NOT NULL DEFAULT 0,
+                    total_units INT NOT NULL DEFAULT 0,
+                    total_boxes INT NOT NULL DEFAULT 1,
+                    packaging_type VARCHAR(50) NOT NULL DEFAULT 'cajas_master',
+                    carrier_notes TEXT NULL,
+                    pickup_date DATE NULL,
+                    estimated_arrival_date DATE NULL,
+                    meli_inbound_id VARCHAR(100) NULL,
+                    meli_inbound_status VARCHAR(50) NULL,
+                    meli_sync_payload TEXT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    INDEX idx_user_shipments (user_id, status),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS inbound_shipment_items (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    shipment_id INT NOT NULL,
+                    item_id VARCHAR(50) NOT NULL,
+                    inventory_id VARCHAR(50) NULL,
+                    variation_id VARCHAR(50) NULL,
+                    variation_name VARCHAR(150) NULL,
+                    sku VARCHAR(100) NULL,
+                    title VARCHAR(255) NOT NULL,
+                    current_full_stock INT NOT NULL DEFAULT 0,
+                    vpd DECIMAL(10,2) NOT NULL DEFAULT 0,
+                    suggested_units INT NOT NULL DEFAULT 0,
+                    units_to_send INT NOT NULL DEFAULT 0,
+                    units_per_box INT NOT NULL DEFAULT 0,
+                    box_count INT NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_shipment_items (shipment_id),
+                    FOREIGN KEY (shipment_id) REFERENCES inbound_shipments(id) ON DELETE CASCADE
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
+
         conn.close()
     except Exception as e:
         print(f"[Verification Tables Init Notice] {e}")
@@ -227,7 +280,9 @@ def get_user_full_subscription(user_id, conn):
             SELECT id, email, 
                    COALESCE(has_full, 0) AS has_full,
                    COALESCE(has_pedidos, 1) AS has_pedidos,
+                   COALESCE(has_inbound, 0) AS has_inbound,
                    COALESCE(is_blocked, 0) AS is_blocked,
+                   COALESCE(is_admin, 0) AS is_admin,
                    COALESCE(admin_notes, '') AS admin_notes
             FROM users WHERE id=%s
         """, (user_id,))
@@ -236,6 +291,7 @@ def get_user_full_subscription(user_id, conn):
     if not u:
         return {
             "has_full_access": False,
+            "has_inbound": False,
             "is_active": False,
             "is_blocked": False,
             "is_expired": False,
@@ -251,10 +307,14 @@ def get_user_full_subscription(user_id, conn):
             "limits": PLAN_LIMITS["trial"]
         }
 
+    email = (u.get("email") or "").lower()
+    is_admin = bool(u.get("is_admin", 0)) or email in ("guillermo.jaeger@gmail.com", "admin@enviobot.com.ar") or "admin" in email
+
     is_blocked = bool(u.get("is_blocked", 0))
     if is_blocked:
         return {
             "has_full_access": False,
+            "has_inbound": False,
             "is_active": False,
             "is_blocked": True,
             "is_expired": False,
@@ -270,9 +330,12 @@ def get_user_full_subscription(user_id, conn):
             "limits": PLAN_LIMITS["trial"]
         }
 
-    has_full = bool(u.get("has_full", 0))
+    has_full = bool(u.get("has_full", 0)) or is_admin
+    has_inbound = bool(u.get("has_inbound", 0)) or is_admin
+
     return {
         "has_full_access": has_full,
+        "has_inbound": has_inbound,
         "is_active": has_full,
         "is_blocked": False,
         "is_expired": False,
@@ -296,11 +359,13 @@ def is_admin_user(user_id):
     """Verifica si el usuario actual tiene permisos de administrador."""
     conn = get_db()
     with conn.cursor() as cur:
-        cur.execute("SELECT email FROM users WHERE id=%s", (user_id,))
+        cur.execute("SELECT email, COALESCE(is_admin, 0) AS is_admin FROM users WHERE id=%s", (user_id,))
         u = cur.fetchone()
     conn.close()
     if not u:
         return False
+    if u.get("is_admin"):
+        return True
     email = (u.get("email") or "").lower()
     return email in ("guillermo.jaeger@gmail.com", "admin@enviobot.com.ar") or "admin" in email
 
@@ -1613,6 +1678,7 @@ def admin_get_clients():
                 u.id, u.email, u.full_name, u.business_name,
                 COALESCE(u.has_pedidos, 1) AS has_pedidos,
                 COALESCE(u.has_full, 0) AS has_full,
+                COALESCE(u.has_inbound, 0) AS has_inbound,
                 COALESCE(u.is_blocked, 0) AS is_blocked,
                 COALESCE(u.admin_notes, '') AS admin_notes,
                 (SELECT COUNT(*) FROM ml_credentials mc WHERE mc.user_id = u.id) AS ml_accounts_count
@@ -1625,6 +1691,7 @@ def admin_get_clients():
     for c in clients:
         c["has_pedidos"] = bool(c.get("has_pedidos", 1))
         c["has_full"] = bool(c.get("has_full", 0))
+        c["has_inbound"] = bool(c.get("has_inbound", 0))
         c["is_blocked"] = bool(c.get("is_blocked", 0))
 
     return jsonify({"ok": True, "clients": clients}), 200
@@ -1703,6 +1770,331 @@ def admin_save_notes(target_id):
     conn.close()
 
     return jsonify({"ok": True, "message": "Observaciones guardadas con éxito.", "admin_notes": notes}), 200
+
+@app.route("/api/full/admin/clients/<int:target_id>/toggle-inbound", methods=["POST"])
+@jwt_required()
+def admin_toggle_inbound(target_id):
+    """Activa o desactiva el Módulo de Colectas / Envíos a Full para un cliente."""
+    user_id = int(get_jwt_identity())
+    if not is_admin_user(user_id):
+        return jsonify({"ok": False, "error": "Acceso restringido a administradores."}), 403
+
+    data = request.get_json() or {}
+    enable = bool(data.get("enable", False))
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE users SET has_inbound=%s WHERE id=%s", (1 if enable else 0, target_id))
+    conn.close()
+
+    msg = "Módulo de Colectas Full habilitado." if enable else "Módulo de Colectas Full deshabilitado."
+    return jsonify({"ok": True, "message": msg, "has_inbound": enable}), 200
+
+# -------------------------------------------------------------
+# RUTAS DE COLECTAS Y ENVÍOS INBOUND A FULL (MÓDULO PAGO)
+# -------------------------------------------------------------
+
+@app.route("/api/full/inbound/status", methods=["GET"])
+@jwt_required()
+def get_inbound_status():
+    """Devuelve si el usuario tiene habilitado el módulo de Colectas / Envíos a Full."""
+    user_id = int(get_jwt_identity())
+    is_admin = is_admin_user(user_id)
+    conn = get_db()
+    sub = get_user_full_subscription(user_id, conn)
+    has_inbound = bool(sub.get("has_inbound", False)) or is_admin
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT 
+                COUNT(*) AS total_shipments,
+                SUM(CASE WHEN status IN ('scheduled', 'in_transit') THEN 1 ELSE 0 END) AS active_shipments
+            FROM inbound_shipments
+            WHERE user_id = %s
+        """, (user_id,))
+        stats = cur.fetchone() or {"total_shipments": 0, "active_shipments": 0}
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "has_inbound": has_inbound,
+        "is_admin": is_admin,
+        "stats": stats,
+        "default_warehouse": {
+            "code": "meli_full",
+            "name": "Mercado Envíos Full (Villa Celina)",
+            "city": "La Matanza, Buenos Aires"
+        }
+    }), 200
+
+@app.route("/api/full/inbound/shipments", methods=["GET"])
+@jwt_required()
+def list_inbound_shipments():
+    """Lista todos los envíos / colectas generadas por el usuario."""
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT 
+                s.id, s.shipment_code, s.destination_warehouse, s.destination_name,
+                s.status, s.target_coverage_days, s.lead_time_days, s.transit_days,
+                s.total_items, s.total_units, s.total_boxes, s.packaging_type,
+                s.carrier_notes, s.pickup_date, s.estimated_arrival_date,
+                s.meli_inbound_id, s.meli_inbound_status, s.created_at, s.updated_at
+            FROM inbound_shipments s
+            WHERE s.user_id = %s
+            ORDER BY s.id DESC
+        """, (user_id,))
+        shipments = cur.fetchall() or []
+
+        for sh in shipments:
+            if sh.get("pickup_date"):
+                sh["pickup_date"] = str(sh["pickup_date"])
+            if sh.get("estimated_arrival_date"):
+                sh["estimated_arrival_date"] = str(sh["estimated_arrival_date"])
+            if sh.get("created_at"):
+                sh["created_at"] = sh["created_at"].strftime("%Y-%m-%d %H:%M:%S") if hasattr(sh["created_at"], "strftime") else str(sh["created_at"])
+
+            cur.execute("""
+                SELECT item_id, sku, title, units_to_send, box_count
+                FROM inbound_shipment_items
+                WHERE shipment_id = %s
+                LIMIT 5
+            """, (sh["id"],))
+            sh["items_preview"] = cur.fetchall() or []
+    conn.close()
+
+    return jsonify({"ok": True, "shipments": shipments}), 200
+
+@app.route("/api/full/inbound/shipments", methods=["POST"])
+@jwt_required()
+def create_inbound_shipment():
+    """Crea una nueva orden de colecta / envío inbound a Full."""
+    user_id = int(get_jwt_identity())
+    is_admin = is_admin_user(user_id)
+    conn = get_db()
+    sub = get_user_full_subscription(user_id, conn)
+    has_inbound = bool(sub.get("has_inbound", False)) or is_admin
+
+    if not has_inbound:
+        conn.close()
+        return jsonify({
+            "ok": False,
+            "requires_upgrade": True,
+            "error": "El Módulo de Colectas y Envíos a Full es una función exclusiva para planes Pro Plus o Add-on activo.",
+            "upgrade_msg": "Automatizá tus envíos a Villa Celina, generá remitos oficiales con código de barras y eliminá quiebres de stock."
+        }), 403
+
+    data = request.get_json() or {}
+    items = data.get("items", [])
+    if not items:
+        conn.close()
+        return jsonify({"ok": False, "error": "Debe seleccionar al menos un producto para despachar."}), 400
+
+    target_coverage_days = int(data.get("target_coverage_days", 30))
+    lead_time_days = int(data.get("lead_time_days", 2))
+    transit_days = int(data.get("transit_days", 3))
+    packaging_type = data.get("packaging_type", "cajas_master")
+    carrier_notes = data.get("carrier_notes", "").strip()
+    pickup_date_str = data.get("pickup_date")
+
+    total_units = 0
+    total_boxes = 0
+    clean_items = []
+
+    for it in items:
+        units = int(it.get("units_to_send", 0))
+        if units <= 0:
+            continue
+        units_per_box = int(it.get("units_per_box", 0))
+        if units_per_box > 0:
+            box_count = (units + units_per_box - 1) // units_per_box
+        else:
+            box_count = int(it.get("box_count", 1))
+
+        total_units += units
+        total_boxes += box_count
+        clean_items.append({
+            "item_id": str(it.get("item_id", "")).strip(),
+            "inventory_id": it.get("inventory_id"),
+            "variation_id": str(it.get("variation_id", "")).strip() or None,
+            "variation_name": it.get("variation_name"),
+            "sku": it.get("sku"),
+            "title": it.get("title", "Producto sin título"),
+            "current_full_stock": int(it.get("current_full_stock", 0)),
+            "vpd": float(it.get("vpd", 0.0)),
+            "suggested_units": int(it.get("suggested_units", 0)),
+            "units_to_send": units,
+            "units_per_box": units_per_box,
+            "box_count": box_count
+        })
+
+    if not clean_items:
+        conn.close()
+        return jsonify({"ok": False, "error": "No hay unidades válidas (> 0) para enviar."}), 400
+
+    total_items = len(clean_items)
+    today_str = datetime.now().strftime("%Y%m%d")
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT COUNT(*) AS cnt 
+            FROM inbound_shipments 
+            WHERE shipment_code LIKE %s
+        """, (f"COL-FULL-{today_str}-%",))
+        row = cur.fetchone()
+        seq = (row.get("cnt", 0) if row else 0) + 1
+        shipment_code = f"COL-FULL-{today_str}-{seq:03d}"
+
+        today_date = datetime.now().date()
+        if not pickup_date_str:
+            pickup_date = today_date + timedelta(days=lead_time_days)
+        else:
+            try:
+                pickup_date = datetime.strptime(pickup_date_str, "%Y-%m-%d").date()
+            except Exception:
+                pickup_date = today_date + timedelta(days=lead_time_days)
+
+        estimated_arrival = pickup_date + timedelta(days=transit_days)
+
+        cur.execute("""
+            INSERT INTO inbound_shipments (
+                user_id, shipment_code, destination_warehouse, destination_name,
+                status, target_coverage_days, lead_time_days, transit_days,
+                total_items, total_units, total_boxes, packaging_type,
+                carrier_notes, pickup_date, estimated_arrival_date
+            ) VALUES (
+                %s, %s, 'meli_full', 'Mercado Envíos Full (Villa Celina)',
+                'scheduled', %s, %s, %s,
+                %s, %s, %s, %s,
+                %s, %s, %s
+            )
+        """, (
+            user_id, shipment_code, target_coverage_days, lead_time_days, transit_days,
+            total_items, total_units, total_boxes, packaging_type,
+            carrier_notes, pickup_date, estimated_arrival
+        ))
+        shipment_id = cur.lastrowid
+
+        for cit in clean_items:
+            cur.execute("""
+                INSERT INTO inbound_shipment_items (
+                    shipment_id, item_id, inventory_id, variation_id, variation_name,
+                    sku, title, current_full_stock, vpd, suggested_units,
+                    units_to_send, units_per_box, box_count
+                ) VALUES (
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s
+                )
+            """, (
+                shipment_id, cit["item_id"], cit["inventory_id"], cit["variation_id"], cit["variation_name"],
+                cit["sku"], cit["title"], cit["current_full_stock"], cit["vpd"], cit["suggested_units"],
+                cit["units_to_send"], cit["units_per_box"], cit["box_count"]
+            ))
+
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "message": f"Colecta {shipment_code} creada con éxito.",
+        "shipment": {
+            "id": shipment_id,
+            "shipment_code": shipment_code,
+            "status": "scheduled",
+            "total_items": total_items,
+            "total_units": total_units,
+            "total_boxes": total_boxes,
+            "pickup_date": str(pickup_date),
+            "estimated_arrival_date": str(estimated_arrival)
+        }
+    }), 201
+
+@app.route("/api/full/inbound/shipments/<int:shipment_id>", methods=["GET"])
+@jwt_required()
+def get_inbound_shipment_detail(shipment_id):
+    """Obtiene el detalle completo de un envío inbound con sus ítems."""
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM inbound_shipments WHERE id = %s AND user_id = %s", (shipment_id, user_id))
+        shipment = cur.fetchone()
+        if not shipment:
+            conn.close()
+            return jsonify({"ok": False, "error": "Envío no encontrado."}), 404
+
+        cur.execute("SELECT * FROM inbound_shipment_items WHERE shipment_id = %s ORDER BY id ASC", (shipment_id,))
+        items = cur.fetchall() or []
+    conn.close()
+
+    if shipment.get("pickup_date"): shipment["pickup_date"] = str(shipment["pickup_date"])
+    if shipment.get("estimated_arrival_date"): shipment["estimated_arrival_date"] = str(shipment["estimated_arrival_date"])
+    if shipment.get("created_at"): shipment["created_at"] = str(shipment["created_at"])
+
+    return jsonify({"ok": True, "shipment": shipment, "items": items}), 200
+
+@app.route("/api/full/inbound/shipments/<int:shipment_id>/status", methods=["PUT"])
+@jwt_required()
+def update_inbound_shipment_status(shipment_id):
+    """Actualiza el estado operativo de un envío (scheduled, in_transit, delivered, cancelled)."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    new_status = data.get("status")
+    valid_statuses = {"draft", "scheduled", "in_transit", "delivered", "cancelled"}
+    if new_status not in valid_statuses:
+        return jsonify({"ok": False, "error": f"Estado inválido. Opciones: {list(valid_statuses)}"}), 400
+
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE inbound_shipments SET status = %s WHERE id = %s AND user_id = %s", (new_status, shipment_id, user_id))
+        affected = cur.rowcount
+    conn.close()
+
+    if affected == 0:
+        return jsonify({"ok": False, "error": "Envío no encontrado o sin cambios."}), 404
+
+    return jsonify({"ok": True, "message": f"Estado actualizado a '{new_status}'."}), 200
+
+@app.route("/api/full/inbound/shipments/<int:shipment_id>", methods=["DELETE"])
+@jwt_required()
+def delete_inbound_shipment(shipment_id):
+    """Elimina una colecta o envío programado."""
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM inbound_shipments WHERE id = %s AND user_id = %s", (shipment_id, user_id))
+        affected = cur.rowcount
+    conn.close()
+
+    if affected == 0:
+        return jsonify({"ok": False, "error": "Envío no encontrado."}), 404
+
+    return jsonify({"ok": True, "message": "Envío eliminado correctamente."}), 200
+
+@app.route("/api/full/inbound/shipments/<int:shipment_id>/remito-html", methods=["GET"])
+@jwt_required()
+def get_inbound_shipment_remito_html(shipment_id):
+    """Genera la vista imprimible A4 del Remito Oficial de Colecta con códigos de barras."""
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT s.*, u.full_name, u.business_name, u.email, u.phone, u.cuit
+            FROM inbound_shipments s
+            JOIN users u ON s.user_id = u.id
+            WHERE s.id = %s AND s.user_id = %s
+        """, (shipment_id, user_id))
+        shipment = cur.fetchone()
+        if not shipment:
+            conn.close()
+            return "<h3>Envío no encontrado</h3>", 404
+
+        cur.execute("SELECT * FROM inbound_shipment_items WHERE shipment_id = %s ORDER BY id ASC", (shipment_id,))
+        items = cur.fetchall() or []
+    conn.close()
+
+    html_content = render_remito_html(shipment, items)
+    return html_content, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 # -------------------------------------------------------------
 # RUTAS ESTÁTICAS DE FRONTEND

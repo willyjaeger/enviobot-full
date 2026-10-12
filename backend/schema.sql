@@ -161,3 +161,51 @@ CREATE TABLE IF NOT EXISTS alert_recipients (
     INDEX idx_user_active (user_id, is_active),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- 10. Módulo de Colectas y Envíos Inbound a Mercado Libre Full (Módulo Pago)
+CREATE TABLE IF NOT EXISTS inbound_shipments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    ml_credential_id INT NULL,
+    shipment_code VARCHAR(50) NOT NULL UNIQUE,          -- ej: COL-FULL-20261012-001
+    destination_warehouse VARCHAR(50) NOT NULL DEFAULT 'meli_full',
+    destination_name VARCHAR(150) NOT NULL DEFAULT 'Mercado Envíos Full (Villa Celina)',
+    status ENUM('draft', 'scheduled', 'in_transit', 'delivered', 'cancelled') NOT NULL DEFAULT 'scheduled',
+    target_coverage_days INT NOT NULL DEFAULT 30,
+    lead_time_days INT NOT NULL DEFAULT 2,
+    transit_days INT NOT NULL DEFAULT 3,
+    total_items INT NOT NULL DEFAULT 0,
+    total_units INT NOT NULL DEFAULT 0,
+    total_boxes INT NOT NULL DEFAULT 1,
+    packaging_type VARCHAR(50) NOT NULL DEFAULT 'cajas_master', -- 'cajas_master', 'bultos_sueltos', 'pallet'
+    carrier_notes TEXT NULL,
+    pickup_date DATE NULL,
+    estimated_arrival_date DATE NULL,
+    meli_inbound_id VARCHAR(100) NULL,
+    meli_inbound_status VARCHAR(50) NULL,
+    meli_sync_payload TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_shipments (user_id, status),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS inbound_shipment_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    shipment_id INT NOT NULL,
+    item_id VARCHAR(50) NOT NULL,
+    inventory_id VARCHAR(50) NULL,
+    variation_id VARCHAR(50) NULL,
+    variation_name VARCHAR(150) NULL,
+    sku VARCHAR(100) NULL,
+    title VARCHAR(255) NOT NULL,
+    current_full_stock INT NOT NULL DEFAULT 0,
+    vpd DECIMAL(10,2) NOT NULL DEFAULT 0,
+    suggested_units INT NOT NULL DEFAULT 0,
+    units_to_send INT NOT NULL DEFAULT 0,
+    units_per_box INT NOT NULL DEFAULT 0,
+    box_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_shipment_items (shipment_id),
+    FOREIGN KEY (shipment_id) REFERENCES inbound_shipments(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

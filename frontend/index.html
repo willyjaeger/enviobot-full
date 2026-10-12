@@ -478,91 +478,202 @@
         </div>
     </div>
 
-    <!-- ── Modal de Armado de Colecta ────────────────── -->
+    <!-- ── Modal de Armado y Gestión de Colectas Full (Etapa 2) ────────────────── -->
     <div class="modal-overlay" id="colectaModal">
-        <div class="modal-card modal-card-large">
-            <div class="modal-header">
+        <div class="modal-card modal-card-large" style="max-width: 1040px; width: 96%; max-height: 90vh;">
+            <div class="modal-header" style="margin-bottom: 12px;">
                 <div>
-                    <h3 style="color: var(--accent); font-size: 21px; font-weight: 800;">Armar Colecta para Despacho</h3>
-                    <p style="font-size: 13.5px; color: var(--text2); margin-top: 4px;">
-                        Publicaciones en fecha límite de reposición según la demora del flete de este depósito y tu ritmo de venta.
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <h3 style="color: var(--accent); font-size: 21px; font-weight: 800; margin: 0;">Colectas & Envíos a Full</h3>
+                        <span class="plan-badge pro" style="font-size: 11px; padding: 2px 7px;">Villa Celina</span>
+                    </div>
+                    <p style="font-size: 13px; color: var(--text2); margin-top: 4px; margin-bottom: 0;">
+                        Planificación inteligente de reposición para el Centro de Distribución de Mercado Libre Full.
                     </p>
                 </div>
                 <button class="modal-close" onclick="cerrarModalColecta()">✕</button>
             </div>
 
-            <div class="colecta-summary-bar">
-                <div style="font-size: 13px;">
-                    <span>Destino: <strong id="colectaDestinoText" style="color: var(--accent);">Mercado Envíos Full (Bs As)</strong></span>
+            <!-- Pestañas del Modal: Planificador vs Historial -->
+            <div style="display: flex; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
+                <button type="button" class="btn btn-sm" id="btnTabPlanificarColecta" style="background: var(--accent); color: #111; font-weight: 700;" onclick="switchColectaTab('planificar')">
+                    📦 Planificar Nuevo Envío
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnTabHistorialColecta" onclick="switchColectaTab('historial')">
+                    📋 Historial de Envíos (<span id="colectaHistorialBadge">0</span>)
+                </button>
+            </div>
+
+            <!-- ── VISTA 1: Planificador de Colecta ── -->
+            <div id="colectaTabPlanificar" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
+                <div class="colecta-summary-bar" style="flex-wrap: wrap; gap: 10px; padding: 10px 14px;">
+                    <div style="font-size: 13px;">
+                        <span>Destino: <strong id="colectaDestinoText" style="color: var(--accent);">Mercado Envíos Full (Villa Celina)</strong></span>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 12px; color: var(--text2);">Cobertura deseada:</label>
+                        <select id="colectaDiasSelect" onchange="recalcularColecta()" class="filter-select" style="padding: 4px 8px; font-size: 12px;">
+                            <option value="15">15 días (Rápida)</option>
+                            <option value="30" selected>30 días (1 mes de ventas)</option>
+                            <option value="45">45 días</option>
+                            <option value="60">60 días (Bimestral)</option>
+                        </select>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 12px; color: var(--text2);">Formato embalaje:</label>
+                        <select id="colectaPackagingSelect" onchange="recalcularColecta()" class="filter-select" style="padding: 4px 8px; font-size: 12px;">
+                            <option value="cajas_master" selected>Cajas Máster Rotuladas</option>
+                            <option value="bultos_sueltos">Cajas / Bultos Mixtos</option>
+                            <option value="pallet">Pallet Filmado</option>
+                        </select>
+                    </div>
+
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label style="font-size: 12px; color: var(--text2);">Fecha estimada retiro:</label>
+                        <input type="date" id="colectaFechaRetiroInput" class="filter-select" style="padding: 3px 8px; font-size: 12px;">
+                    </div>
                 </div>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <label style="font-size: 12px; color: var(--text2);">Días a cubrir con este flete:</label>
-                    <select id="colectaDiasSelect" onchange="recalcularColecta()" class="filter-select" style="padding: 5px 10px;">
-                        <option value="15">15 días (Reposición rápida)</option>
-                        <option value="30" selected>30 días (1 mes de ventas)</option>
-                        <option value="45">45 días</option>
-                        <option value="60">60 días (Bimestral)</option>
-                    </select>
+
+                <!-- Métricas Rápidas en Vivo -->
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px;">
+                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">SKUs Seleccionados</div>
+                        <div id="colectaTotalSkus" style="font-size: 18px; font-weight: 800; color: var(--text);">0</div>
+                    </div>
+                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">Unidades a Despachar</div>
+                        <div id="colectaTotalUnits" style="font-size: 18px; font-weight: 800; color: var(--accent);">0 un.</div>
+                    </div>
+                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
+                        <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">Bultos / Cajas Estimadas</div>
+                        <div id="colectaTotalBoxes" style="font-size: 18px; font-weight: 800; color: #64b5f6;">0 cajas</div>
+                    </div>
                 </div>
-                <div style="font-size: 14px;">
-                    Total bultos: <strong id="colectaTotalUnits" style="color: var(--accent); font-size: 17px;">0 un.</strong>
+
+                <!-- Cronograma de Pasos para MercadoLibre -->
+                <div class="colecta-timeline-bar" id="colectaTimelineBar" style="margin-bottom: 10px; padding: 6px 12px;">
+                    <div class="timeline-step">
+                        <span class="step-num">1</span>
+                        <div><strong>Pedir Turno / Colecta</strong><br><span id="timelineAskDate" style="color: var(--accent); font-weight: 700;">HOY</span></div>
+                    </div>
+                    <div class="timeline-arrow">→</div>
+                    <div class="timeline-step">
+                        <span class="step-num">2</span>
+                        <div><strong>Retiro por Galpón</strong><br><span id="timelinePickupDate" style="color: var(--text2);">En 48 hs</span></div>
+                    </div>
+                    <div class="timeline-arrow">→</div>
+                    <div class="timeline-step">
+                        <span class="step-num">3</span>
+                        <div><strong>Disponible en Villa Celina</strong><br><span id="timelineArrivalDate" style="color: var(--text2);">Antes del quiebre</span></div>
+                    </div>
+                </div>
+
+                <div class="modal-body-scroll" style="margin: 6px 0 10px 0;">
+                    <table class="colecta-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 35px; text-align: center;">
+                                    <input type="checkbox" id="checkAllColecta" checked onchange="toggleSelectAllColecta(this.checked)">
+                                </th>
+                                <th>Producto / SKU / Publicación</th>
+                                <th style="text-align: right; width: 85px;">Stock Full</th>
+                                <th style="text-align: right; width: 80px;">Ritmo (VPD)</th>
+                                <th style="text-align: right; width: 85px;">Sugerido</th>
+                                <th style="text-align: center; width: 105px;">Unidades a Mandar</th>
+                                <th style="text-align: center; width: 95px;" title="Unidades por caja máster">Un. / Caja</th>
+                                <th style="text-align: center; width: 85px;">Cajas Est.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="colectaTableBody">
+                            <!-- Inyectado por app.js -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Observaciones para el Chofer / Transporte -->
+                <div style="margin-bottom: 10px;">
+                    <input type="text" id="colectaCarrierNotes" placeholder="Observaciones para el chofer o transporte (opcional, ej: Chofer Marcos - Camioneta Kangoo)..." 
+                           class="filter-input" style="width: 100%; font-size: 12px; padding: 7px 12px;">
+                </div>
+
+                <!-- Acciones Inferiores -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 8px;">
+                    <div style="display: flex; gap: 6px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="copiarListaColecta()">
+                            Copiar Lista
+                        </button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="exportarColectaCSV()">
+                            Descargar CSV (Excel)
+                        </button>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
+                        <button type="button" class="btn" style="background: var(--accent); color: #111; font-weight: 800;" onclick="confirmarDespachoColecta()">
+                            📦 Generar Envío y Remito Oficial
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Cronograma de Pasos para MercadoLibre -->
-            <div class="colecta-timeline-bar" id="colectaTimelineBar">
-                <div class="timeline-step">
-                    <span class="step-num">1</span>
-                    <div><strong>Pedir Colecta en MeLi</strong><br><span id="timelineAskDate" style="color: var(--accent); font-weight: 700;">PEDIR HOY</span></div>
+            <!-- ── VISTA 2: Historial de Envíos Realizados ── -->
+            <div id="colectaTabHistorial" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <span style="font-size: 13px; color: var(--text2);">Envíos de reposición generados y su estado de entrega en Villa Celina:</span>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="cargarHistorialColectas()">Actualizar Historial</button>
                 </div>
-                <div class="timeline-arrow">→</div>
-                <div class="timeline-step">
-                    <span class="step-num">2</span>
-                    <div><strong>Retiro por tu galpón</strong><br><span id="timelinePickupDate" style="color: var(--text2);">En 48 hs</span></div>
-                </div>
-                <div class="timeline-arrow">→</div>
-                <div class="timeline-step">
-                    <span class="step-num">3</span>
-                    <div><strong>Disponible en depósito</strong><br><span id="timelineArrivalDate" style="color: var(--text2);">Antes del quiebre</span></div>
-                </div>
-            </div>
 
-            <div class="modal-body-scroll">
-                <table class="colecta-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 35px; text-align: center;">
-                                <input type="checkbox" id="checkAllColecta" checked onchange="toggleSelectAllColecta(this.checked)">
-                            </th>
-                            <th>Producto / SKU</th>
-                            <th style="text-align: right;">Stock Actual</th>
-                            <th style="text-align: right;">Venta Diaria</th>
-                            <th style="text-align: right;">Demora Flete</th>
-                            <th style="text-align: center; width: 110px;">Unidades a Mandar</th>
-                        </tr>
-                    </thead>
-                    <tbody id="colectaTableBody">
-                        <!-- Inyectado por app.js -->
-                    </tbody>
-                </table>
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
-                <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-secondary btn-sm" onclick="copiarListaColecta()">
-                        Copiar Lista
-                    </button>
-                    <button class="btn btn-secondary btn-sm" onclick="exportarColectaCSV()">
-                        Descargar CSV (Excel)
-                    </button>
-                    <button class="btn btn-secondary btn-sm" onclick="imprimirColecta()">
-                        Imprimir Remito
-                    </button>
+                <div class="modal-body-scroll" style="margin: 0 0 10px 0;">
+                    <div id="colectaHistorialContainer">
+                        <div style="text-align: center; padding: 40px; color: var(--text2);">
+                            Cargando historial de envíos...
+                        </div>
+                    </div>
                 </div>
-                <div style="display: flex; gap: 10px;">
+
+                <div style="display: flex; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--border);">
                     <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
-                    <button type="button" class="btn" onclick="confirmarDespachoColecta()">Confirmar Despacho</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal Comercial: Upgrade a Módulo Colectas Full (Paywall Monetizable) ── -->
+    <div id="modalInboundUpgrade" class="modal-overlay" style="display: none; align-items: center; justify-content: center; z-index: 1500;">
+        <div class="modal-card" style="max-width: 520px; width: 92%; padding: 26px; text-align: center; border: 1.5px solid var(--border-hover);">
+            <div style="font-size: 42px; margin-bottom: 6px;">📦⚡</div>
+            <h3 style="color: var(--accent); font-size: 21px; font-weight: 800; margin-bottom: 6px;">
+                Módulo Pago: Envíos & Colectas a Full
+            </h3>
+            <p style="font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 16px;">
+                Automatizá la preparación de despachos hacia el depósito de Mercado Libre en Villa Celina, generá remitos oficiales con código de barras y eliminá quiebres de stock.
+            </p>
+            <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; text-align: left; margin-bottom: 18px; font-size: 12.5px; line-height: 1.6;">
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <span style="color: var(--accent); font-weight: 700;">✔</span>
+                    <span><strong>Remitos Oficiales A4 con Código de Barras y QR</strong> listos para chofer y control de depósito.</span>
+                </div>
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <span style="color: var(--accent); font-weight: 700;">✔</span>
+                    <span><strong>Cálculo Inteligente de Cajas Máster y Bultos</strong> para recepción acelerada en Villa Celina.</span>
+                </div>
+                <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                    <span style="color: var(--accent); font-weight: 700;">✔</span>
+                    <span><strong>Trazabilidad de Mercadería en Tránsito</strong> y silenciado preventivo de alarmas durante el viaje.</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <span style="color: var(--accent); font-weight: 700;">✔</span>
+                    <span><strong>Historial y Auditoría Permanente</strong> de todos los despachos realizados.</span>
+                </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <button type="button" class="btn" style="background: #25d366; color: #fff; font-weight: 800; padding: 12px; font-size: 13.5px; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="solicitarActivacionInboundWhatsApp()">
+                    <span>💬 Solicitar Activación por WhatsApp</span>
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="cerrarModalInboundUpgrade()">
+                    Cerrar y continuar simulando
+                </button>
             </div>
         </div>
     </div>
@@ -993,9 +1104,10 @@
                     <thead style="background: var(--surface); position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--border);">
                         <tr>
                             <th style="padding: 10px 12px; font-weight: 700; color: var(--text);">Cliente / Cuenta</th>
-                            <th style="padding: 10px 12px; font-weight: 700; color: var(--text); text-align: center; width: 110px;">Pedidos</th>
-                            <th style="padding: 10px 12px; font-weight: 700; color: var(--text); text-align: center; width: 110px;">Full</th>
-                            <th style="padding: 10px 12px; font-weight: 700; color: var(--text); text-align: center; width: 110px;">Bloqueado</th>
+                            <th style="padding: 10px 12px; font-weight: 700; color: var(--text); text-align: center; width: 95px;">Pedidos</th>
+                            <th style="padding: 10px 12px; font-weight: 700; color: var(--text); text-align: center; width: 95px;">Full</th>
+                            <th style="padding: 10px 12px; font-weight: 700; color: var(--text); text-align: center; width: 95px;" title="Módulo Pago de Colectas e Inbound">Colectas</th>
+                            <th style="padding: 10px 12px; font-weight: 700; color: var(--text); text-align: center; width: 95px;">Bloqueado</th>
                             <th style="padding: 10px 12px; font-weight: 700; color: var(--text);">Observaciones / Notas</th>
                             <th style="padding: 10px 12px; font-weight: 700; color: var(--text); text-align: right; width: 90px;">Acción</th>
                         </tr>
@@ -1020,8 +1132,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261012_1"></script>
-    <script src="js/notifications.js?v=20261012_1"></script>
-    <script src="js/app.js?v=20261012_1"></script>
+    <script src="js/theme.js?v=20261012_2"></script>
+    <script src="js/notifications.js?v=20261012_2"></script>
+    <script src="js/app.js?v=20261012_2"></script>
 </body>
 </html>

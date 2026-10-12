@@ -734,6 +734,7 @@
                 <th>Email</th><th>Nombre</th><th>Negocio</th><th>Teléfono</th>
                 <th title="Habilitado para EnvioBot Pedidos" style="text-align:center;">Pedidos</th>
                 <th title="Habilitado para EnvioBot Full" style="text-align:center;">Full</th>
+                <th title="Módulo Pago de Colectas e Inbound Full" style="text-align:center;">Colectas</th>
                 <th title="Cuenta bloqueada" style="text-align:center;">Bloqueado</th>
                 <th>Observaciones</th>
                 <th>Rubro</th>
@@ -1799,6 +1800,9 @@
             </td>
             <td style="text-align:center;">
               <input type="checkbox" ${u.has_full ? 'checked' : ''} onchange="updateUser(${u.id}, {has_full: this.checked ? 1 : 0})" title="Habilitar/deshabilitar Full">
+            </td>
+            <td style="text-align:center;">
+              <input type="checkbox" ${u.has_inbound ? 'checked' : ''} onchange="updateUser(${u.id}, {has_inbound: this.checked ? 1 : 0})" title="Habilitar/deshabilitar Colectas Full">
             </td>
             <td style="text-align:center;">
               <input type="checkbox" ${u.is_blocked ? 'checked' : ''} onchange="updateUser(${u.id}, {is_blocked: this.checked ? 1 : 0})" title="Bloquear cuenta">
