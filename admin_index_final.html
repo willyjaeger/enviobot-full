@@ -73,22 +73,24 @@
 
   /* Separación de Secciones en Sidebar */
   .sidebar-section {
-    font-size: 10px;
+    font-size: 10.5px;
     text-transform: uppercase;
-    letter-spacing: 0.9px;
-    font-weight: 800;
-    padding: 14px 20px 4px;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    padding: 16px 20px 6px;
     display: flex;
     align-items: center;
     gap: 7px;
     white-space: nowrap;
-    border-top: 1px solid rgba(255,255,255,0.04);
+    border-top: 1px solid rgba(255,255,255,0.05);
     margin-top: 6px;
+    color: #64748b;
   }
   .sidebar-section:first-of-type { border-top: none; margin-top: 0; }
   .sidebar-section.full { color: #f5a623; }
   .sidebar-section.pedidos { color: #38bdf8; }
-  .sidebar-section.general { color: var(--text2); }
+  .sidebar-section.general { color: #64748b; }
+  .nav-icon { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; opacity: 0.9; }
 
   /* Tab Buttons y Tag Pills para WhatsApp */
   .tab-btn {
@@ -236,51 +238,109 @@
         <div class="sidebar-badge">Admin</div>
 
     <!-- SECCIÓN 1: ENVIOBOT FULL -->
-    <div class="sidebar-section full">📦 ENVIOBOT FULL</div>
+    <div class="sidebar-section full">ENVIOBOT FULL</div>
     <div class="nav-item active" data-panel="panelWhatsAppFull" onclick="showPanel('panelWhatsAppFull')">
-      <span style="color:#25d366;font-size:14px;">💬</span> WhatsApp y Alertas Full
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#25d366" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path>
+      </svg>
+      <span>WhatsApp y Alertas Full</span>
     </div>
     <div class="nav-item" data-panel="panelEmailFull" onclick="showPanel('panelEmailFull')">
-      <span style="color:#f5a623;font-size:14px;">✉️</span> Email Alertas Full
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+        <polyline points="3 7 12 13 21 7"></polyline>
+      </svg>
+      <span>Email Alertas Full</span>
     </div>
     <div class="nav-item" data-panel="panelUsersFull" onclick="showPanel('panelUsersFull')">
-      <span style="color:#f5a623;font-size:14px;">🏢</span> Clientes y Stock Full
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+        <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+        <line x1="12" y1="21.1" x2="12" y2="12"></line>
+      </svg>
+      <span>Clientes y Stock Full</span>
     </div>
 
     <!-- SECCIÓN 2: ENVIOBOT PEDIDOS -->
-    <div class="sidebar-section pedidos">🏷️ ENVIOBOT PEDIDOS</div>
+    <div class="sidebar-section pedidos">ENVIOBOT PEDIDOS</div>
     <div class="nav-item" data-panel="panelUsers" onclick="showPanel('panelUsers')">
-      <span style="color:#38bdf8;font-size:14px;">👥</span> Usuarios y Suscripciones
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+      </svg>
+      <span>Usuarios y Suscripciones</span>
     </div>
     <div class="nav-item" data-panel="panelFeatures" onclick="showPanel('panelFeatures')">
-      <span style="color:#38bdf8;font-size:14px;">⚡</span> Funcionalidades por cliente
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
+        <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
+        <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line>
+      </svg>
+      <span>Funcionalidades por cliente</span>
     </div>
     <div class="nav-item" data-panel="panelStats" onclick="showPanel('panelStats')">
-      <span style="color:#38bdf8;font-size:14px;">📊</span> Estadísticas de venta
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="20" x2="18" y2="10"></line>
+        <line x1="12" y1="20" x2="12" y2="4"></line>
+        <line x1="6" y1="20" x2="6" y2="14"></line>
+      </svg>
+      <span>Estadísticas de venta</span>
     </div>
     <div class="nav-item" data-panel="panelLeads" onclick="showPanel('panelLeads')">
-      <span style="color:#38bdf8;font-size:14px;">🏷️</span> Compradores MeLi (Leads)
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path>
+        <circle cx="7" cy="7" r="1.5"></circle>
+      </svg>
+      <span>Compradores MeLi (Leads)</span>
     </div>
     <div class="nav-item" data-panel="panelPlans" onclick="showPanel('panelPlans')">
-      <span style="color:#38bdf8;font-size:14px;">💳</span> Planes y precios (Pedidos)
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+        <line x1="2" y1="10" x2="22" y2="10"></line>
+      </svg>
+      <span>Planes y precios (Pedidos)</span>
     </div>
 
-    <!-- SECCIÓN 3: GENERAL Y PLATAFORMA -->
-    <div class="sidebar-section general">⚙️ PLATAFORMA</div>
+    <!-- SECCIÓN 3: SISTEMA Y PLATAFORMA -->
+    <div class="sidebar-section general">SISTEMA Y PLATAFORMA</div>
     <div class="nav-item" data-panel="panelEmail" onclick="showPanel('panelEmail')">
-      <span>✉️</span> Mail de Bienvenida (Hola)
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+        <polyline points="3 7 12 13 21 7"></polyline>
+      </svg>
+      <span>Mail de Bienvenida (Hola)</span>
     </div>
     <div class="nav-item" data-panel="panelPartners" onclick="showPanel('panelPartners')">
-      <span>🤝</span> Partners
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+      </svg>
+      <span>Partners</span>
     </div>
     <div class="nav-item" data-panel="panelTestimonials" onclick="showPanel('panelTestimonials')">
-      <span>⭐</span> Testimonios
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+      </svg>
+      <span>Testimonios</span>
     </div>
     <div class="nav-item" data-panel="panelAdmins" onclick="showPanel('panelAdmins')">
-      <span>🛡️</span> Administradores
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+      </svg>
+      <span>Administradores</span>
     </div>
     <div class="nav-item" data-panel="panelDB" onclick="showPanel('panelDB')">
-      <span>🗄️</span> Base de datos
+      <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+      </svg>
+      <span>Base de datos</span>
     </div>
 <div class="sidebar-footer">
       <div class="sidebar-user" id="sidebarUser"></div>
@@ -298,7 +358,7 @@
           <span id="waStatusBadge" style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:100px;font-size:12px;font-weight:600;background:rgba(255,255,255,0.06);color:var(--text2);">
             <span style="width:8px;height:8px;border-radius:50%;background:#888;"></span> Consultando estado...
           </span>
-          <button class="btn btn-sm btn-ghost" onclick="loadWhatsAppStatus(true)" title="Refrescar estado">🔄 Refrescar</button>
+          <button class="btn btn-sm btn-ghost" onclick="loadWhatsAppStatus(true)" title="Refrescar estado"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px;"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> Refrescar</button>
         </div>
       </div>
       <div class="page-sub">
@@ -310,7 +370,7 @@
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px;margin-bottom:16px;">
           <div>
             <h3 style="display:flex;align-items:center;gap:8px;margin:0 0 6px;">
-              <span style="color:#25d366;font-size:18px;">📱</span> 1. Vinculación del Dispositivo y Proveedor
+              1. Vinculación del Dispositivo y Proveedor
             </h3>
             <div style="font-size:12.5px;color:var(--text2);line-height:1.6;">
               Escaneá el código QR desde tu celular con WhatsApp Business (<b>+54 9 11 2859 4631</b>) para que el bot empiece a despachar las alertas de inmediato con costo $0.
@@ -337,7 +397,7 @@
               En tu celular: <b>WhatsApp &gt; Ajustes &gt; Dispositivos vinculados &gt; Vincular un dispositivo</b>
             </div>
             <div style="display:flex;gap:8px;justify-content:center;">
-              <button class="btn btn-sm btn-ghost" onclick="restartWhatsAppSession()">🔄 Generar Nuevo QR</button>
+              <button class="btn btn-sm btn-ghost" onclick="restartWhatsAppSession()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px;"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg> Generar Nuevo QR</button>
             </div>
           </div>
 
@@ -372,7 +432,7 @@
             </div>
             <div style="display:flex;gap:10px;margin-top:14px;">
               <button class="btn btn-sm" onclick="saveWhatsAppConnection()">Guardar Conexión</button>
-              <button class="btn btn-sm btn-ghost" onclick="testWhatsAppConnection()">⚡ Probar Conexión con Servidor</button>
+              <button class="btn btn-sm btn-ghost" onclick="testWhatsAppConnection()">Probar Conexión con Servidor</button>
             </div>
             <div id="waConnMsg" style="font-size:12.5px;margin-top:10px;min-height:16px;"></div>
           </div>
@@ -383,7 +443,7 @@
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
           <div>
-            <h3 style="margin:0 0 4px;">👥 2. Destinatarios y Múltiples Teléfonos</h3>
+            <h3 style="margin:0 0 4px;">2. Destinatarios y Múltiples Teléfonos</h3>
             <div style="font-size:12.5px;color:var(--text2);">
               Configurá todos los teléfonos que recibirán las alertas (Dueño, Compras, Encargado de Depósito, Logística).
             </div>
@@ -419,18 +479,18 @@
 
       <!-- TARJETA 3: TEXTOS DE LOS MENSAJES (PLANTILLAS CONFIGURABLES) -->
       <div class="card">
-        <h3 style="margin:0 0 4px;">📝 3. Textos de los Mensajes (Plantillas Editables)</h3>
+        <h3 style="margin:0 0 4px;">3. Plantillas de Mensajes</h3>
         <div style="font-size:12.5px;color:var(--text2);margin-bottom:14px;">
           Personalizá exactamente lo que dice cada aviso. Tocá cualquier etiqueta para insertarla en el mensaje donde esté el cursor.
         </div>
 
         <!-- Pestañas de plantillas -->
         <div style="display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:14px;">
-          <button class="tab-btn active" id="tabBtn_preventiva" onclick="switchWaTemplate('preventiva')">🟡 Alerta Preventiva</button>
-          <button class="tab-btn" id="tabBtn_colecta" onclick="switchWaTemplate('colecta')">🚚 Colecta Hoy</button>
-          <button class="tab-btn" id="tabBtn_critica" onclick="switchWaTemplate('critica')">🔴 Alerta Crítica</button>
-          <button class="tab-btn" id="tabBtn_resumen_diario" onclick="switchWaTemplate('resumen_diario')">📋 Resumen Diario</button>
-          <button class="tab-btn" id="tabBtn_verificacion" onclick="switchWaTemplate('verificacion')">📲 Verificación / Bienvenida</button>
+          <button class="tab-btn active" id="tabBtn_preventiva" onclick="switchWaTemplate('preventiva')">Alerta Preventiva</button>
+          <button class="tab-btn" id="tabBtn_colecta" onclick="switchWaTemplate('colecta')">Colecta Hoy</button>
+          <button class="tab-btn" id="tabBtn_critica" onclick="switchWaTemplate('critica')">Alerta Crítica</button>
+          <button class="tab-btn" id="tabBtn_resumen_diario" onclick="switchWaTemplate('resumen_diario')">Resumen Diario</button>
+          <button class="tab-btn" id="tabBtn_verificacion" onclick="switchWaTemplate('verificacion')">Verificación WhatsApp</button>
         </div>
 
         <!-- Variables clicables -->
@@ -479,7 +539,7 @@
 
       <!-- TARJETA 4: FRECUENCIA, CADENCIA Y LÍMITES -->
       <div class="card">
-        <h3 style="margin:0 0 4px;">⏱️ 4. Cadencia, Frecuencia y Límites ("Cuántos Mensajes")</h3>
+        <h3 style="margin:0 0 4px;">4. Cadencia, Frecuencia y Límites</h3>
         <div style="font-size:12.5px;color:var(--text2);margin-bottom:14px;">
           Configurá con qué frecuencia se revisan los quiebres, horas de cooldown para no saturar y protección contra bloqueos de WhatsApp.
         </div>
@@ -525,7 +585,7 @@
 
       <!-- TARJETA 5: DISPARADOR MANUAL Y PRUEBA EN VIVO -->
       <div class="card">
-        <h3 style="margin:0 0 4px;">🚀 5. Prueba Directa y Disparador en Vivo</h3>
+        <h3 style="margin:0 0 4px;">5. Prueba Directa y Disparador en Vivo</h3>
         <div style="font-size:12.5px;color:var(--text2);margin-bottom:14px;">
           Mandá un mensaje libre para comprobar la recepción en tu teléfono, o ejecutá el motor completo de cálculo de quiebres ahora mismo.
         </div>
@@ -533,14 +593,14 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:16px;align-items:end;">
           <div>
             <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Teléfono de prueba</label>
-            <input type="text" id="waTestPhone" value="+54 9 11 2859 4631" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+            <input type="text" id="waTestPhone" value="+54 9 11 5096 0086" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
           </div>
           <div>
             <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Texto del mensaje</label>
-            <input type="text" id="waTestMessage" value="Hola! Prueba de conexión exitosa desde EnvioBot Full 📦🟢" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+            <input type="text" id="waTestMessage" value="EnvioBot Full: Verificación de conectividad y canal de alertas." style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
           </div>
           <div>
-            <button class="btn" style="width:100%;" onclick="sendDirectWhatsAppTest()">⚡ Enviar WhatsApp de Prueba</button>
+            <button class="btn" style="width:100%;" onclick="sendDirectWhatsAppTest()">Enviar WhatsApp de Prueba</button>
           </div>
         </div>
         <div id="waTestDirectMsg" style="font-size:12.5px;margin-top:8px;min-height:16px;"></div>
@@ -550,7 +610,7 @@
             <div style="font-weight:600;font-size:13px;">Ejecutar motor de alertas en vivo</div>
             <div style="font-size:12px;color:var(--text2);">Calcula los quiebres de todos los clientes y despacha las notificaciones ahora mismo.</div>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="triggerAlertsEngineNow()">🚀 Disparar Chequeo de Alertas Ya</button>
+          <button class="btn btn-ghost btn-sm" onclick="triggerAlertsEngineNow()">Disparar Chequeo de Alertas Ya</button>
         </div>
         <div id="waTriggerEngineMsg" style="font-size:12.5px;margin-top:8px;min-height:16px;"></div>
       </div>
@@ -558,7 +618,7 @@
       <!-- TARJETA 6: HISTORIAL DE ENVÍOS EN VIVO (LOGS) -->
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h3 style="margin:0;">📊 6. Historial de Alertas Enviadas (Logs en Vivo)</h3>
+          <h3 style="margin:0;">6. Historial de Alertas Enviadas (Logs en Vivo)</h3>
           <button class="btn btn-sm btn-ghost" onclick="loadAlertLogs()">Refrescar Logs</button>
         </div>
         <div class="table-wrap">
@@ -2509,19 +2569,19 @@
 
       if (data.status === 'open') {
         const phone = data.phone || '+54 9 11 2859 4631';
-        badge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:#25d366;"></span> 🟢 Conectado (+${phone.replace(/^\+/, '')})`;
+        badge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:#25d366;"></span> Conectado (+${phone.replace(/^\+/, '')})`;
         badge.style.background = 'rgba(37,211,102,0.12)';
         badge.style.color = '#25d366';
         qrContainer.innerHTML = `
           <div style="padding:20px;text-align:center;">
-            <div style="font-size:36px;margin-bottom:8px;">✅</div>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#25d366" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:8px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             <div style="font-weight:700;color:#25d366;font-size:14px;margin-bottom:4px;">WhatsApp Vinculado Exitosamente</div>
             <div style="font-size:12px;color:var(--text2);">Línea oficial activa: <b>+${phone.replace(/^\+/, '')}</b></div>
           </div>
         `;
         qrHint.textContent = 'El servicio está enviando alertas automáticamente desde este dispositivo.';
       } else if (data.status === 'simulation') {
-        badge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:#a855f7;"></span> 🟣 Modo Simulación`;
+        badge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:#a855f7;"></span> Modo Simulación`;
         badge.style.background = 'rgba(168,85,247,0.12)';
         badge.style.color = '#c084fc';
         qrContainer.innerHTML = `
@@ -2531,7 +2591,7 @@
         `;
         qrHint.textContent = 'Para envíos reales cambiá el proveedor a Micro-Gateway Local o Evolution API.';
       } else {
-        badge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:#f5a623;"></span> 🟡 Esperando escaneo QR`;
+        badge.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:#f5a623;"></span> Esperando escaneo QR`;
         badge.style.background = 'rgba(245,166,35,0.12)';
         badge.style.color = '#f5a623';
 
@@ -2667,8 +2727,8 @@
           <input type="checkbox" ${r.active !== false ? 'checked' : ''} onchange="waRecipientsList[${i}].active = this.checked" style="accent-color:#25d366;">
         </td>
         <td style="text-align:center;white-space:nowrap;">
-          <button class="btn btn-sm btn-ghost" onclick="testRecipientPhone('${escapeHtml(r.phone)}')" title="Enviar WhatsApp de prueba">⚡ Probar</button>
-          <button class="btn btn-sm btn-ghost" onclick="deleteRecipient(${i})" title="Eliminar" style="color:#e05656;">🗑️</button>
+          <button class="btn btn-sm btn-ghost" onclick="testRecipientPhone('${escapeHtml(r.phone)}')" title="Enviar WhatsApp de prueba">Probar</button>
+          <button class="btn btn-sm btn-ghost" onclick="deleteRecipient(${i})" title="Eliminar" style="color:var(--text2);"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>
         </td>
       </tr>
     `).join('');
@@ -2742,7 +2802,7 @@
 
   async function testRecipientPhone(phone) {
     if (!phone) return;
-    const msg = prompt('Ingresá el mensaje de prueba a enviar:', 'Hola! Prueba de verificación de WhatsApp desde EnvioBot Full 📦🟢');
+    const msg = prompt('Ingresá el mensaje de prueba a enviar:', 'EnvioBot Full: Mensaje de comprobación de línea receptora.');
     if (!msg) return;
     const res = await api('/admin/whatsapp/test-send', {
       method: 'POST',
@@ -3036,7 +3096,7 @@
 <div id="addRecipientModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:100;align-items:center;justify-content:center;">
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px;max-width:480px;width:92%;box-shadow:0 12px 36px rgba(0,0,0,0.6);">
     <h3 style="margin:0 0 14px;font-size:15px;display:flex;align-items:center;gap:8px;">
-      <span style="color:#25d366;">📱</span> Agregar Destinatario de WhatsApp
+      Agregar Destinatario de WhatsApp
     </h3>
     <div style="display:flex;flex-direction:column;gap:12px;">
       <div>
@@ -3045,7 +3105,7 @@
       </div>
       <div>
         <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Teléfono WhatsApp (formato internacional)</label>
-        <input type="text" id="newRecPhone" placeholder="+54 9 11 2859 4631" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
+        <input type="text" id="newRecPhone" placeholder="+54 9 11 5096 0086" style="width:100%;padding:9px 10px;background:var(--surf2);border:1px solid var(--border);color:var(--text);border-radius:6px;">
       </div>
       <div>
         <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:5px;">Rol</label>
@@ -3060,16 +3120,16 @@
         <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:6px;">Alertas que debe recibir:</label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="newRecPreventive" checked style="accent-color:#f5a623;"> 🟡 Preventiva
+            <input type="checkbox" id="newRecPreventive" checked style="accent-color:#f5a623;"> Preventiva
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="newRecColecta" checked style="accent-color:#f5a623;"> 🚚 Colecta Hoy
+            <input type="checkbox" id="newRecColecta" checked style="accent-color:#f5a623;"> Colecta Hoy
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="newRecCritical" checked style="accent-color:#e05656;"> 🔴 Crítica
+            <input type="checkbox" id="newRecCritical" checked style="accent-color:#e05656;"> Alerta Crítica
           </label>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
-            <input type="checkbox" id="newRecDigest" checked style="accent-color:#38bdf8;"> 📋 Resumen Diario
+            <input type="checkbox" id="newRecDigest" checked style="accent-color:#38bdf8;"> Resumen Diario
           </label>
         </div>
       </div>
