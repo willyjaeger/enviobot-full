@@ -1406,22 +1406,37 @@ async function crearEnvioInboundBackend() {
         }
 
         const shipment = data.shipment;
-        alert(`¡Colecta ${shipment.shipment_code} creada con éxito!\n\nSe programaron ${shipment.total_units} unidades en ${shipment.total_boxes} bultos hacia Villa Celina.`);
+        showToast(`Colecta ${shipment.shipment_code} creada con éxito: ${shipment.total_units} unidades en ${shipment.total_boxes} bultos hacia Villa Celina.`, 'success');
 
-        // Abrir Remito oficial en pestaña nueva para imprimir
-        window.open(`${API_BASE}/full/inbound/shipments/${shipment.id}/remito-html`, '_blank');
+        // Abrir Remito oficial en pestaña nueva para imprimir (autenticado)
+        abrirRemitoOficial(shipment.id);
+
+        // Actualizar tabla principal de stock para reflejar mercadería en tránsito
+        cargarDatos();
 
         // Cambiar a la pestaña de Historial
         switchColectaTab('historial');
     } catch (err) {
-        alert("Error de conexión al crear el envío: " + err.message);
+        showToast("Error de conexión al crear el envío: " + err.message, "error");
     }
+}
+
+function abrirRemitoOficial(shipmentId) {
+    const token = getToken();
+    const url = `${API_BASE}/full/inbound/shipments/${shipmentId}/remito-html?token=${encodeURIComponent(token || '')}`;
+    window.open(url, '_blank');
+}
+
+function abrirHistorialColectas() {
+    abrirModalColecta();
+    switchColectaTab('historial');
 }
 
 async function cargarHistorialColectas(soloBadge = false) {
     const token = getToken();
     const container = document.getElementById('colectaHistorialContainer');
     const badge = document.getElementById('colectaHistorialBadge');
+    const topBadge = document.getElementById('topbarHistorialBadge');
     if (!token) return;
 
     try {
@@ -1432,6 +1447,7 @@ async function cargarHistorialColectas(soloBadge = false) {
         if (data.ok && Array.isArray(data.shipments)) {
             inboundShipmentsList = data.shipments;
             if (badge) badge.textContent = inboundShipmentsList.length;
+            if (topBadge) topBadge.textContent = inboundShipmentsList.length;
 
             if (soloBadge) return;
 
@@ -1439,7 +1455,11 @@ async function cargarHistorialColectas(soloBadge = false) {
             if (inboundShipmentsList.length === 0) {
                 container.innerHTML = `
                     <div style="text-align: center; padding: 40px; color: var(--text2);">
-                        <div style="font-size: 32px; margin-bottom: 8px;">📦</div>
+                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; margin-bottom: 8px;">
+                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                        </svg><br>
                         <strong>No hay envíos registrados todavía.</strong><br>
                         Planificá tu primer despacho desde la pestaña "Planificar Nuevo Envío".
                     </div>
@@ -1471,8 +1491,8 @@ async function cargarHistorialColectas(soloBadge = false) {
                                 </div>
                             </div>
                             <div style="display: flex; gap: 6px;">
-                                <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="window.open('${API_BASE}/full/inbound/shipments/${sh.id}/remito-html', '_blank')">
-                                    🖨️ Ver Remito Oficial
+                                <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="abrirRemitoOficial(${sh.id})">
+                                    Ver Remito Oficial
                                 </button>
                                 <select onchange="cambiarEstadoEnvioInbound(${sh.id}, this.value)" class="filter-select" style="padding: 4px 8px; font-size: 11px;">
                                     <option value="scheduled" ${sh.status === 'scheduled' ? 'selected' : ''}>Programado</option>
@@ -3620,6 +3640,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (hasActiveSession) {
         await cargarSettingsBackend();
         cargarDatos();
+        cargarHistorialColectas(true);
     }
 
     // 7. Verificar visibilidad del botón de instalación de aplicación en escritorio

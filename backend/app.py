@@ -2477,10 +2477,30 @@ def delete_inbound_shipment(shipment_id):
     return jsonify({"ok": True, "message": "Envío eliminado correctamente."}), 200
 
 @app.route("/api/full/inbound/shipments/<int:shipment_id>/remito-html", methods=["GET"])
-@jwt_required()
 def get_inbound_shipment_remito_html(shipment_id):
     """Genera la vista imprimible A4 del Remito Oficial de Colecta con códigos de barras."""
-    user_id = int(get_jwt_identity())
+    user_id = None
+    token = request.args.get("token")
+    if token:
+        try:
+            from flask_jwt_extended import decode_token
+            decoded = decode_token(token)
+            user_id = int(decoded.get("sub"))
+        except Exception:
+            user_id = None
+
+    if not user_id:
+        from flask_jwt_extended import verify_jwt_in_request, get_jwt_identity
+        try:
+            verify_jwt_in_request(optional=True)
+            ident = get_jwt_identity()
+            if ident:
+                user_id = int(ident)
+        except Exception:
+            pass
+
+    if not user_id:
+        return "<h3>Acceso no autorizado. Por favor iniciá sesión en EnvioBot Full.</h3>", 401
     conn = get_db()
     account_id = get_account_user_id(user_id, conn)
     with conn.cursor() as cur:

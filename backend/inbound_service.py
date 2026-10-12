@@ -350,7 +350,7 @@ def render_remito_html(shipment: dict, items: list) -> str:
         <div>
             <strong>Hoja de Despacho y Remito Oficial Full</strong> — Listo para imprimir en hoja A4 y entregar al transportista / depósito MeLi.
         </div>
-        <button class="print-btn" onclick="window.print()">🖨️ Imprimir Remito / Guardar PDF</button>
+        <button class="print-btn" onclick="window.print()">Imprimir Remito / Guardar PDF</button>
     </div>
 
     <div class="remito-card">
