@@ -40,7 +40,7 @@ def generate_barcode_svg(code_text: str) -> str:
     svg += '</svg>'
     return svg
 
-def render_remito_html(shipment: dict, items: list) -> str:
+def render_remito_html(shipment: dict, items: list, branding: dict = None) -> str:
     """Genera el remito oficial de entrega a Mercado Envíos Full listo para imprimir en A4."""
     code = shipment.get("shipment_code", "COL-FULL-PENDING")
     barcode_svg = generate_barcode_svg(code)
@@ -60,6 +60,50 @@ def render_remito_html(shipment: dict, items: list) -> str:
     telefono = shipment.get("phone") or ""
     notas = shipment.get("carrier_notes") or "Sin observaciones particulares de transporte."
     
+    # Co-Branding & Personalización de Marca
+    branding = branding or {}
+    brand_enabled = bool(branding.get("brand_enabled"))
+    brand_name = html.escape(branding.get("brand_name") or vendedor_nombre)
+    brand_logo = branding.get("brand_logo_url") or ""
+    brand_show_powered = bool(branding.get("brand_show_powered_by", True))
+
+    if brand_enabled and brand_logo:
+        powered_html = """
+            <div style="display: inline-flex; align-items: center; gap: 6px; background: transparent; border: none; padding: 0;">
+                <span style="font-size: 9.5px; font-weight: 500; color: #666; letter-spacing: 0.2px; text-transform: lowercase;">powered by</span>
+                <span style="width: 1px; height: 11px; background: #ccc; display: inline-block;"></span>
+                <span style="display: inline-flex; align-items: center; gap: 4px;">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+                        <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+                        <line x1="12" y1="21.1" x2="12" y2="12"></line>
+                    </svg>
+                    <span style="font-size: 11.5px; font-weight: 800; color: #111; letter-spacing: -0.2px; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;">EnvioBot <span style="color: #f5a623; font-weight: 800;">Full</span></span>
+                </span>
+            </div>
+        """
+        logo_box_html = f"""
+            <div class="logo-box">
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 5px; width: fit-content;">
+                    <img src="{brand_logo}" alt="Logo" style="max-height: 52px; max-width: 200px; object-fit: contain; display: block;">
+                    {powered_html}
+                </div>
+                <div style="font-size: 11px; margin-top: 4px; color: #555;">
+                    Emisión: <strong>{fecha_emision}</strong>
+                </div>
+            </div>
+        """
+    else:
+        logo_box_html = f"""
+            <div class="logo-box">
+                <h1>ENVIOBOT FULL</h1>
+                <p>Logística de Entrada & Colecta</p>
+                <div style="font-size: 11.5px; margin-top: 4px; color: #444;">
+                    Emisión: <strong>{fecha_emision}</strong>
+                </div>
+            </div>
+        """
+
     total_unidades = shipment.get("total_units", 0)
     total_bultos = shipment.get("total_boxes", 1)
     packaging_type = shipment.get("packaging_type", "cajas_master")
@@ -115,7 +159,7 @@ def render_remito_html(shipment: dict, items: list) -> str:
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Remito Colecta Full - {code}</title>
+    <title>Hoja de Despacho Colecta Full - {code}</title>
     <style>
         @page {{
             size: A4 portrait;
@@ -190,20 +234,22 @@ def render_remito_html(shipment: dict, items: list) -> str:
         .doc-type-box {{
             text-align: center;
             border: 1.5px solid #222;
-            padding: 6px;
+            padding: 8px 12px;
             border-radius: 6px;
             background: #fafafa;
         }}
-        .doc-type-box .letter {{
-            font-size: 24px;
-            font-weight: 900;
-            line-height: 1;
-        }}
         .doc-type-box .type-title {{
-            font-size: 11px;
-            font-weight: 700;
+            font-size: 12.5px;
+            font-weight: 800;
             text-transform: uppercase;
-            margin-top: 2px;
+            letter-spacing: 0.3px;
+            color: #111;
+        }}
+        .doc-type-box .type-subtitle {{
+            font-size: 9.5px;
+            color: #555;
+            margin-top: 3px;
+            font-weight: 500;
         }}
         .barcode-box {{
             text-align: right;
@@ -348,26 +394,19 @@ def render_remito_html(shipment: dict, items: list) -> str:
 
     <div class="no-print-bar">
         <div>
-            <strong>Hoja de Despacho y Remito Oficial Full</strong> — Listo para imprimir en hoja A4 y entregar al transportista / depósito MeLi.
+            <strong>Hoja de Despacho / Colecta Full</strong> — Listo para imprimir en hoja A4 y entregar al transportista / depósito MeLi.
         </div>
-        <button class="print-btn" onclick="window.print()">Imprimir Remito / Guardar PDF</button>
+        <button class="print-btn" onclick="window.print()">Imprimir Hoja de Despacho / Guardar PDF</button>
     </div>
 
     <div class="remito-card">
         <!-- Encabezado -->
         <div class="header-grid">
-            <div class="logo-box">
-                <h1>ENVIOBOT FULL</h1>
-                <p>Logística de Entrada & Colecta</p>
-                <div style="font-size: 11.5px; margin-top: 4px; color: #444;">
-                    Emisión: <strong>{fecha_emision}</strong>
-                </div>
-            </div>
+            {logo_box_html}
 
             <div class="doc-type-box">
-                <div class="letter">R</div>
-                <div class="type-title">Remito de Colecta Full</div>
-                <div style="font-size: 10px; color: #555;">No válido como factura</div>
+                <div class="type-title">HOJA DE DESPACHO / COLECTA FULL</div>
+                <div class="type-subtitle">Control Interno para Mercado Envíos Full · No válido como factura</div>
             </div>
 
             <div class="barcode-box">

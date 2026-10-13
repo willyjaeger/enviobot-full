@@ -102,6 +102,7 @@ const BASE_ITEMS_CATALOG = [
 ];
 
 let itemsData = [];
+window.setItemsData = (items) => { itemsData = items; };
 let currentFilter = 'all';
 let currentSearch = '';
 let selectedItem = null;
@@ -550,8 +551,149 @@ function renderizarWidgetAlertas() {
     }
 }
 
-// ── Renderizado de la Tabla Principal ─────────────────────────────
+// ── Navegación Rápida por Tarjetas Superiores y Resaltado ──────────
+function actualizarCardsActivas(activeCardId) {
+    ['statCardTotal', 'statCardOk', 'statCardWarning', 'statCardCritical'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (id === activeCardId) {
+            el.classList.add('stat-active');
+        } else {
+            el.classList.remove('stat-active');
+        }
+    });
+}
+
+function irAQuiebreInminente() {
+    actualizarCardsActivas('statCardCritical');
+
+    // 1. Filtrar por crítico / sin stock
+    currentFilter = 'critical';
+    const filterSelect = document.getElementById('filterStatusSelect');
+    if (filterSelect) filterSelect.value = 'critical';
+
+    // 2. Limpiar búsqueda para asegurar visibilidad del artículo crítico
+    currentSearch = '';
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) searchInput.value = '';
+
+    // 3. Ordenar por días restantes (ascendente) para que el más urgente quede al inicio
+    currentSortColumn = 'days_left';
+    currentSortOrder = 'asc';
+
+    // 4. Renderizar la tabla con este filtro
+    renderizarTabla();
+
+    // 5. Encontrar el artículo con mayor urgencia (sin stock o quiebre inminente)
+    const critItems = itemsData.filter(it => it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
+    critItems.sort((a, b) => {
+        const daysA = a.days_left !== undefined ? a.days_left : 999;
+        const daysB = b.days_left !== undefined ? b.days_left : 999;
+        return daysA - daysB;
+    });
+
+    const targetItem = critItems[0];
+
+    // 6. Hacer scroll suave hacia ese artículo y resaltarlo con destello dorado
+    setTimeout(() => {
+        if (targetItem) {
+            const rowEl = document.getElementById(`stock_row_${targetItem.id}`);
+            if (rowEl) {
+                rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                rowEl.classList.remove('row-highlight');
+                void rowEl.offsetWidth; // Forzar reflow para reiniciar animación
+                rowEl.classList.add('row-highlight');
+                return;
+            }
+        }
+        const tableCard = document.getElementById('cardStockPrincipal');
+        if (tableCard) tableCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+}
+
+function irAEstado(estado) {
+    if (estado === 'critical') {
+        irAQuiebreInminente();
+        return;
+    }
+
+    const cardMap = {
+        'all': 'statCardTotal',
+        'ok': 'statCardOk',
+        'warning': 'statCardWarning',
+        'critical': 'statCardCritical'
+    };
+    actualizarCardsActivas(cardMap[estado] || null);
+
+    currentFilter = estado;
+    const filterSelect = document.getElementById('filterStatusSelect');
+    if (filterSelect) filterSelect.value = estado;
+
+    renderizarTabla();
+
+    setTimeout(() => {
+        if (estado === 'warning') {
+            const warnItem = itemsData.find(it => it.status === 'warning');
+            if (warnItem) {
+                const rowEl = document.getElementById(`stock_row_${warnItem.id}`);
+                if (rowEl) {
+                    rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    rowEl.classList.remove('row-highlight');
+                    void rowEl.offsetWidth;
+                    rowEl.classList.add('row-highlight');
+                    return;
+                }
+            }
+        }
+        const tableCard = document.getElementById('cardStockPrincipal');
+        if (tableCard) tableCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+}
+
+function abrirModalColectaConItem(id) {
+    abrirModalColecta(id);
+}
+
+// Exponer globalmente para eventos en HTML inline
+window.actualizarCardsActivas = actualizarCardsActivas;
+window.irAQuiebreInminente = irAQuiebreInminente;
+window.irAEstado = irAEstado;
+window.abrirModalColectaConItem = abrirModalColectaConItem;
+
+// ── Estado y Lógica de Ordenamiento de Columnas ───────────────────
+let currentSortColumn = 'days_left';
+let currentSortOrder = 'asc';
+
+function ordenarPor(columna) {
+    if (currentSortColumn === columna) {
+        currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortColumn = columna;
+        // Orden predeterminado según el tipo de columna
+        currentSortOrder = (columna === 'title') ? 'asc' : 'asc';
+    }
+    actualizarIconosOrden();
+    renderizarTabla();
+}
+
+function actualizarIconosOrden() {
+    const cols = ['title', 'current_stock', 'vpd', 'days_left', 'stockout_date', 'reorder_deadline_date', 'target_stock_days', 'status'];
+    cols.forEach(col => {
+        const icon = document.getElementById(`sort-icon-${col}`);
+        if (!icon) return;
+        if (col === currentSortColumn) {
+            icon.className = 'sort-icon active';
+            icon.textContent = currentSortOrder === 'asc' ? '▲' : '▼';
+        } else {
+            icon.className = 'sort-icon';
+            icon.textContent = '↕';
+        }
+    });
+}
+
+// ── Renderizado de la Tabla Principal (Estilo Sobrio y Despojado) ─
 function renderizarTabla() {
+    actualizarIconosOrden();
     const tbody = document.getElementById('stockTableBody');
     tbody.innerHTML = '';
 
@@ -564,6 +706,8 @@ function renderizarTabla() {
         let matchStatus = true;
         if (currentFilter === 'action_required') {
             matchStatus = it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock';
+        } else if (currentFilter === 'critical') {
+            matchStatus = it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0;
         } else if (currentFilter !== 'all') {
             matchStatus = it.status === currentFilter;
         }
@@ -576,16 +720,62 @@ function renderizarTabla() {
         return;
     }
 
+    // Ordenamiento por columna activa
+    filtrados.sort((a, b) => {
+        let valA, valB;
+        if (currentSortColumn === 'title') {
+            valA = (a.title || a.sku || '').toLowerCase();
+            valB = (b.title || b.sku || '').toLowerCase();
+            const cmp = valA.localeCompare(valB);
+            return currentSortOrder === 'asc' ? cmp : -cmp;
+        } else if (currentSortColumn === 'current_stock') {
+            valA = Number(a.current_stock !== undefined ? a.current_stock : 0);
+            valB = Number(b.current_stock !== undefined ? b.current_stock : 0);
+        } else if (currentSortColumn === 'vpd') {
+            valA = Number(a.vpd !== undefined ? a.vpd : 0);
+            valB = Number(b.vpd !== undefined ? b.vpd : 0);
+        } else if (currentSortColumn === 'days_left') {
+            valA = Number(a.days_left !== undefined ? a.days_left : 999);
+            valB = Number(b.days_left !== undefined ? b.days_left : 999);
+        } else if (currentSortColumn === 'stockout_date') {
+            valA = a.current_stock <= 0 ? '0000-00-00' : (a.stockout_date || '9999-99-99');
+            valB = b.current_stock <= 0 ? '0000-00-00' : (b.stockout_date || '9999-99-99');
+            const cmp = valA.localeCompare(valB);
+            return currentSortOrder === 'asc' ? cmp : -cmp;
+        } else if (currentSortColumn === 'reorder_deadline_date') {
+            valA = a.current_stock <= 0 ? '0000-00-00' : (a.reorder_deadline_date || '9999-99-99');
+            valB = b.current_stock <= 0 ? '0000-00-00' : (b.reorder_deadline_date || '9999-99-99');
+            const cmp = valA.localeCompare(valB);
+            return currentSortOrder === 'asc' ? cmp : -cmp;
+        } else if (currentSortColumn === 'target_stock_days') {
+            valA = Number(a.target_stock_days !== undefined ? a.target_stock_days : 0);
+            valB = Number(b.target_stock_days !== undefined ? b.target_stock_days : 0);
+        } else if (currentSortColumn === 'status') {
+            const statusOrder = { 'out_of_stock': 1, 'critical': 2, 'warning': 3, 'in_reception': 4, 'in_transit': 5, 'ok': 6 };
+            valA = statusOrder[a.status] || 99;
+            valB = statusOrder[b.status] || 99;
+        } else {
+            valA = a[currentSortColumn];
+            valB = b[currentSortColumn];
+        }
+
+        if (valA < valB) return currentSortOrder === 'asc' ? -1 : 1;
+        if (valA > valB) return currentSortOrder === 'asc' ? 1 : -1;
+        return 0;
+    });
+
     filtrados.forEach(it => {
         const tr = document.createElement('tr');
+        tr.id = `stock_row_${it.id}`;
+        tr.dataset.status = it.status;
         tr.style.cursor = 'pointer';
         tr.onclick = (e) => {
-            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'A') {
+            if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON') {
                 seleccionarProducto(it);
             }
         };
 
-        // Semáforo Badge Limpio (Sin Emojis)
+        // Estado Sobrio (Texto limpio, sin cajas llamativas)
         let badgeHtml = '';
         if (it.status === 'ok') {
             badgeHtml = '<span class="badge badge-ok">Óptimo</span>';
@@ -594,11 +784,11 @@ function renderizarTabla() {
         } else if (it.status === 'critical') {
             badgeHtml = '<span class="badge badge-danger">Crítico</span>';
         } else if (it.status === 'in_reception') {
-            badgeHtml = `<span class="badge" style="background: rgba(168, 85, 247, 0.16); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.35); font-weight: 700;" title="${it.in_process_stock} un. recibidas en Villa Celina pendientes de escaneo por feriado">En Recepción Full</span>`;
+            badgeHtml = `<span style="color: var(--text2); font-size: 12px; font-weight: 600;" title="${it.in_process_stock} un. en recepción en MeLi">En recepción</span>`;
         } else if (it.status === 'in_transit') {
-            badgeHtml = `<span class="badge" style="background: rgba(59, 130, 246, 0.16); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.35); font-weight: 700;" title="${it.in_transit_stock} un. despachadas en camino hacia Full">En Tránsito</span>`;
+            badgeHtml = `<span style="color: var(--text2); font-size: 12px; font-weight: 600;" title="${it.in_transit_stock} un. despachadas hacia Full">En tránsito</span>`;
         } else {
-            badgeHtml = '<span class="badge badge-danger">Sin Stock</span>';
+            badgeHtml = '<span class="badge badge-danger">Sin stock</span>';
         }
 
         const prep = it.lead_time_days || 5;
@@ -608,84 +798,66 @@ function renderizarTabla() {
 
         const diasRestantesText = it.days_left >= 900 ? 'Sin ventas' : `${it.days_left} d`;
 
-        // FECHA DE QUIEBRE ESTIMADA
+        // FECHA DE QUIEBRE ESTIMADA (Sobria y legible)
         let quiebraElHtml = '—';
         if (it.status === 'in_reception') {
-            quiebraElHtml = `<span style="color: #c084fc; font-weight: 700;" title="Mercadería en depósito MeLi siendo procesada">+${it.in_process_stock} en MeLi</span>`;
+            quiebraElHtml = `<span style="color: var(--text2);" title="Mercadería en depósito MeLi siendo procesada">+${it.in_process_stock} en MeLi</span>`;
         } else if (it.status === 'in_transit') {
-            quiebraElHtml = `<span style="color: #60a5fa; font-weight: 700;" title="Envío despachado en camino">+${it.in_transit_stock} en camino</span>`;
+            quiebraElHtml = `<span style="color: var(--text2);" title="Envío despachado en camino">+${it.in_transit_stock} en camino</span>`;
         } else if (it.current_stock <= 0) {
-            quiebraElHtml = '<span style="color: var(--danger); font-weight: 700;">Agotado</span>';
+            quiebraElHtml = '<span style="color: var(--danger); font-weight: 600;">Agotado</span>';
         } else if (it.days_left >= 900 || !it.stockout_date) {
             quiebraElHtml = '<span style="color: var(--text2);">Sin ventas</span>';
         } else {
             const quiebreFecha = formatearFecha(it.stockout_date);
             const isDanger = it.days_left <= (prep + transit);
-            const isWarning = it.days_left <= totalAdvance;
-            const color = isDanger ? 'var(--danger)' : (isWarning ? 'var(--accent-text)' : 'var(--text)');
-            quiebraElHtml = `<strong style="color: ${color};">${quiebreFecha}</strong>`;
+            const color = isDanger ? 'var(--danger)' : 'var(--text)';
+            quiebraElHtml = `<span style="color: ${color}; font-weight: ${isDanger ? '700' : '500'};">${quiebreFecha}</span>`;
         }
 
-        // CUÁNDO PEDIR COLECTA EN MELI (considerando tiempo de preparación + camión + buffer + mercadería en camino)
+        // CUÁNDO PEDIR COLECTA EN MELI (Limpio y directo, con botón de acción)
         let fechaColectaHtml = '—';
         if (it.status === 'in_reception') {
-            fechaColectaHtml = `<span class="badge-date-normal" style="color: #c084fc; font-weight: 700;" title="Entregado en Villa Celina, pendiente de escaneo MeLi">+${it.in_process_stock} un. en ingreso</span>`;
+            fechaColectaHtml = `<span style="color: var(--text2);" title="Pendiente de escaneo en MeLi">+${it.in_process_stock} un. en ingreso</span>`;
         } else if (it.status === 'in_transit') {
-            fechaColectaHtml = `<span class="badge-date-normal" style="color: #60a5fa; font-weight: 700;" title="Despacho en viaje hacia Full">+${it.in_transit_stock} un. en camino</span>`;
-        } else if (it.reorder_deadline_date) {
+            fechaColectaHtml = `<span style="color: var(--text2);" title="Despacho en viaje hacia Full">+${it.in_transit_stock} un. en camino</span>`;
+        } else if (it.reorder_deadline_date || it.current_stock <= 0 || it.status === 'critical' || it.status === 'out_of_stock') {
             const daysToDeadline = it.days_to_deadline !== undefined ? it.days_to_deadline : (it.days_left - totalAdvance);
             const roundedDays = Math.max(1, Math.round(daysToDeadline));
 
-            if (it.current_stock <= 0) {
-                fechaColectaHtml = `
-                    <span class="badge-date-today" style="background: rgba(239, 68, 68, 0.15); color: var(--danger); font-weight: 700;" title="Sin stock en Full. Generar reposición urgente hoy.">PEDIR HOY (Sin Stock)</span>
-                `;
-            } else if (daysToDeadline <= 0) {
-                fechaColectaHtml = `
-                    <span class="badge-date-today" style="background: rgba(239, 68, 68, 0.15); color: var(--danger); font-weight: 700;" title="Cobertura crítica. Pedir turno en MeLi hoy para evitar quiebre de stock.">PEDIR HOY URGENTE</span>
-                `;
-            } else if (daysToDeadline <= 3) {
-                fechaColectaHtml = `
-                    <span class="badge-date-soon" title="Día límite para iniciar preparación y pedir turno en MeLi">Pedir el ${formatearFecha(it.reorder_deadline_date)} (en ${roundedDays} d)</span>
-                `;
+            if (it.current_stock <= 0 || it.status === 'out_of_stock') {
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;"><span style="color: var(--danger); font-weight: 700;">Pedir hoy</span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Abrir colecta con este artículo incluido">+ Colecta</button></div>`;
+            } else if (daysToDeadline <= 0 || it.status === 'critical') {
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;"><span style="color: var(--accent); font-weight: 700;">Pedir hoy</span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Abrir colecta con este artículo incluido">+ Colecta</button></div>`;
+            } else if (daysToDeadline <= 3 || it.status === 'warning') {
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;"><span style="color: var(--text); font-weight: 600;">El ${formatearFecha(it.reorder_deadline_date)} <span style="color: var(--text2); font-weight: 400;">(${roundedDays}d)</span></span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Planificar colecta para este artículo">+ Colecta</button></div>`;
             } else {
-                fechaColectaHtml = `
-                    <span class="badge-date-normal">Pedir el ${formatearFecha(it.reorder_deadline_date)} (en ${roundedDays} d)</span>
-                `;
+                fechaColectaHtml = `<span style="color: var(--text2);">El ${formatearFecha(it.reorder_deadline_date)} <span style="font-weight: 400;">(${roundedDays}d)</span></span>`;
             }
         }
 
         const thumbSrc = it.thumbnail || 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="%238a8d9a" stroke-width="1.5"%3E%3Crect x="3" y="3" width="18" height="18" rx="2"/%3E%3C/svg%3E';
 
-        // Badges de canales de venta hermanas (Clásica / Premium / Catálogo)
+        // Metadatos de Publicación (Limpios y despojados)
         let channelsHtml = '';
         if (it.channels && it.channels.length > 0) {
-            channelsHtml = '<span class="channels-container">';
-            it.channels.forEach(ch => {
+            const chItems = it.channels.map(ch => {
                 const typeLabel = ch.is_catalog ? 'Catálogo' : (ch.type_label || (ch.listing_type === 'gold_pro' ? 'Premium' : 'Clásica'));
-                const badgeClass = ch.is_catalog ? 'badge-ch-catalog' : (ch.listing_type === 'gold_pro' ? 'badge-ch-pro' : 'badge-ch-classic');
-                channelsHtml += `<a href="${ch.permalink}" target="_blank" class="channel-pill ${badgeClass}" title="Publicación ${typeLabel}: ${ch.item_id}" onclick="event.stopPropagation();">${typeLabel}</a>`;
+                return `<a href="${ch.permalink}" target="_blank" class="channel-pill" onclick="event.stopPropagation();">${typeLabel}</a>`;
             });
-            channelsHtml += '</span>';
-        } else {
-            channelsHtml = `<a href="${it.permalink || '#'}" target="_blank" style="color: var(--text2); text-decoration: underline;" onclick="event.stopPropagation();">${it.item_id}</a>`;
+            channelsHtml = chItems.join(' · ');
+        } else if (it.permalink) {
+            channelsHtml = `<a href="${it.permalink}" target="_blank" class="channel-pill" onclick="event.stopPropagation();">${it.item_id}</a>`;
         }
 
-        const varTagHtml = it.variation_name ? `<span class="variation-tag" title="Variante">${it.variation_name}</span>` : '';
-        let incomingBadgesHtml = '';
-        if (it.in_process_stock > 0) {
-            incomingBadgesHtml += `<span class="not-avail-pill" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; display: inline-block; margin-top: 3px;" title="${it.in_process_stock} unidades entregadas en Villa Celina pendientes de escaneo MeLi">+${it.in_process_stock} en recepción MeLi</span>`;
-        }
-        if (it.in_transit_stock > 0) {
-            incomingBadgesHtml += `<span class="not-avail-pill" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; display: inline-block; margin-top: 3px;" title="${it.in_transit_stock} unidades despachadas en camino hacia Full">+${it.in_transit_stock} en camino</span>`;
-        }
+        const meliCodeText = it.inventory_id ? `<span>·</span> <span>Cód: ${it.inventory_id}</span>` : '';
+        const meliItemLink = (it.item_id && (!it.channels || it.channels.length === 0)) ? '' : (it.item_id ? `<span>·</span> <a href="${it.permalink || `https://articulo.mercadolibre.com.ar/${it.item_id}`}" target="_blank" class="channel-pill" onclick="event.stopPropagation();">${it.item_id}</a>` : '');
 
-        const meliCodeBadge = it.inventory_id 
-            ? `<span title="Código ML Fulfillment (WMS)" style="color: var(--accent); font-weight: 700; background: rgba(245, 166, 35, 0.12); padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(245, 166, 35, 0.3); font-size: 11px;">Cód ML: ${it.inventory_id}</span>` 
-            : '';
-        const meliItemLink = it.item_id 
-            ? `<a href="${it.permalink || `https://articulo.mercadolibre.com.ar/${it.item_id}`}" target="_blank" style="color: var(--text2); text-decoration: underline; font-size: 11px;" title="Ver publicación ${it.item_id} en Mercado Libre" onclick="event.stopPropagation();">${it.item_id}</a>` 
-            : '';
+        let incomingSummary = '';
+        if (it.in_process_stock > 0 || it.in_transit_stock > 0) {
+            const incUnits = (it.in_process_stock || 0) + (it.in_transit_stock || 0);
+            incomingSummary = ` <span style="color: var(--text2); font-size: 11px;">(+${incUnits})</span>`;
+        }
 
         tr.innerHTML = `
             <td>
@@ -693,23 +865,22 @@ function renderizarTabla() {
                     <img src="${thumbSrc}" class="product-thumb" alt="Foto">
                     <div>
                         <div class="product-title" title="${it.title}">
-                            <span>${it.title}</span>${varTagHtml}
+                            <span>${it.title}</span>${it.variation_name ? ` · <span style="color: var(--text2); font-weight: 400;">${it.variation_name}</span>` : ''}
                         </div>
-                        <div class="product-meta" style="flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 3px;">
+                        <div class="product-meta">
                             <span>SKU: <strong>${it.sku || 'Sin SKU'}</strong></span>
-                            ${meliCodeBadge ? `<span>·</span> ${meliCodeBadge}` : ''}
-                            ${meliItemLink ? `<span>·</span> ${meliItemLink}` : ''}
-                            <span>·</span>
-                            ${channelsHtml}
+                            ${meliCodeText}
+                            ${meliItemLink}
+                            ${channelsHtml ? `<span>·</span> ${channelsHtml}` : ''}
                         </div>
                     </div>
                 </div>
             </td>
             <td class="num-cell">
-                <strong>${it.current_stock}</strong> un.${incomingBadgesHtml}
+                <strong>${it.current_stock}</strong> un.${incomingSummary}
             </td>
             <td class="num-cell">${it.vpd} un./d</td>
-            <td class="num-cell" style="font-weight: 700; color: ${it.days_left <= (prep + transit) ? 'var(--danger)' : 'var(--text)'};">
+            <td class="num-cell" style="font-weight: 600; color: ${it.days_left <= (prep + transit) ? 'var(--danger)' : 'var(--text)'};">
                 ${diasRestantesText}
             </td>
             <td class="num-cell" style="white-space: nowrap;">
@@ -812,14 +983,21 @@ function calcularUnidadesEnvio() {
 
 // ── Sincronizar / Chequear Stock Actual ─────────────────────────────
 async function sincronizarAhora() {
+    const headerSyncBtn = document.getElementById('headerSyncBtn');
     const btn = document.getElementById('btnCheckStockNow');
     const syncIcon = document.getElementById('syncIcon');
     const syncText = document.getElementById('syncBtnText');
 
-    btn.disabled = true;
-    syncText.textContent = 'Consultando MercadoLibre...';
-    syncIcon.style.display = 'inline-block';
-    syncIcon.style.animation = 'spin 0.8s linear infinite';
+    if (btn) btn.disabled = true;
+    if (syncText) syncText.textContent = 'Consultando MercadoLibre...';
+    if (headerSyncBtn) {
+        headerSyncBtn.textContent = 'Sincronizando...';
+        headerSyncBtn.style.pointerEvents = 'none';
+    }
+    if (syncIcon) {
+        syncIcon.style.display = 'inline-block';
+        syncIcon.style.animation = 'spin 0.8s linear infinite';
+    }
 
     const token = getToken();
     if (token) {
@@ -836,13 +1014,19 @@ async function sincronizarAhora() {
         await new Promise(r => setTimeout(r, 600));
     }
 
-    syncIcon.style.animation = 'none';
-    syncText.textContent = 'Stock Actualizado';
-    document.getElementById('lastSyncText').textContent = 'Recién';
+    if (syncIcon) syncIcon.style.animation = 'none';
+    if (syncText) syncText.textContent = 'Stock Actualizado';
+    if (headerSyncBtn) headerSyncBtn.textContent = 'Actualizado';
+    const lastSync = document.getElementById('lastSyncText');
+    if (lastSync) lastSync.textContent = 'Recién';
 
     setTimeout(() => {
-        syncText.textContent = 'Chequear Stock Actual';
-        btn.disabled = false;
+        if (syncText) syncText.textContent = 'Chequear Stock Actual';
+        if (headerSyncBtn) {
+            headerSyncBtn.textContent = 'Sincronizar';
+            headerSyncBtn.style.pointerEvents = 'auto';
+        }
+        if (btn) btn.disabled = false;
     }, 2500);
 
     cargarDatos();
@@ -856,6 +1040,13 @@ function onSearchChange(val) {
 
 function onFilterChange(val) {
     currentFilter = val;
+    const cardMap = {
+        'all': 'statCardTotal',
+        'ok': 'statCardOk',
+        'warning': 'statCardWarning',
+        'critical': 'statCardCritical'
+    };
+    actualizarCardsActivas(cardMap[val] || null);
     renderizarTabla();
 }
 
@@ -965,7 +1156,7 @@ function toggleResumenColecta() {
     }
 }
 
-async function abrirModalColecta() {
+async function abrirModalColecta(targetItemId = null) {
     const modal = document.getElementById('colectaModal');
     if (!modal) return;
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
@@ -991,16 +1182,35 @@ async function abrirModalColecta() {
     const daysFactor = targetGlobalDays + leadTime + transit;
 
     itemsData.forEach(it => {
-        const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
-        // Seleccionar por defecto si requiere reposición o tiene riesgo
-        const shouldCheck = (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || suggested > 0);
-        if (shouldCheck) {
-            colectaSelectedItems.set(it.id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
-            // Unidades por caja máster reales del producto guardadas en base de datos
+        let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        const isTarget = targetItemId && (it.id === targetItemId || it.id === Number(targetItemId));
+        const isUrgent = (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
+
+        // Si el artículo requiere reposición urgente o es el target, asegurar unidades positivas
+        if (isUrgent || isTarget) {
+            if (suggested <= 0) {
+                suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
+            }
+            colectaSelectedItems.set(it.id, suggested);
+            const defaultUnitsBox = (it.units_per_box && it.units_per_box > 0) ? it.units_per_box : 0;
+            colectaBoxUnits.set(it.id, defaultUnitsBox);
+        } else if (suggested > 0) {
+            colectaSelectedItems.set(it.id, suggested);
             const defaultUnitsBox = (it.units_per_box && it.units_per_box > 0) ? it.units_per_box : 0;
             colectaBoxUnits.set(it.id, defaultUnitsBox);
         }
     });
+
+    // Asegurar que si vino un targetItemId específico esté seleccionado
+    if (targetItemId) {
+        const targetObj = itemsData.find(x => x.id === targetItemId || x.id === Number(targetItemId));
+        if (targetObj && !colectaSelectedItems.has(targetObj.id)) {
+            let suggested = Math.max(1, Math.ceil((daysFactor * targetObj.vpd) - targetObj.current_stock));
+            if (suggested <= 0) suggested = Math.max(1, Math.round(targetObj.vpd * daysFactor) || 5);
+            colectaSelectedItems.set(targetObj.id, suggested);
+            colectaBoxUnits.set(targetObj.id, targetObj.units_per_box || 0);
+        }
+    }
 
     // Fechas estimadas dinámicas
     const today = new Date();
@@ -1023,7 +1233,7 @@ async function abrirModalColecta() {
     }
 
     switchColectaTab('planificar');
-    renderizarFilasColecta();
+    renderizarFilasColecta(targetItemId);
     modal.style.display = 'flex';
 
     // Cargar historial en segundo plano para badge
@@ -1080,7 +1290,10 @@ function recalcularColecta() {
 
     itemsData.forEach(it => {
         if (colectaSelectedItems.has(it.id)) {
-            const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+            let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+            if ((it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0) && suggested <= 0) {
+                suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
+            }
             colectaSelectedItems.set(it.id, suggested > 0 ? suggested : 1);
         }
     });
@@ -1097,7 +1310,10 @@ function toggleSelectAllColecta(checked) {
     colectaSelectedItems.clear();
     if (checked) {
         itemsData.forEach(it => {
-            const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+            let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+            if ((it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0) && suggested <= 0) {
+                suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
+            }
             colectaSelectedItems.set(it.id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
             if (!colectaBoxUnits.has(it.id)) {
                 colectaBoxUnits.set(it.id, it.units_per_box || 0);
@@ -1117,13 +1333,17 @@ function toggleItemColecta(id, checked) {
         const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
         const transit = wh.defaultTransit || 3;
         const daysFactor = targetDays + leadTime + transit;
-        const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        if ((it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0) && suggested <= 0) {
+            suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
+        }
         colectaSelectedItems.set(id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
         if (!colectaBoxUnits.has(id)) colectaBoxUnits.set(id, it.units_per_box || 0);
     } else {
         colectaSelectedItems.delete(id);
     }
     actualizarTotalColecta();
+    renderizarFilasColecta();
 }
 
 function cambiarUnidadesColecta(id, val) {
@@ -1152,7 +1372,7 @@ function cambiarUnidadesPorCajaColecta(id, val) {
     actualizarTotalColecta();
 }
 
-function renderizarFilasColecta() {
+function renderizarFilasColecta(highlightItemId = null) {
     const tbody = document.getElementById('colectaTableBody');
     if (!tbody) return;
     tbody.innerHTML = '';
@@ -1163,9 +1383,39 @@ function renderizarFilasColecta() {
     const transit = wh.defaultTransit || 3;
     const daysFactor = targetDays + leadTime + transit;
 
-    itemsData.forEach(it => {
+    // Ordenar artículos por máxima urgencia: Quiebres y Críticos SIEMPRE ARRIBA
+    const itemsOrdenados = [...itemsData].sort((a, b) => {
+        // 1. Si uno es el highlightItemId, ponerlo primero
+        const isTargetA = highlightItemId && (a.id === highlightItemId || a.id === Number(highlightItemId));
+        const isTargetB = highlightItemId && (b.id === highlightItemId || b.id === Number(highlightItemId));
+        if (isTargetA && !isTargetB) return -1;
+        if (!isTargetA && isTargetB) return 1;
+
+        // 2. Score de urgencia
+        const scoreUrgencia = (it) => {
+            if (it.status === 'out_of_stock' || it.current_stock <= 0) return 1;
+            if (it.status === 'critical') return 2;
+            if (it.status === 'warning') return 3;
+            if (colectaSelectedItems.has(it.id)) return 4;
+            return 5;
+        };
+
+        const scoreA = scoreUrgencia(a);
+        const scoreB = scoreUrgencia(b);
+        if (scoreA !== scoreB) return scoreA - scoreB;
+
+        // 3. Menos días de stock primero
+        const daysA = a.days_left !== undefined ? a.days_left : 999;
+        const daysB = b.days_left !== undefined ? b.days_left : 999;
+        return daysA - daysB;
+    });
+
+    itemsOrdenados.forEach(it => {
         const isSelected = colectaSelectedItems.has(it.id);
-        const suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        if ((it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0) && suggested <= 0) {
+            suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
+        }
         const unitsToSend = colectaSelectedItems.get(it.id) !== undefined ? colectaSelectedItems.get(it.id) : suggested;
         const unitsPerBox = colectaBoxUnits.get(it.id) !== undefined ? colectaBoxUnits.get(it.id) : (it.units_per_box || 0);
         const boxesEst = unitsPerBox > 0 ? Math.ceil(unitsToSend / unitsPerBox) : (unitsToSend > 0 ? 1 : 0);
@@ -1183,8 +1433,24 @@ function renderizarFilasColecta() {
             ? `<img src="${it.thumbnail}" alt="" style="width: 32px; height: 32px; object-fit: contain; border-radius: 4px; background: #fff; padding: 1px; border: 1px solid var(--border); flex-shrink: 0;">`
             : '';
 
+        // Badge de urgencia bien visible en la fila de Colecta
+        let urgenciaBadge = '';
+        if (it.status === 'out_of_stock' || it.current_stock <= 0) {
+            urgenciaBadge = '<span class="badge badge-danger" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Sin stock</span>';
+        } else if (it.status === 'critical') {
+            urgenciaBadge = '<span class="badge badge-danger" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Quiebre inminente</span>';
+        } else if (it.status === 'warning') {
+            urgenciaBadge = '<span class="badge badge-warn" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Preparar</span>';
+        }
+
+        const isHighlighted = highlightItemId && (it.id === highlightItemId || it.id === Number(highlightItemId));
         const tr = document.createElement('tr');
+        tr.id = `colecta_row_${it.id}`;
         tr.style.opacity = isSelected ? '1' : '0.65';
+        if (isHighlighted) {
+            tr.classList.add('row-highlight');
+        }
+
         tr.innerHTML = `
             <td style="text-align: center; vertical-align: middle;">
                 <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleItemColecta(${it.id}, this.checked)">
@@ -1193,7 +1459,10 @@ function renderizarFilasColecta() {
                 <div style="display: flex; align-items: center; gap: 8px;">
                     ${thumbImg}
                     <div style="min-width: 0;">
-                        <strong style="color: var(--text); font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px;">${it.title}</strong>
+                        <div style="display: flex; align-items: center; gap: 4px;">
+                            <strong style="color: var(--text); font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px;">${it.title}</strong>
+                            ${urgenciaBadge}
+                        </div>
                         <div style="font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; margin-top: 2px;">
                             <span>Cód ML: <strong style="color: var(--accent);">${it.inventory_id || it.item_id}</strong></span>
                             ${it.item_id ? `<span>·</span><span style="color: var(--text2);">${it.item_id}</span>` : ''}
@@ -1204,7 +1473,7 @@ function renderizarFilasColecta() {
                 </div>
             </td>
             <td style="text-align: right; vertical-align: middle;">
-                <strong>${it.current_stock}</strong> un.
+                <strong style="${it.current_stock <= 0 ? 'color: var(--danger);' : ''}">${it.current_stock}</strong> un.
             </td>
             <td style="text-align: right; vertical-align: middle; color: var(--text2);">
                 ${it.vpd} un./d
@@ -1216,7 +1485,7 @@ function renderizarFilasColecta() {
                 <input type="number" min="0" class="unit-input-colecta" 
                        value="${unitsToSend}" 
                        onchange="cambiarUnidadesColecta(${it.id}, this.value)"
-                       style="width: 75px; text-align: center; font-weight: 700;">
+                       style="width: 75px; text-align: center; font-weight: 700; ${isSelected && unitsToSend > 0 ? 'border-color: var(--accent);' : ''}">
             </td>
             <td style="text-align: center; vertical-align: middle;">
                 <input type="number" min="0" class="unit-input-colecta" 
@@ -1234,6 +1503,15 @@ function renderizarFilasColecta() {
     });
 
     actualizarTotalColecta();
+
+    if (highlightItemId) {
+        setTimeout(() => {
+            const rowEl = document.getElementById(`colecta_row_${highlightItemId}`);
+            if (rowEl) {
+                rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 70);
+    }
 }
 
 function actualizarTotalColecta() {
@@ -1408,14 +1686,15 @@ async function crearEnvioInboundBackend() {
         const shipment = data.shipment;
         showToast(`Colecta ${shipment.shipment_code} creada con éxito: ${shipment.total_units} unidades en ${shipment.total_boxes} bultos hacia Villa Celina.`, 'success');
 
-        // Abrir Remito oficial en pestaña nueva para imprimir (autenticado)
+        // Abrir Hoja de Despacho en pestaña nueva para imprimir (autenticado)
         abrirRemitoOficial(shipment.id);
 
         // Actualizar tabla principal de stock para reflejar mercadería en tránsito
         cargarDatos();
 
-        // Cambiar a la pestaña de Historial
-        switchColectaTab('historial');
+        // Cerrar planificador y abrir Historial de Envíos
+        cerrarModalColecta();
+        abrirHistorialColectas();
     } catch (err) {
         showToast("Error de conexión al crear el envío: " + err.message, "error");
     }
@@ -1426,17 +1705,44 @@ function abrirRemitoOficial(shipmentId) {
     const url = `${API_BASE}/full/inbound/shipments/${shipmentId}/remito-html?token=${encodeURIComponent(token || '')}`;
     window.open(url, '_blank');
 }
+const abrirHojaDespacho = abrirRemitoOficial;
+window.abrirHojaDespacho = abrirRemitoOficial;
+window.abrirRemitoOficial = abrirRemitoOficial;
+
+// ── Modales Independientes: Armar Colecta vs Historial de Envíos ──
 
 function abrirHistorialColectas() {
-    abrirModalColecta();
-    switchColectaTab('historial');
+    cerrarModalColecta();
+    const modal = document.getElementById('modalHistorialEnvios');
+    if (modal) modal.style.display = 'flex';
+    cargarHistorialColectas();
 }
+window.abrirHistorialColectas = abrirHistorialColectas;
+
+function cerrarModalHistorialEnvios() {
+    const modal = document.getElementById('modalHistorialEnvios');
+    if (modal) modal.style.display = 'none';
+}
+window.cerrarModalHistorialEnvios = cerrarModalHistorialEnvios;
+
+function irACrearColectaDesdeHistorial() {
+    cerrarModalHistorialEnvios();
+    abrirModalColecta();
+}
+window.irACrearColectaDesdeHistorial = irACrearColectaDesdeHistorial;
+
+function irAHistorialDesdeColecta() {
+    cerrarModalColecta();
+    abrirHistorialColectas();
+}
+window.irAHistorialDesdeColecta = irAHistorialDesdeColecta;
 
 async function cargarHistorialColectas(soloBadge = false) {
     const token = getToken();
-    const container = document.getElementById('colectaHistorialContainer');
+    const container = document.getElementById('historialEnviosContainer') || document.getElementById('colectaHistorialContainer');
     const badge = document.getElementById('colectaHistorialBadge');
     const topBadge = document.getElementById('topbarHistorialBadge');
+    const totalBadge = document.getElementById('historialTotalBadge');
     if (!token) return;
 
     try {
@@ -1446,22 +1752,24 @@ async function cargarHistorialColectas(soloBadge = false) {
         const data = await res.json();
         if (data.ok && Array.isArray(data.shipments)) {
             inboundShipmentsList = data.shipments;
-            if (badge) badge.textContent = inboundShipmentsList.length;
-            if (topBadge) topBadge.textContent = inboundShipmentsList.length;
+            const count = inboundShipmentsList.length;
+            if (badge) badge.textContent = count;
+            if (topBadge) topBadge.textContent = count;
+            if (totalBadge) totalBadge.textContent = `${count} ${count === 1 ? 'envío' : 'envíos'}`;
 
             if (soloBadge) return;
 
             if (!container) return;
-            if (inboundShipmentsList.length === 0) {
+            if (count === 0) {
                 container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: var(--text2);">
-                        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5; margin-bottom: 8px;">
+                    <div style="text-align: center; padding: 48px 20px; color: var(--text2);">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.45; margin-bottom: 10px;">
                             <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
                             <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
                             <line x1="12" y1="22.08" x2="12" y2="12"></line>
                         </svg><br>
-                        <strong>No hay envíos registrados todavía.</strong><br>
-                        Planificá tu primer despacho desde la pestaña "Planificar Nuevo Envío".
+                        <strong style="font-size: 15px; color: var(--text);">No hay envíos registrados todavía.</strong><br>
+                        <span style="font-size: 13px; margin-top: 4px; display: inline-block;">Podés planificar tu primer despacho con el botón <strong>+ Armar Nuevo Envío</strong>.</span>
                     </div>
                 `;
                 return;
@@ -1475,9 +1783,14 @@ async function cargarHistorialColectas(soloBadge = false) {
                     'cancelled': { text: 'Cancelado', color: '#9e9e9e', bg: 'rgba(158, 158, 158, 0.15)' }
                 };
                 const st = statusMap[sh.status] || { text: sh.status, color: '#fff', bg: '#333' };
+                const esEditable = (sh.status === 'scheduled' || sh.status === 'draft');
+
+                const btnEditarHtml = esEditable
+                    ? `<button type="button" class="btn btn-secondary btn-sm" onclick="abrirModalEditarEnvio(${sh.id})" title="Editar cantidades, artículos o fecha de este envío">Editar Envío</button>`
+                    : `<button type="button" class="btn btn-secondary btn-sm" disabled style="opacity: 0.45; cursor: not-allowed;" title="Envío no editable: ya fue despachado o cancelado">Despachado (No editable)</button>`;
 
                 return `
-                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;">
+                    <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; margin-bottom: 12px; transition: border-color 0.15s ease;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
                             <div>
                                 <div style="display: flex; align-items: center; gap: 8px;">
@@ -1490,9 +1803,13 @@ async function cargarHistorialColectas(soloBadge = false) {
                                     Fecha retiro: <strong>${sh.pickup_date || 'A coordinar'}</strong> · Destino: ${sh.destination_name}
                                 </div>
                             </div>
-                            <div style="display: flex; gap: 6px;">
+                            <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                                 <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="abrirRemitoOficial(${sh.id})">
-                                    Ver Remito Oficial
+                                    Ver Hoja de Despacho
+                                </button>
+                                ${btnEditarHtml}
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnToggleDetalle_${sh.id}" onclick="toggleDetalleArticulosHistorial(${sh.id})" title="Ver lista de artículos de este envío">
+                                    Ver Artículos (${sh.total_items})
                                 </button>
                                 <select onchange="cambiarEstadoEnvioInbound(${sh.id}, this.value)" class="filter-select" style="padding: 4px 8px; font-size: 11px;">
                                     <option value="scheduled" ${sh.status === 'scheduled' ? 'selected' : ''}>Programado</option>
@@ -1510,6 +1827,11 @@ async function cargarHistorialColectas(soloBadge = false) {
                             <div>Bultos: <strong>${sh.total_boxes} cajas</strong> (${sh.packaging_type})</div>
                             ${sh.carrier_notes ? `<div>Obs: <em>${sh.carrier_notes}</em></div>` : ''}
                         </div>
+
+                        <!-- Detalle desplegable de artículos del envío -->
+                        <div id="detalleArticulos_${sh.id}" style="display: none; margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px;">
+                            <div style="text-align: center; color: var(--text2); font-size: 12px; padding: 8px;">Cargando detalle de artículos...</div>
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -1518,6 +1840,71 @@ async function cargarHistorialColectas(soloBadge = false) {
         if (container) container.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 20px;">Error cargando historial: ${e.message}</div>`;
     }
 }
+window.cargarHistorialColectas = cargarHistorialColectas;
+
+async function toggleDetalleArticulosHistorial(shipmentId) {
+    const el = document.getElementById(`detalleArticulos_${shipmentId}`);
+    const btn = document.getElementById(`btnToggleDetalle_${shipmentId}`);
+    if (!el) return;
+
+    if (el.style.display === 'block') {
+        el.style.display = 'none';
+        if (btn) btn.textContent = btn.textContent.replace('Ocultar', 'Ver');
+        return;
+    }
+
+    el.style.display = 'block';
+    if (btn) btn.textContent = btn.textContent.replace('Ver', 'Ocultar');
+
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments/${shipmentId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.ok && Array.isArray(data.items)) {
+            if (data.items.length === 0) {
+                el.innerHTML = `<div style="color: var(--text2); font-size: 12px; padding: 6px;">No hay artículos registrados en este envío.</div>`;
+                return;
+            }
+            el.innerHTML = `
+                <table style="width: 100%; font-size: 11.5px; border-collapse: collapse;">
+                    <thead>
+                        <tr style="color: var(--text2); text-align: left; border-bottom: 1px solid var(--border);">
+                            <th style="padding: 4px 8px;">Artículo</th>
+                            <th style="padding: 4px 8px;">SKU</th>
+                            <th style="padding: 4px 8px; text-align: center;">Stock Full</th>
+                            <th style="padding: 4px 8px; text-align: center;">VPD</th>
+                            <th style="padding: 4px 8px; text-align: center;">Unidades</th>
+                            <th style="padding: 4px 8px; text-align: center;">Unid./Caja</th>
+                            <th style="padding: 4px 8px; text-align: center;">Bultos</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.items.map(it => `
+                            <tr style="border-bottom: 1px dashed rgba(255,255,255,0.05);">
+                                <td style="padding: 6px 8px; color: var(--text);">${it.title}</td>
+                                <td style="padding: 6px 8px; font-family: monospace; color: var(--accent);">${it.sku || '-'}</td>
+                                <td style="padding: 6px 8px; text-align: center;">${it.current_full_stock}</td>
+                                <td style="padding: 6px 8px; text-align: center;">${it.vpd}</td>
+                                <td style="padding: 6px 8px; text-align: center; font-weight: 700; color: var(--accent);">${it.units_to_send}</td>
+                                <td style="padding: 6px 8px; text-align: center;">${it.units_per_box || '-'}</td>
+                                <td style="padding: 6px 8px; text-align: center; font-weight: 700; color: var(--good);">${it.box_count}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        } else {
+            el.innerHTML = `<div style="color: #ef4444; font-size: 12px; padding: 6px;">Error cargando detalle: ${data.error || 'Respuesta inválida'}</div>`;
+        }
+    } catch (e) {
+        el.innerHTML = `<div style="color: #ef4444; font-size: 12px; padding: 6px;">Error de conexión: ${e.message}</div>`;
+    }
+}
+window.toggleDetalleArticulosHistorial = toggleDetalleArticulosHistorial;
 
 async function cambiarEstadoEnvioInbound(shipmentId, status) {
     const token = getToken();
@@ -1534,6 +1921,8 @@ async function cambiarEstadoEnvioInbound(shipmentId, status) {
         const data = await res.json();
         if (data.ok) {
             cargarHistorialColectas();
+            // Actualizar stock principal para recalcular stock en tránsito
+            if (typeof cargarDatos === 'function') cargarDatos();
         } else {
             alert(data.error || "No se pudo actualizar el estado.");
         }
@@ -1541,6 +1930,7 @@ async function cambiarEstadoEnvioInbound(shipmentId, status) {
         alert("Error de conexión: " + err.message);
     }
 }
+window.cambiarEstadoEnvioInbound = cambiarEstadoEnvioInbound;
 
 async function eliminarEnvioInbound(shipmentId) {
     if (!confirm("¿Seguro que deseás eliminar este registro de colecta?")) return;
@@ -1554,6 +1944,7 @@ async function eliminarEnvioInbound(shipmentId) {
         const data = await res.json();
         if (data.ok) {
             cargarHistorialColectas();
+            if (typeof cargarDatos === 'function') cargarDatos();
         } else {
             alert(data.error || "No se pudo eliminar el envío.");
         }
@@ -1561,6 +1952,386 @@ async function eliminarEnvioInbound(shipmentId) {
         alert("Error de conexión: " + err.message);
     }
 }
+window.eliminarEnvioInbound = eliminarEnvioInbound;
+
+// ── Lógica del Editor de Envíos Inbound (Edición Total) ──
+
+let shipmentEnEdicionId = null;
+let itemsEnEdicion = [];
+
+async function abrirModalEditarEnvio(shipmentId) {
+    const token = getToken();
+    if (!token) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments/${shipmentId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (!data.ok || !data.shipment) {
+            alert(data.error || "No se pudo cargar el envío para editar.");
+            return;
+        }
+
+        const sh = data.shipment;
+        if (sh.status in ['in_transit', 'delivered', 'cancelled'] || ['in_transit', 'delivered', 'cancelled'].includes(sh.status)) {
+            alert(`No se puede modificar un envío en estado '${sh.status}'. Solo se pueden editar envíos programados o borradores.`);
+            return;
+        }
+
+        shipmentEnEdicionId = shipmentId;
+        itemsEnEdicion = (data.items || []).map(it => ({
+            id: it.id,
+            item_id: String(it.item_id || ''),
+            inventory_id: it.inventory_id || null,
+            variation_id: it.variation_id || null,
+            variation_name: it.variation_name || null,
+            sku: it.sku || '',
+            title: it.title || 'Producto sin título',
+            current_full_stock: parseInt(it.current_full_stock, 10) || 0,
+            vpd: parseFloat(it.vpd) || 0,
+            suggested_units: parseInt(it.suggested_units, 10) || 0,
+            units_to_send: parseInt(it.units_to_send, 10) || 1,
+            units_per_box: parseInt(it.units_per_box, 10) || 0,
+            box_count: parseInt(it.box_count, 10) || 1
+        }));
+
+        // Llenar cabecera del modal
+        const headerCode = document.getElementById('editarEnvioCodigoHeader');
+        if (headerCode) headerCode.textContent = sh.shipment_code;
+
+        const badge = document.getElementById('editarEnvioStatusBadge');
+        if (badge) {
+            badge.textContent = 'Programado / Editable';
+            badge.style.background = 'rgba(33, 150, 243, 0.15)';
+            badge.style.color = '#64b5f6';
+        }
+
+        // Llenar campos de formulario
+        const fechaInput = document.getElementById('editarEnvioFechaRetiro');
+        if (fechaInput) {
+            fechaInput.value = sh.pickup_date ? String(sh.pickup_date).split('T')[0] : '';
+        }
+
+        const packSelect = document.getElementById('editarEnvioPackaging');
+        if (packSelect) {
+            packSelect.value = sh.packaging_type || 'cajas_master';
+        }
+
+        const notasInput = document.getElementById('editarEnvioNotas');
+        if (notasInput) {
+            notasInput.value = sh.carrier_notes || '';
+        }
+
+        // Limpiar buscador de artículos
+        const searchInput = document.getElementById('editarEnvioBuscarInput');
+        if (searchInput) searchInput.value = '';
+        const resultadosContainer = document.getElementById('editarEnvioResultadosBusqueda');
+        if (resultadosContainer) {
+            resultadosContainer.innerHTML = '';
+            resultadosContainer.style.display = 'none';
+        }
+
+        renderizarItemsEdicion();
+
+        const modal = document.getElementById('modalEditarEnvio');
+        if (modal) modal.style.display = 'flex';
+    } catch (e) {
+        alert("Error de conexión al cargar envío: " + e.message);
+    }
+}
+window.abrirModalEditarEnvio = abrirModalEditarEnvio;
+
+function cerrarModalEditarEnvio() {
+    const modal = document.getElementById('modalEditarEnvio');
+    if (modal) modal.style.display = 'none';
+    shipmentEnEdicionId = null;
+    itemsEnEdicion = [];
+}
+window.cerrarModalEditarEnvio = cerrarModalEditarEnvio;
+
+function renderizarItemsEdicion() {
+    const tbody = document.getElementById('editarEnvioTbody');
+    if (!tbody) return;
+
+    if (itemsEnEdicion.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" style="text-align: center; padding: 30px; color: var(--text2);">
+                    No hay productos en este envío. Buscá y agregá productos con el buscador de arriba.
+                </td>
+            </tr>
+        `;
+        actualizarTotalesEdicion();
+        return;
+    }
+
+    tbody.innerHTML = itemsEnEdicion.map((it, idx) => {
+        const skuHtml = it.sku ? `<span style="font-family: monospace; font-size: 11px; color: var(--accent);">${it.sku}</span>` : `<span style="font-size: 11px; color: var(--text2);">-</span>`;
+        const varHtml = it.variation_name ? `<span style="font-size: 11px; color: var(--text2); display: block;">${it.variation_name}</span>` : '';
+
+        return `
+            <tr style="border-bottom: 1px solid var(--border);">
+                <td style="padding: 8px 10px;">
+                    <div style="font-weight: 600; color: var(--text);">${it.title}</div>
+                    <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px;">
+                        ${skuHtml}
+                        ${varHtml}
+                    </div>
+                </td>
+                <td style="padding: 8px 10px; text-align: center; color: var(--text);">${it.current_full_stock}</td>
+                <td style="padding: 8px 10px; text-align: center; color: var(--text2);">${it.vpd}</td>
+                <td style="padding: 8px 10px; text-align: center;">
+                    <input type="number" min="1" max="99999" value="${it.units_to_send}" 
+                           oninput="onCambiarUnidadesEdicion(${idx}, this.value)" 
+                           style="width: 80px; text-align: center; padding: 4px 6px; font-size: 13px; font-weight: 700; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
+                </td>
+                <td style="padding: 8px 10px; text-align: center;">
+                    <input type="number" min="0" max="99999" value="${it.units_per_box || 0}" 
+                           oninput="onCambiarUnitsPerBoxEdicion(${idx}, this.value)" 
+                           style="width: 75px; text-align: center; padding: 4px 6px; font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
+                </td>
+                <td style="padding: 8px 10px; text-align: center; font-weight: 700; color: var(--good); font-size: 13px;" id="editarItemCajas_${idx}">
+                    ${it.box_count} cj.
+                </td>
+                <td style="padding: 8px 10px; text-align: center;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="quitarItemDeEdicion(${idx})" title="Quitar del envío" style="padding: 2px 7px;">
+                        ✕
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    actualizarTotalesEdicion();
+}
+window.renderizarItemsEdicion = renderizarItemsEdicion;
+
+function onCambiarUnidadesEdicion(idx, val) {
+    if (!itemsEnEdicion[idx]) return;
+    const units = Math.max(1, parseInt(val, 10) || 1);
+    itemsEnEdicion[idx].units_to_send = units;
+
+    const upb = itemsEnEdicion[idx].units_per_box || 0;
+    const boxCount = upb > 0 ? Math.ceil(units / upb) : 1;
+    itemsEnEdicion[idx].box_count = boxCount;
+
+    const spanCajas = document.getElementById(`editarItemCajas_${idx}`);
+    if (spanCajas) spanCajas.textContent = `${boxCount} cj.`;
+
+    actualizarTotalesEdicion();
+}
+window.onCambiarUnidadesEdicion = onCambiarUnidadesEdicion;
+
+function onCambiarUnitsPerBoxEdicion(idx, val) {
+    if (!itemsEnEdicion[idx]) return;
+    const upb = Math.max(0, parseInt(val, 10) || 0);
+    itemsEnEdicion[idx].units_per_box = upb;
+
+    const units = itemsEnEdicion[idx].units_to_send || 1;
+    const boxCount = upb > 0 ? Math.ceil(units / upb) : 1;
+    itemsEnEdicion[idx].box_count = boxCount;
+
+    const spanCajas = document.getElementById(`editarItemCajas_${idx}`);
+    if (spanCajas) spanCajas.textContent = `${boxCount} cj.`;
+
+    actualizarTotalesEdicion();
+}
+window.onCambiarUnitsPerBoxEdicion = onCambiarUnitsPerBoxEdicion;
+
+function quitarItemDeEdicion(idx) {
+    if (!itemsEnEdicion[idx]) return;
+    itemsEnEdicion.splice(idx, 1);
+    renderizarItemsEdicion();
+}
+window.quitarItemDeEdicion = quitarItemDeEdicion;
+
+function actualizarTotalesEdicion() {
+    const totalItems = itemsEnEdicion.length;
+    const totalUnits = itemsEnEdicion.reduce((acc, it) => acc + (it.units_to_send || 0), 0);
+    const totalBoxes = itemsEnEdicion.reduce((acc, it) => acc + (it.box_count || 0), 0);
+
+    const elItems = document.getElementById('editarEnvioTotalItems');
+    const elUnits = document.getElementById('editarEnvioTotalUnits');
+    const elBoxes = document.getElementById('editarEnvioTotalBoxes');
+
+    if (elItems) elItems.textContent = totalItems;
+    if (elUnits) elUnits.textContent = `${totalUnits} un.`;
+    if (elBoxes) elBoxes.textContent = `${totalBoxes} cajas`;
+}
+
+function onBuscarArticuloParaAgregar(query) {
+    const contenedor = document.getElementById('editarEnvioResultadosBusqueda');
+    if (!contenedor) return;
+
+    const q = (query || '').trim().toLowerCase();
+    if (q.length < 2) {
+        contenedor.innerHTML = '';
+        contenedor.style.display = 'none';
+        return;
+    }
+
+    if (!Array.isArray(itemsData) || itemsData.length === 0) {
+        contenedor.innerHTML = `<div style="padding: 10px; color: var(--text2); font-size: 12px;">No hay productos cargados en el catálogo.</div>`;
+        contenedor.style.display = 'block';
+        return;
+    }
+
+    // Filtrar excluyendo los que ya están en el envío
+    const idsEnEdicion = new Set(itemsEnEdicion.map(it => String(it.item_id)));
+    const skusEnEdicion = new Set(itemsEnEdicion.map(it => (it.sku || '').toLowerCase()).filter(Boolean));
+
+    const matches = itemsData.filter(it => {
+        const itemIdStr = String(it.item_id || it.id);
+        const itemSku = (it.sku || '').toLowerCase();
+        if (idsEnEdicion.has(itemIdStr)) return false;
+        if (itemSku && skusEnEdicion.has(itemSku)) return false;
+
+        const titleMatch = (it.title || '').toLowerCase().includes(q);
+        const skuMatch = itemSku.includes(q);
+        const idMatch = itemIdStr.toLowerCase().includes(q);
+        return titleMatch || skuMatch || idMatch;
+    }).slice(0, 15);
+
+    if (matches.length === 0) {
+        contenedor.innerHTML = `<div style="padding: 10px; color: var(--text2); font-size: 12px; text-align: center;">No se encontraron artículos que coincidan con "${query}".</div>`;
+        contenedor.style.display = 'block';
+        return;
+    }
+
+    contenedor.innerHTML = matches.map(it => {
+        const skuText = it.sku ? `SKU: ${it.sku}` : 'Sin SKU';
+        return `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); gap: 10px; cursor: pointer;" 
+                 onmouseover="this.style.background='rgba(255,255,255,0.04)'" 
+                 onmouseout="this.style.background='transparent'">
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-size: 12.5px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${it.title}</div>
+                    <div style="font-size: 11px; color: var(--text2); display: flex; gap: 8px; margin-top: 2px;">
+                        <span style="color: var(--accent); font-family: monospace;">${skuText}</span>
+                        <span>Stock Full: <strong>${it.current_stock || 0}</strong></span>
+                        <span>VPD: <strong>${it.vpd || 0}</strong></span>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700; padding: 4px 10px; font-size: 11px;" 
+                        onclick="agregarItemAEdicion(${it.id})">
+                    + Agregar
+                </button>
+            </div>
+        `;
+    }).join('');
+    contenedor.style.display = 'block';
+}
+window.onBuscarArticuloParaAgregar = onBuscarArticuloParaAgregar;
+
+function agregarItemAEdicion(itemId) {
+    const it = itemsData.find(x => x.id === itemId);
+    if (!it) return;
+
+    const upb = (it.units_per_box && it.units_per_box > 0) ? it.units_per_box : 0;
+    const unitsToSend = upb > 0 ? upb : 10;
+    const boxCount = upb > 0 ? Math.ceil(unitsToSend / upb) : 1;
+
+    itemsEnEdicion.push({
+        id: null,
+        item_id: String(it.item_id || it.id),
+        inventory_id: it.inventory_id || null,
+        variation_id: it.variation_id || null,
+        variation_name: it.variation_name || null,
+        sku: it.sku || '',
+        title: it.title || 'Producto sin título',
+        current_full_stock: parseInt(it.current_stock, 10) || 0,
+        vpd: parseFloat(it.vpd) || 0,
+        suggested_units: parseInt(it.suggested_units, 10) || 0,
+        units_to_send: unitsToSend,
+        units_per_box: upb,
+        box_count: boxCount
+    });
+
+    const searchInput = document.getElementById('editarEnvioBuscarInput');
+    if (searchInput) searchInput.value = '';
+    const contenedor = document.getElementById('editarEnvioResultadosBusqueda');
+    if (contenedor) {
+        contenedor.innerHTML = '';
+        contenedor.style.display = 'none';
+    }
+
+    renderizarItemsEdicion();
+    showToast(`Artículo "${it.sku || it.title.substring(0, 25)}" sumado al envío.`, "info");
+}
+window.agregarItemAEdicion = agregarItemAEdicion;
+
+async function guardarEdicionEnvio() {
+    if (!shipmentEnEdicionId) {
+        alert("Error interno: no se encontró ID del envío en edición.");
+        return;
+    }
+
+    if (itemsEnEdicion.length === 0) {
+        alert("El envío debe contener al menos un producto con unidades mayor a cero.");
+        return;
+    }
+
+    const fechaRetiro = document.getElementById('editarEnvioFechaRetiro')?.value || null;
+    const packagingType = document.getElementById('editarEnvioPackaging')?.value || 'cajas_master';
+    const carrierNotes = (document.getElementById('editarEnvioNotas')?.value || '').trim();
+
+    const payload = {
+        pickup_date: fechaRetiro,
+        packaging_type: packagingType,
+        carrier_notes: carrierNotes,
+        items: itemsEnEdicion.map(it => ({
+            item_id: it.item_id,
+            inventory_id: it.inventory_id,
+            variation_id: it.variation_id,
+            variation_name: it.variation_name,
+            sku: it.sku,
+            title: it.title,
+            current_full_stock: it.current_full_stock,
+            vpd: it.vpd,
+            suggested_units: it.suggested_units,
+            units_to_send: it.units_to_send,
+            units_per_box: it.units_per_box,
+            box_count: it.box_count
+        }))
+    };
+
+    const btnGuardar = document.getElementById('btnGuardarEdicionEnvio');
+    if (btnGuardar) {
+        btnGuardar.disabled = true;
+        btnGuardar.textContent = 'Guardando...';
+    }
+
+    const token = getToken();
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments/${shipmentEnEdicionId}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast("Envío actualizado correctamente.", "success");
+            cerrarModalEditarEnvio();
+            cargarHistorialColectas();
+            // Actualizar tabla principal de stock para reflejar nuevo stock en tránsito
+            if (typeof cargarDatos === 'function') cargarDatos();
+        } else {
+            alert(data.error || "No se pudo actualizar el envío.");
+        }
+    } catch (e) {
+        alert("Error de conexión al guardar cambios: " + e.message);
+    } finally {
+        if (btnGuardar) {
+            btnGuardar.disabled = false;
+            btnGuardar.textContent = 'Guardar Cambios';
+        }
+    }
+}
+window.guardarEdicionEnvio = guardarEdicionEnvio;
 
 function cerrarModalInboundUpgrade() {
     const modal = document.getElementById('modalInboundUpgrade');
@@ -1631,6 +2402,20 @@ async function cargarSettingsBackend() {
                 syncEl.value = String(s.sync_frequency_hours);
             }
             actualizarEstadoVerificacionEmail(s.email_verified);
+
+            // Sincronizar branding y co-branding personalizado
+            if (s.brand_enabled !== undefined) {
+                const branding = {
+                    brand_enabled: Boolean(s.brand_enabled),
+                    brand_name: s.brand_name || '',
+                    brand_logo_url: s.brand_logo_url || '',
+                    brand_primary_color: s.brand_primary_color || '',
+                    brand_show_powered_by: s.brand_show_powered_by !== undefined ? Boolean(s.brand_show_powered_by) : true
+                };
+                window.currentBranding = branding;
+                localStorage.setItem('enviobot_client_branding', JSON.stringify(branding));
+                aplicarBrandingUI(branding);
+            }
 
             // Sincronizar depósitos reales guardados en MariaDB
             if (Array.isArray(s.warehouses) && s.warehouses.length > 0) {
@@ -1817,17 +2602,19 @@ function switchConfigTab(tab) {
     const tabGeneral = document.getElementById('configTabGeneral');
     const tabWA = document.getElementById('configTabWhatsapp');
     const tabTeam = document.getElementById('configTabTeam');
+    const tabBranding = document.getElementById('configTabBranding');
 
     const btnMeli = document.getElementById('tabBtnMeli');
     const btnGeneral = document.getElementById('tabBtnGeneral');
     const btnWA = document.getElementById('tabBtnWhatsapp');
     const btnTeam = document.getElementById('tabBtnTeam');
+    const btnBranding = document.getElementById('tabBtnBranding');
 
     const btnSave = document.getElementById('btnConfigSave');
     const btnCancel = document.getElementById('btnConfigCancel');
 
-    [btnMeli, btnGeneral, btnWA, btnTeam].forEach(b => { if (b) b.classList.remove('active'); });
-    [tabMeli, tabGeneral, tabWA, tabTeam].forEach(t => { if (t) t.style.display = 'none'; });
+    [btnMeli, btnGeneral, btnWA, btnTeam, btnBranding].forEach(b => { if (b) b.classList.remove('active'); });
+    [tabMeli, tabGeneral, tabWA, tabTeam, tabBranding].forEach(t => { if (t) t.style.display = 'none'; });
 
     if (tab === 'meli') {
         if (tabMeli) tabMeli.style.display = 'block';
@@ -1853,6 +2640,12 @@ function switchConfigTab(tab) {
         if (btnSave) btnSave.style.display = 'none';
         if (btnCancel) btnCancel.textContent = 'Cerrar';
         cargarMiembrosEquipo();
+    } else if (tab === 'branding') {
+        if (tabBranding) tabBranding.style.display = 'block';
+        if (btnBranding) btnBranding.classList.add('active');
+        if (btnSave) btnSave.style.display = 'inline-block';
+        if (btnCancel) btnCancel.textContent = 'Cancelar';
+        cargarBrandingEnFormulario();
     }
 }
 
@@ -2520,6 +3313,24 @@ async function guardarConfiguracion(e) {
     poblarSelectoresDepositos();
     recalcularTodo();
 
+    // Branding y Co-Branding
+    const brandEnabled = document.getElementById('cfgBrandEnabled')?.checked || false;
+    const brandName = document.getElementById('cfgBrandName')?.value.trim() || '';
+    const brandLogoUrl = window.currentBrandLogoDataUrl || document.getElementById('cfgBrandLogoPreviewImg')?.src || '';
+    const brandColor = document.getElementById('cfgBrandPrimaryColor')?.value || '#f5a623';
+    const brandShowPowered = true;
+
+    const brandingPayload = {
+        brand_enabled: brandEnabled,
+        brand_name: brandName,
+        brand_logo_url: brandLogoUrl,
+        brand_primary_color: brandColor,
+        brand_show_powered_by: true
+    };
+    window.currentBranding = brandingPayload;
+    localStorage.setItem('enviobot_client_branding', JSON.stringify(brandingPayload));
+    aplicarBrandingUI(brandingPayload);
+
     const token = getToken();
     if (token) {
         try {
@@ -2533,7 +3344,12 @@ async function guardarConfiguracion(e) {
                     target_coverage_days: generalTarget,
                     sync_frequency_hours: syncFreq,
                     alert_email: email,
-                    warehouses: warehousesList
+                    warehouses: warehousesList,
+                    brand_enabled: brandEnabled,
+                    brand_name: brandName,
+                    brand_logo_url: brandLogoUrl,
+                    brand_primary_color: brandColor,
+                    brand_show_powered_by: brandShowPowered
                 })
             });
         } catch (err) {
@@ -2936,44 +3752,56 @@ function renderMeLiAccounts(accounts) {
     const btnConnect = document.getElementById('btnConnectMeLiHeader');
     const sidebarAcc = document.getElementById('sidebarAccountName');
     const sidebarStatus = document.getElementById('sidebarConnStatusBadge');
+    const headerAcc = document.getElementById('headerMeliAccount');
+    const headerDot = document.getElementById('headerMeliDot');
 
-    if (select) {
-        select.innerHTML = '<option value="all">Todas las cuentas MeLi</option>';
-        if (accounts && accounts.length > 0) {
-            accounts.forEach(acc => {
-                const opt = document.createElement('option');
-                opt.value = acc.id;
-                opt.textContent = `Cuenta: ${acc.ml_nickname || acc.ml_user_id}`;
-                select.appendChild(opt);
-            });
-            select.style.display = accounts.length > 1 ? 'inline-block' : 'none';
-            if (btnConnect) btnConnect.style.display = 'inline-block';
+    let accountDisplay = 'Sin vincular';
+    let isConnected = false;
+
+    if (accounts && accounts.length > 0) {
+        isConnected = true;
+        if (currentAccount && currentAccount !== 'all') {
+            const found = accounts.find(a => String(a.id) === String(currentAccount));
+            accountDisplay = found ? (found.ml_nickname || found.ml_user_id) : (accounts[0].ml_nickname || accounts[0].ml_user_id);
+        } else if (accounts.length === 1) {
+            accountDisplay = accounts[0].ml_nickname || accounts[0].ml_user_id;
         } else {
-            select.style.display = 'none';
-            if (btnConnect) btnConnect.style.display = 'inline-block';
+            accountDisplay = accounts.map(a => a.ml_nickname || a.ml_user_id).join(', ');
         }
     }
 
-    if (sidebarAcc) {
-        if (!accounts || accounts.length === 0) {
-            sidebarAcc.textContent = 'Sin vincular';
-            if (sidebarStatus) {
-                sidebarStatus.className = 'badge badge-warn';
-                sidebarStatus.textContent = 'Sin vincular';
-            }
+    // Actualizar estado en Encabezado
+    if (headerAcc) {
+        headerAcc.textContent = accountDisplay;
+    }
+    if (headerDot) {
+        headerDot.style.background = isConnected ? '#4CAF50' : 'var(--text2)';
+    }
+
+    // Selector de cuentas múltiples
+    if (select) {
+        select.innerHTML = '<option value="all">Todas las cuentas</option>';
+        if (accounts && accounts.length > 1) {
+            accounts.forEach(acc => {
+                const opt = document.createElement('option');
+                opt.value = acc.id;
+                opt.textContent = acc.ml_nickname || acc.ml_user_id;
+                if (String(currentAccount) === String(acc.id)) opt.selected = true;
+                select.appendChild(opt);
+            });
+            select.style.display = 'inline-block';
         } else {
-            if (sidebarStatus) {
-                sidebarStatus.className = 'badge badge-ok';
-                sidebarStatus.textContent = 'Activo';
-            }
-            if (currentAccount && currentAccount !== 'all') {
-                const found = accounts.find(a => String(a.id) === String(currentAccount));
-                sidebarAcc.textContent = found ? (found.ml_nickname || found.ml_user_id) : (accounts[0].ml_nickname || accounts[0].ml_user_id);
-            } else if (accounts.length === 1) {
-                sidebarAcc.textContent = accounts[0].ml_nickname || accounts[0].ml_user_id;
-            } else {
-                sidebarAcc.textContent = accounts.map(a => a.ml_nickname || a.ml_user_id).join(', ');
-            }
+            select.style.display = 'none';
+        }
+        if (btnConnect) btnConnect.style.display = 'inline-block';
+    }
+
+    // Compatibilidad si existiera sidebar
+    if (sidebarAcc) {
+        sidebarAcc.textContent = accountDisplay;
+        if (sidebarStatus) {
+            sidebarStatus.className = isConnected ? 'badge badge-ok' : 'badge badge-warn';
+            sidebarStatus.textContent = isConnected ? 'Activo' : 'Sin vincular';
         }
     }
 }
@@ -2990,6 +3818,7 @@ function actualizarBadgePlan(planInfo) {
     currentPlanInfo = planInfo;
     const badge = document.getElementById('planBadge');
     if (!badge || !planInfo) return;
+    badge.style.display = 'inline-flex';
 
     if (planInfo.has_full_access === false) {
         if (planInfo.can_start_trial) {
@@ -3005,13 +3834,14 @@ function actualizarBadgePlan(planInfo) {
     }
 
     badge.onclick = () => abrirModalPlan();
-    if (planInfo.plan_tier === 'trial') {
-        const days = planInfo.trial_days_left !== undefined ? planInfo.trial_days_left : 30;
+    if (planInfo.plan_tier === 'trial' || planInfo.plan === 'trial') {
+        const days = planInfo.trial_days_left !== undefined ? planInfo.trial_days_left : (planInfo.days_left !== undefined ? planInfo.days_left : 30);
         badge.className = 'plan-badge trial';
-        badge.textContent = `Prueba Gratis (${days}d restantes)`;
+        badge.textContent = `Prueba (${days}d restantes)`;
     } else {
+        const planName = planInfo.plan_name || planInfo.plan_tier || planInfo.plan || 'Activo';
         badge.className = 'plan-badge';
-        badge.textContent = `Plan ${planInfo.plan_name || planInfo.plan_tier}`;
+        badge.textContent = `Plan ${planName}`;
     }
 }
 
@@ -3585,6 +4415,11 @@ function saltarVerificacionWizard(e) {
 
 // ── Inicialización ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+    // 0. Inicializar Branding y Co-Branding de la cuenta
+    if (typeof inicializarBranding === 'function') {
+        inicializarBranding();
+    }
+
     // 1. Detectar si viene token en la URL desde OAuth (?auth_token=... o ?token=...)
     const params = new URLSearchParams(window.location.search);
     const tokenFromUrl = params.get('auth_token') || params.get('token');
@@ -4120,5 +4955,480 @@ function descargarAccesoDirectoWindows() {
     document.body.removeChild(a);
     showToast('Descargando instalador de escritorio de 1 clic.', 'success');
 }
+
+// ── MÓDULO DE CO-BRANDING Y PERSONALIZACIÓN DE MARCA ──────────────────
+window.currentBranding = null;
+window.currentBrandLogoDataUrl = '';
+
+function inicializarBranding() {
+    try {
+        const local = localStorage.getItem('enviobot_client_branding');
+        if (local) {
+            window.currentBranding = JSON.parse(local);
+            aplicarBrandingUI(window.currentBranding);
+        }
+    } catch (e) {
+        console.warn("Aviso inicializando branding local:", e);
+    }
+
+    configurarDropzoneBranding();
+}
+
+function aplicarBrandingUI(branding) {
+    if (!branding) return;
+
+    const defaultLogo = document.getElementById('defaultBrandLogo');
+    const customLogo = document.getElementById('customBrandLogo');
+    const clientLogoImg = document.getElementById('headerClientLogoImg');
+    const poweredByPill = document.getElementById('headerPoweredByPill');
+
+    if (branding.brand_enabled && branding.brand_logo_url) {
+        // 1. Mostrar logo del cliente y co-branding
+        if (defaultLogo) defaultLogo.style.display = 'none';
+        if (customLogo) customLogo.style.display = 'flex';
+        if (clientLogoImg) {
+            clientLogoImg.src = branding.brand_logo_url;
+            clientLogoImg.alt = branding.brand_name || 'Logo Empresa';
+        }
+        if (poweredByPill) {
+            poweredByPill.style.display = 'inline-flex';
+        }
+
+        // 2. Aplicar colores personalizados si existen
+        if (branding.brand_primary_color) {
+            const hex = branding.brand_primary_color;
+            document.documentElement.style.setProperty('--accent', hex);
+            document.documentElement.style.setProperty('--accent-text', hex);
+            document.documentElement.style.setProperty('--accent-d', hex);
+        }
+    } else {
+        // Restaurar branding original EnvioBot Full
+        if (defaultLogo) defaultLogo.style.display = 'flex';
+        if (customLogo) customLogo.style.display = 'none';
+
+        // Restaurar naranja original
+        document.documentElement.style.removeProperty('--accent');
+        document.documentElement.style.removeProperty('--accent-text');
+        document.documentElement.style.removeProperty('--accent-d');
+    }
+}
+
+function cargarBrandingEnFormulario() {
+    let b = window.currentBranding;
+    if (!b) {
+        try {
+            const local = localStorage.getItem('enviobot_client_branding');
+            if (local) b = JSON.parse(local);
+        } catch (e) {}
+    }
+    b = b || {
+        brand_enabled: false,
+        brand_name: '',
+        brand_logo_url: '',
+        brand_primary_color: '#f5a623',
+        brand_show_powered_by: true
+    };
+
+    const chkEnabled = document.getElementById('cfgBrandEnabled');
+    const inputName = document.getElementById('cfgBrandName');
+    const inputColor = document.getElementById('cfgBrandPrimaryColor');
+    const hexColor = document.getElementById('cfgBrandColorHex');
+    const previewImg = document.getElementById('cfgBrandLogoPreviewImg');
+    const noLogoText = document.getElementById('cfgBrandNoLogoText');
+
+    if (chkEnabled) chkEnabled.checked = Boolean(b.brand_enabled);
+    if (inputName) {
+        let bName = b.brand_name || '';
+        if (/copia\s+de\s+seguridad/i.test(bName) || /corel/i.test(bName)) {
+            bName = 'Mister Nut';
+        }
+        inputName.value = bName;
+    }
+    if (inputColor) inputColor.value = b.brand_primary_color || '#f5a623';
+    if (hexColor) hexColor.textContent = b.brand_primary_color || '#f5a623';
+
+    const btnQuitar = document.getElementById('btnQuitarLogo');
+    const dropStatus = document.getElementById('dropzoneStatusText');
+
+    if (b.brand_logo_url) {
+        window.currentBrandLogoDataUrl = b.brand_logo_url;
+        if (previewImg) {
+            previewImg.src = b.brand_logo_url;
+            previewImg.style.display = 'block';
+        }
+        if (noLogoText) noLogoText.style.display = 'none';
+        if (btnQuitar) btnQuitar.style.display = 'inline-flex';
+        if (dropStatus) dropStatus.style.display = 'block';
+    } else {
+        window.currentBrandLogoDataUrl = '';
+        if (previewImg) {
+            previewImg.src = '';
+            previewImg.style.display = 'none';
+        }
+        if (noLogoText) noLogoText.style.display = 'block';
+        if (btnQuitar) btnQuitar.style.display = 'none';
+        if (dropStatus) dropStatus.style.display = 'none';
+    }
+
+    actualizarEstadoBrandingForm();
+    actualizarPreviewBranding();
+}
+
+function actualizarEstadoBrandingForm() {
+    const enabled = document.getElementById('cfgBrandEnabled')?.checked || false;
+    const container = document.getElementById('cfgBrandFieldsContainer');
+    if (!container) return;
+
+    if (enabled) {
+        container.style.opacity = '1';
+        container.style.pointerEvents = 'auto';
+    } else {
+        container.style.opacity = '0.65';
+    }
+    actualizarPreviewBranding();
+}
+
+function actualizarPreviewBranding() {
+    const name = document.getElementById('cfgBrandName')?.value.trim() || 'Tu Empresa';
+    const logoUrl = window.currentBrandLogoDataUrl || document.getElementById('cfgBrandLogoPreviewImg')?.src || '';
+
+    const mockupLogo = document.getElementById('mockupLogoPlaceholder');
+    const mockupPowered = document.getElementById('mockupPoweredBy');
+
+    if (mockupLogo) {
+        if (logoUrl) {
+            mockupLogo.innerHTML = `<img src="${logoUrl}" style="max-height: 44px; max-width: 190px; object-fit: contain;">`;
+        } else {
+            mockupLogo.textContent = name;
+        }
+    }
+    if (mockupPowered) {
+        mockupPowered.style.display = 'inline-flex';
+    }
+}
+
+function configurarDropzoneBranding() {
+    const dropzone = document.getElementById('brandDropzone');
+    if (!dropzone) return;
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add('dragover');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('dragover');
+        }, false);
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length > 0) {
+            procesarArchivoLogo(files[0]);
+        }
+    }, false);
+}
+
+function manejarSeleccionLogo(event) {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+        procesarArchivoLogo(files[0]);
+    }
+}
+
+function procesarArchivoLogo(file) {
+    if (!file || !file.type.startsWith('image/')) {
+        alert("Por favor subí un archivo de imagen válido (PNG, JPG, SVG, WebP).");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+            optimizarYExtraerPaletaLogo(img, file.name);
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function optimizarYExtraerPaletaLogo(img, fileName = '') {
+    // 1. Crear canvas temporal de análisis
+    const srcCanvas = document.createElement('canvas');
+    srcCanvas.width = img.naturalWidth || img.width;
+    srcCanvas.height = img.naturalHeight || img.height;
+    const ctx = srcCanvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+
+    const w = srcCanvas.width;
+    const h = srcCanvas.height;
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    // 2. Auto-recorte inteligente de márgenes vacíos o blancos
+    let minX = w, minY = h, maxX = 0, maxY = 0;
+    let hasAlpha = false;
+
+    for (let i = 3; i < data.length; i += 4) {
+        if (data[i] < 240) {
+            hasAlpha = true;
+            break;
+        }
+    }
+
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = (y * w + x) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            const a = data[idx + 3];
+
+            let isContent = false;
+            if (hasAlpha) {
+                isContent = a > 20;
+            } else {
+                isContent = (r < 245 || g < 245 || b < 245);
+            }
+
+            if (isContent) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+
+    if (minX >= maxX || minY >= maxY) {
+        minX = 0; minY = 0; maxX = w; maxY = h;
+    }
+
+    const pad = 4;
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(w, maxX + pad);
+    maxY = Math.min(h, maxY + pad);
+
+    const cropW = maxX - minX;
+    const cropH = maxY - minY;
+
+    // 3. Normalizar altura estándar (104px para retina 2x a 52px de pantalla)
+    const targetHeight = 104;
+    const targetWidth = Math.round(cropW * (targetHeight / cropH));
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = Math.min(480, Math.max(20, targetWidth));
+    outCanvas.height = targetHeight;
+    const outCtx = outCanvas.getContext('2d');
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = 'high';
+
+    outCtx.drawImage(srcCanvas, minX, minY, cropW, cropH, 0, 0, outCanvas.width, outCanvas.height);
+
+    // 4. Extracción de color dominante insignia
+    const outData = outCtx.getImageData(0, 0, outCanvas.width, outCanvas.height).data;
+    const colorScores = [];
+
+    for (let i = 0; i < outData.length; i += 4) {
+        const r = outData[i];
+        const g = outData[i + 1];
+        const b = outData[i + 2];
+        const a = outData[i + 3];
+
+        if (a < 120) continue;
+
+        const hsl = rgbToHsl(r, g, b);
+        if (hsl.s > 0.18 && hsl.l > 0.15 && hsl.l < 0.85) {
+            const score = hsl.s * (1 - Math.abs(hsl.l - 0.5));
+            colorScores.push({ r, g, b, hsl, score });
+        }
+    }
+
+    let dominantHex = '#f5a623';
+    if (colorScores.length > 0) {
+        colorScores.sort((a, b) => b.score - a.score);
+        const best = colorScores[Math.floor(colorScores.length * 0.15)];
+        dominantHex = rgbToHex(best.r, best.g, best.b);
+    }
+
+    // 5. Exportar DataURL optimizado
+    const optimizedDataUrl = outCanvas.toDataURL('image/png');
+    window.currentBrandLogoDataUrl = optimizedDataUrl;
+
+    const previewImg = document.getElementById('cfgBrandLogoPreviewImg');
+    const noLogoText = document.getElementById('cfgBrandNoLogoText');
+    const btnQuitar = document.getElementById('btnQuitarLogo');
+    const dropStatus = document.getElementById('dropzoneStatusText');
+    if (previewImg) {
+        previewImg.src = optimizedDataUrl;
+        previewImg.style.display = 'block';
+    }
+    if (noLogoText) noLogoText.style.display = 'none';
+    if (btnQuitar) btnQuitar.style.display = 'inline-flex';
+    if (dropStatus) dropStatus.style.display = 'block';
+
+    // No autocompletar el nombre de la empresa con el nombre del archivo en disco
+    const nameInput = document.getElementById('cfgBrandName');
+    if (nameInput && (/copia\s+de\s+seguridad/i.test(nameInput.value) || /corel/i.test(nameInput.value))) {
+        nameInput.value = 'Mister Nut';
+    }
+
+    const colorInput = document.getElementById('cfgBrandPrimaryColor');
+    const hexSpan = document.getElementById('cfgBrandColorHex');
+    if (colorInput) colorInput.value = dominantHex;
+    if (hexSpan) hexSpan.textContent = dominantHex;
+
+    const chkEnabled = document.getElementById('cfgBrandEnabled');
+    if (chkEnabled) chkEnabled.checked = true;
+
+    actualizarEstadoBrandingForm();
+    actualizarPreviewBranding();
+    cambiarColorPrimarioBranding(dominantHex);
+
+    showToast(`Logo optimizado. Color detectado: ${dominantHex}`, "info");
+}
+
+function cambiarColorPrimarioBranding(hex) {
+    const hexSpan = document.getElementById('cfgBrandColorHex');
+    if (hexSpan) hexSpan.textContent = hex;
+
+    document.documentElement.style.setProperty('--accent', hex);
+    document.documentElement.style.setProperty('--accent-text', hex);
+    document.documentElement.style.setProperty('--accent-d', hex);
+}
+
+function cargarDemoMisterNut() {
+    const nutDataUrl = "data:image/png;base64,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";
+    window.currentBrandLogoDataUrl = nutDataUrl;
+
+    const chkEnabled = document.getElementById('cfgBrandEnabled');
+    const inputName = document.getElementById('cfgBrandName');
+    const inputColor = document.getElementById('cfgBrandPrimaryColor');
+    const hexSpan = document.getElementById('cfgBrandColorHex');
+    const previewImg = document.getElementById('cfgBrandLogoPreviewImg');
+    const noLogoText = document.getElementById('cfgBrandNoLogoText');
+
+    if (chkEnabled) chkEnabled.checked = true;
+    if (inputName) inputName.value = 'Mister Nut';
+    if (inputColor) inputColor.value = '#e67e22';
+    if (hexSpan) hexSpan.textContent = '#e67e22';
+    if (previewImg) {
+        previewImg.src = nutDataUrl;
+        previewImg.style.display = 'block';
+    }
+    if (noLogoText) noLogoText.style.display = 'none';
+
+    const btnQuitar = document.getElementById('btnQuitarLogo');
+    const dropStatus = document.getElementById('dropzoneStatusText');
+    if (btnQuitar) btnQuitar.style.display = 'inline-flex';
+    if (dropStatus) dropStatus.style.display = 'block';
+
+    actualizarEstadoBrandingForm();
+    actualizarPreviewBranding();
+    cambiarColorPrimarioBranding('#e67e22');
+
+    showToast("Demo de Mister Nut cargada. Hacé clic en 'Guardar Cambios' para conservarla.", "info");
+}
+
+function quitarLogoBranding() {
+    window.currentBrandLogoDataUrl = '';
+    const fileInput = document.getElementById('brandFileInput');
+    if (fileInput) fileInput.value = '';
+
+    const previewImg = document.getElementById('cfgBrandLogoPreviewImg');
+    const noLogoText = document.getElementById('cfgBrandNoLogoText');
+    if (previewImg) {
+        previewImg.src = '';
+        previewImg.style.display = 'none';
+    }
+    if (noLogoText) noLogoText.style.display = 'block';
+
+    const btnQuitar = document.getElementById('btnQuitarLogo');
+    if (btnQuitar) btnQuitar.style.display = 'none';
+
+    const dropStatus = document.getElementById('dropzoneStatusText');
+    if (dropStatus) dropStatus.style.display = 'none';
+
+    actualizarPreviewBranding();
+    showToast("Logo eliminado del formulario. Hacé clic en 'Guardar Cambios' para confirmar.", "info");
+}
+
+function restaurarBrandingOriginal() {
+    const chkEnabled = document.getElementById('cfgBrandEnabled');
+    if (chkEnabled) chkEnabled.checked = false;
+
+    window.currentBrandLogoDataUrl = '';
+    const fileInput = document.getElementById('brandFileInput');
+    if (fileInput) fileInput.value = '';
+
+    const previewImg = document.getElementById('cfgBrandLogoPreviewImg');
+    const noLogoText = document.getElementById('cfgBrandNoLogoText');
+    if (previewImg) {
+        previewImg.src = '';
+        previewImg.style.display = 'none';
+    }
+    if (noLogoText) noLogoText.style.display = 'block';
+
+    const btnQuitar = document.getElementById('btnQuitarLogo');
+    const dropStatus = document.getElementById('dropzoneStatusText');
+    if (btnQuitar) btnQuitar.style.display = 'none';
+    if (dropStatus) dropStatus.style.display = 'none';
+
+    const inputColor = document.getElementById('cfgBrandPrimaryColor');
+    const hexSpan = document.getElementById('cfgBrandColorHex');
+    if (inputColor) inputColor.value = '#f5a623';
+    if (hexSpan) hexSpan.textContent = '#f5a623';
+
+    actualizarEstadoBrandingForm();
+    actualizarPreviewBranding();
+
+    aplicarBrandingUI({ brand_enabled: false });
+    showToast("Restaurado a EnvioBot Full original.", "info");
+}
+
+function rgbToHsl(r, g, b) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+
+    if (max === min) {
+        h = s = 0;
+    } else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            case b: h = (r - g) / d + 4; break;
+        }
+        h /= 6;
+    }
+    return { h, s, l };
+}
+
+function rgbToHex(r, g, b) {
+    return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+}
+
+// Exponer funciones globales
+window.inicializarBranding = inicializarBranding;
+window.aplicarBrandingUI = aplicarBrandingUI;
+window.cargarBrandingEnFormulario = cargarBrandingEnFormulario;
+window.actualizarEstadoBrandingForm = actualizarEstadoBrandingForm;
+window.actualizarPreviewBranding = actualizarPreviewBranding;
+window.manejarSeleccionLogo = manejarSeleccionLogo;
+window.procesarArchivoLogo = procesarArchivoLogo;
+window.cambiarColorPrimarioBranding = cambiarColorPrimarioBranding;
+window.cargarDemoMisterNut = cargarDemoMisterNut;
+window.quitarLogoBranding = quitarLogoBranding;
+window.restaurarBrandingOriginal = restaurarBrandingOriginal;
 
 

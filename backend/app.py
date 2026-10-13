@@ -116,6 +116,21 @@ def init_verification_tables():
             except Exception:
                 pass
 
+            # Migración automática para Co-Branding y Personalización de Marca
+            for b_col, b_def in [
+                ("brand_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("brand_name", "VARCHAR(150) NULL"),
+                ("brand_logo_url", "MEDIUMTEXT NULL"),
+                ("brand_primary_color", "VARCHAR(25) NULL"),
+                ("brand_show_powered_by", "BOOLEAN NOT NULL DEFAULT TRUE")
+            ]:
+                try:
+                    cur.execute(f"SHOW COLUMNS FROM user_settings LIKE '{b_col}'")
+                    if not cur.fetchone():
+                        cur.execute(f"ALTER TABLE user_settings ADD COLUMN {b_col} {b_def}")
+                except Exception:
+                    pass
+
             try:
                 cur.execute("SHOW COLUMNS FROM alert_recipients LIKE 'is_verified'")
                 if not cur.fetchone():
@@ -1144,7 +1159,7 @@ def get_full_items():
             JOIN inbound_shipments s ON s.id = isi.shipment_id
             WHERE s.user_id = %s AND s.status IN ('scheduled', 'in_transit')
             GROUP BY isi.item_id, isi.inventory_id, isi.sku
-        """, (user_id,))
+        """, (account_id,))
         transit_rows = cur.fetchall()
         transit_by_sku = {}
         transit_by_inv = {}
@@ -1777,10 +1792,16 @@ def user_settings_route():
         if sync_freq not in (1, 2, 4, 6, 12, 24):
             sync_freq = 4
 
+        brand_enabled = bool(data.get("brand_enabled", False))
+        brand_name = data.get("brand_name", "").strip() if data.get("brand_name") else ""
+        brand_logo_url = data.get("brand_logo_url", "")
+        brand_primary_color = data.get("brand_primary_color", "").strip() if data.get("brand_primary_color") else ""
+        brand_show_powered_by = bool(data.get("brand_show_powered_by", True))
+
         cur.execute("""
             INSERT INTO user_settings 
-            (user_id, default_lead_time_days, default_safety_stock_days, target_coverage_days, sync_frequency_hours, notify_email, alert_email, notify_whatsapp, whatsapp_phone, email_verified)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            (user_id, default_lead_time_days, default_safety_stock_days, target_coverage_days, sync_frequency_hours, notify_email, alert_email, notify_whatsapp, whatsapp_phone, email_verified, brand_enabled, brand_name, brand_logo_url, brand_primary_color, brand_show_powered_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 default_lead_time_days = VALUES(default_lead_time_days),
                 default_safety_stock_days = VALUES(default_safety_stock_days),
@@ -1790,7 +1811,12 @@ def user_settings_route():
                 alert_email = VALUES(alert_email),
                 notify_whatsapp = VALUES(notify_whatsapp),
                 whatsapp_phone = VALUES(whatsapp_phone),
-                email_verified = VALUES(email_verified)
+                email_verified = VALUES(email_verified),
+                brand_enabled = VALUES(brand_enabled),
+                brand_name = VALUES(brand_name),
+                brand_logo_url = VALUES(brand_logo_url),
+                brand_primary_color = VALUES(brand_primary_color),
+                brand_show_powered_by = VALUES(brand_show_powered_by)
         """, (
             account_id,
             data.get("default_lead_time_days", 7),
@@ -1801,7 +1827,12 @@ def user_settings_route():
             new_email,
             data.get("notify_whatsapp", False),
             new_phone,
-            email_is_verified
+            email_is_verified,
+            brand_enabled,
+            brand_name,
+            brand_logo_url,
+            brand_primary_color,
+            brand_show_powered_by
         ))
 
         # Actualizar depósitos individuales en la base de datos
@@ -2276,7 +2307,7 @@ def create_inbound_shipment():
             "ok": False,
             "requires_upgrade": True,
             "error": "El Módulo de Colectas y Envíos a Full es una función exclusiva para planes Pro Plus o Add-on activo.",
-            "upgrade_msg": "Automatizá tus envíos a Villa Celina, generá remitos oficiales con código de barras y eliminá quiebres de stock."
+            "upgrade_msg": "Automatizá tus envíos a Villa Celina, generá hojas de despacho con código de barras y eliminá quiebres de stock."
         }), 403
 
     data = request.get_json() or {}
@@ -2436,6 +2467,151 @@ def get_inbound_shipment_detail(shipment_id):
 
     return jsonify({"ok": True, "shipment": shipment, "items": items}), 200
 
+@app.route("/api/full/inbound/shipments/<int:shipment_id>", methods=["PUT"])
+@jwt_required()
+def update_inbound_shipment(shipment_id):
+    """Actualiza una orden de colecta / envío inbound existente (solo si no fue despachado)."""
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM inbound_shipments WHERE id = %s AND user_id = %s", (shipment_id, account_id))
+        shipment = cur.fetchone()
+
+    if not shipment:
+        conn.close()
+        return jsonify({"ok": False, "error": "Envío no encontrado."}), 404
+
+    if shipment["status"] in ("in_transit", "delivered", "cancelled"):
+        conn.close()
+        return jsonify({
+            "ok": False,
+            "error": f"No se puede modificar un envío en estado '{shipment['status']}'. Solo se pueden editar envíos programados o en preparación."
+        }), 400
+
+    data = request.get_json() or {}
+    items = data.get("items", [])
+    if not items:
+        conn.close()
+        return jsonify({"ok": False, "error": "El envío debe contener al menos un producto."}), 400
+
+    pickup_date_str = data.get("pickup_date")
+    carrier_notes = data.get("carrier_notes", "").strip() if "carrier_notes" in data else (shipment.get("carrier_notes") or "")
+    packaging_type = data.get("packaging_type") or shipment.get("packaging_type") or "cajas_master"
+
+    lead_time_days = shipment.get("lead_time_days", 2)
+    transit_days = shipment.get("transit_days", 3)
+    pickup_date = None
+    if pickup_date_str:
+        try:
+            pickup_date = datetime.strptime(str(pickup_date_str).split("T")[0], "%Y-%m-%d").date()
+        except Exception:
+            pickup_date = None
+    if not pickup_date:
+        pickup_date = shipment.get("pickup_date") or (datetime.now().date() + timedelta(days=lead_time_days))
+
+    estimated_arrival = pickup_date + timedelta(days=transit_days)
+
+    total_units = 0
+    total_boxes = 0
+    clean_items = []
+
+    for it in items:
+        units = int(it.get("units_to_send", 0))
+        if units <= 0:
+            continue
+        units_per_box = int(it.get("units_per_box", 0))
+        if units_per_box > 0:
+            box_count = (units + units_per_box - 1) // units_per_box
+        else:
+            box_count = int(it.get("box_count", 1))
+
+        total_units += units
+        total_boxes += box_count
+        clean_items.append({
+            "item_id": str(it.get("item_id", "")).strip(),
+            "inventory_id": it.get("inventory_id"),
+            "variation_id": str(it.get("variation_id", "")).strip() or None,
+            "variation_name": it.get("variation_name"),
+            "sku": it.get("sku"),
+            "title": it.get("title", "Producto sin título"),
+            "current_full_stock": int(it.get("current_full_stock", 0)),
+            "vpd": float(it.get("vpd", 0.0)),
+            "suggested_units": int(it.get("suggested_units", 0)),
+            "units_to_send": units,
+            "units_per_box": units_per_box,
+            "box_count": box_count
+        })
+
+    if not clean_items:
+        conn.close()
+        return jsonify({"ok": False, "error": "Debe haber al menos un producto con unidades mayor a cero."}), 400
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            UPDATE inbound_shipments SET
+                total_items = %s,
+                total_units = %s,
+                total_boxes = %s,
+                packaging_type = %s,
+                carrier_notes = %s,
+                pickup_date = %s,
+                estimated_arrival_date = %s,
+                updated_at = NOW()
+            WHERE id = %s AND user_id = %s
+        """, (
+            len(clean_items),
+            total_units,
+            total_boxes,
+            packaging_type,
+            carrier_notes,
+            pickup_date,
+            estimated_arrival,
+            shipment_id,
+            account_id
+        ))
+
+        cur.execute("DELETE FROM inbound_shipment_items WHERE shipment_id = %s", (shipment_id,))
+        for it in clean_items:
+            cur.execute("""
+                INSERT INTO inbound_shipment_items (
+                    shipment_id, item_id, inventory_id, variation_id, variation_name,
+                    sku, title, current_full_stock, vpd, suggested_units,
+                    units_to_send, units_per_box, box_count
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                shipment_id,
+                it["item_id"],
+                it["inventory_id"],
+                it["variation_id"],
+                it["variation_name"],
+                it["sku"],
+                it["title"],
+                it["current_full_stock"],
+                it["vpd"],
+                it["suggested_units"],
+                it["units_to_send"],
+                it["units_per_box"],
+                it["box_count"]
+            ))
+
+    conn.close()
+
+    return jsonify({
+        "ok": True,
+        "message": "Envío actualizado con éxito.",
+        "shipment": {
+            "id": shipment_id,
+            "shipment_code": shipment["shipment_code"],
+            "total_items": len(clean_items),
+            "total_units": total_units,
+            "total_boxes": total_boxes,
+            "pickup_date": str(pickup_date),
+            "carrier_notes": carrier_notes
+        }
+    }), 200
+
 @app.route("/api/full/inbound/shipments/<int:shipment_id>/status", methods=["PUT"])
 @jwt_required()
 def update_inbound_shipment_status(shipment_id):
@@ -2478,7 +2654,7 @@ def delete_inbound_shipment(shipment_id):
 
 @app.route("/api/full/inbound/shipments/<int:shipment_id>/remito-html", methods=["GET"])
 def get_inbound_shipment_remito_html(shipment_id):
-    """Genera la vista imprimible A4 del Remito Oficial de Colecta con códigos de barras."""
+    """Genera la vista imprimible A4 de la Hoja de Despacho / Colecta con códigos de barras."""
     user_id = None
     token = request.args.get("token")
     if token:
@@ -2517,9 +2693,12 @@ def get_inbound_shipment_remito_html(shipment_id):
 
         cur.execute("SELECT * FROM inbound_shipment_items WHERE shipment_id = %s ORDER BY id ASC", (shipment_id,))
         items = cur.fetchall() or []
+
+        cur.execute("SELECT brand_enabled, brand_name, brand_logo_url, brand_primary_color, brand_show_powered_by FROM user_settings WHERE user_id = %s", (account_id,))
+        branding = cur.fetchone() or {}
     conn.close()
 
-    html_content = render_remito_html(shipment, items)
+    html_content = render_remito_html(shipment, items, branding)
     return html_content, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 # -------------------------------------------------------------

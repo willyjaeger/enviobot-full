@@ -10,11 +10,20 @@
     <link rel="icon" type="image/png" href="img/icon.png">
     <link rel="apple-touch-icon" href="img/icon.png">
     <script>
-        // Anti-flicker de tema claro/oscuro
+        // Anti-flicker de tema claro/oscuro y personalización de marca
         (function () {
             try {
                 if (localStorage.getItem('enviobot_full_theme') === 'light' || localStorage.getItem('enviobot_theme') === 'light') {
                     document.documentElement.setAttribute('data-theme', 'light');
+                }
+                const brandRaw = localStorage.getItem('enviobot_client_branding');
+                if (brandRaw) {
+                    const brand = JSON.parse(brandRaw);
+                    if (brand && brand.brand_enabled && brand.brand_primary_color) {
+                        document.documentElement.style.setProperty('--accent', brand.brand_primary_color);
+                        document.documentElement.style.setProperty('--accent-text', brand.brand_primary_color);
+                        document.documentElement.style.setProperty('--accent-d', brand.brand_primary_color);
+                    }
                 }
             } catch (e) {}
         })();
@@ -28,68 +37,63 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261012_6">
+    <link rel="stylesheet" href="css/style.css?v=20261012_7">
 </head>
 <body>
 
     <div class="container">
-        <!-- ── Topbar Sticky ────────────────────────────── -->
-        <header class="topbar">
-            <div style="display: flex; align-items: center; gap: 16px;">
-                    <a href="#" class="logo-wrap">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <!-- ── Encabezado Estilo EnvioBot Pedidos & Co-Branding ───── -->
+        <header>
+            <div id="headerBrandContainer" style="display: flex; align-items: center;">
+                <div id="defaultBrandLogo" style="display: flex; align-items: center;">
+                    <h1>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
                             <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
                             <line x1="12" y1="21.1" x2="12" y2="12"></line>
                         </svg>
-                        <span style="font-weight: 800; font-size: 19px; letter-spacing: -0.2px; color: var(--text);">EnvioBot <span style="color: var(--accent);">Full</span></span>
-                    </a>
+                        EnvioBot <span style="color: var(--accent);">Full</span>
+                    </h1>
                 </div>
-
-                <div class="user-info">
-                    <span id="planBadge" class="plan-badge trial" onclick="abrirModalPlan()" title="Ver estado del plan y suscripción">30 días de prueba</span>
-                    <select id="mlAccountSelect" class="depot-select" onchange="cambiarCuentaMeLi(this.value)" style="display: none; margin-left: 6px;"></select>
-                    <div class="user-email" id="userEmailText">Usuario</div>
-                    <div class="top-actions">
-                        <button id="themeToggleBtn" onclick="toggleTheme()" class="icon-btn" title="Alto contraste para pantallas con mucha luz">
-                            <svg id="themeIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M20 14.5A8.5 8.5 0 019.5 4 8.5 8.5 0 1020 14.5z"></path>
+                <div id="customBrandLogo" onclick="abrirConfiguracion('branding'); return false;" style="display: none; flex-direction: column; align-items: center; justify-content: center; gap: 9px; cursor: pointer;" title="Hacé clic para editar, cambiar o quitar el logo de tu marca">
+                    <img id="headerClientLogoImg" src="" alt="Logo Empresa" class="header-client-logo">
+                    <div id="headerPoweredByPill" class="enviobot-badge-dark">
+                        <span class="powered-txt">powered by</span>
+                        <div class="badge-sep"></div>
+                        <div class="logo-unit">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+                                <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+                                <line x1="12" y1="21.1" x2="12" y2="12"></line>
                             </svg>
-                            <span id="themeLabel">Modo claro</span>
-                        </button>
-                        <button onclick="abrirConfiguracion()" class="icon-btn" title="Ajustar parámetros y alertas">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="12" cy="12" r="3"></circle>
-                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                            </svg>
-                            <span>Configuración</span>
-                        </button>
-                        <button onclick="instalarAppEscritorio()" class="icon-btn" id="btnInstallDesktopApp" title="Instalar EnvioBot Full en el escritorio de Windows" style="display: none; color: var(--text2);">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                                <line x1="8" y1="21" x2="16" y2="21"></line>
-                                <line x1="12" y1="17" x2="12" y2="21"></line>
-                            </svg>
-                            <span>Instalar App</span>
-                        </button>
-                        <button onclick="abrirModalAdminClientes()" class="icon-btn" id="btnAdminClientesTop" title="Panel de Clientes" style="display: none; color: var(--text2);">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-                                <circle cx="9" cy="7" r="4"></circle>
-                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-                                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                            </svg>
-                            <span>Clientes (Admin)</span>
-                        </button>
-                        <button onclick="abrirModalAuth('login')" class="icon-btn" title="Iniciar sesión con cuenta existente" id="btnLoginHeader" style="color: var(--accent); font-weight: 700; display: none;">
-                            <span>Ingresar</span>
-                        </button>
-                        <button onclick="cerrarSesion()" class="icon-btn" title="Cerrar sesión" id="btnLogoutBtn" style="color: var(--text2);">
-                            <span>Salir</span>
-                        </button>
+                            <span class="logo-title">EnvioBot <span class="logo-full">Full</span></span>
+                        </div>
                     </div>
                 </div>
-            </header>
+            </div>
+
+            <div class="user-info">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div id="userEmailText" style="font-weight: 600; color: var(--text);">usuario@email.com</div>
+                </div>
+
+                <div id="headerMeliStatus" style="display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text2);">
+                    <span id="headerMeliDot" style="width: 7px; height: 7px; border-radius: 50%; background: #4CAF50; display: inline-block;"></span>
+                    <span>Mercado Libre: <strong id="headerMeliAccount" style="color: var(--text); font-weight: 600;">Conectado</strong></span>
+                    <select id="mlAccountSelect" class="depot-select" onchange="cambiarCuentaMeLi(this.value)" style="display: none; padding: 2px 6px; font-size: 11px; margin-left: 2px;"></select>
+                    <a href="#" id="headerSyncBtn" onclick="sincronizarAhora(); return false;" style="color: var(--text2); text-decoration: underline; margin-left: 2px;" title="Actualizar stock ahora">Sincronizar</a>
+                </div>
+
+                <div class="header-actions">
+                    <a href="#" id="themeToggleBtn" onclick="toggleTheme(); return false;" class="header-link">Modo claro</a>
+                    <a href="#" onclick="abrirConfiguracion(); return false;" class="header-link">⚙ Configuración</a>
+                    <a href="#" onclick="instalarAppEscritorio(); return false;" class="header-link" id="btnInstallDesktopApp" style="display: none;">Instalar App</a>
+                    <a href="#" onclick="abrirModalAdminClientes(); return false;" class="header-link" id="btnAdminClientesTop" style="display: none;">Admin</a>
+                    <a href="#" id="btnLoginHeader" onclick="abrirModalAuth('login'); return false;" class="header-link header-link-accent" style="display: none;">Ingresar</a>
+                    <a href="#" id="btnLogoutBtn" onclick="cerrarSesion(); return false;" class="header-link header-link-accent">Desconectar</a>
+                </div>
+            </div>
+        </header>
 
         <!-- ======================================================== -->
         <!-- VISTA 1: BIENVENIDA / ONBOARDING PARA CLIENTE NUEVO      -->
@@ -166,150 +170,140 @@
                 </div>
             </div>
 
-            <!-- Barra de Métricas Superiores (Dashboard) -->
+            <!-- Barra de Métricas Superiores (Dashboard Estilo EnvioBot Pedidos) -->
             <div class="status-bar">
-                <div class="stat">
+                <div class="stat stat-clickable" id="statCardTotal" onclick="irAEstado('all')" title="Ver todas las publicaciones en la tabla">
                     <div class="stat-value" id="statTotal">—</div>
                     <div class="stat-label">En Depósito</div>
-                    <div class="stat-sub">Publicaciones monitoreadas</div>
                 </div>
-                <div class="stat stat-ok">
+                <div class="stat stat-clickable" id="statCardOk" onclick="irAEstado('ok')" title="Ver publicaciones con stock óptimo">
                     <div class="stat-value" id="statOk">—</div>
                     <div class="stat-label">Stock Óptimo</div>
-                    <div class="stat-sub">Cubiertos con holgura</div>
                 </div>
-                <div class="stat stat-warn">
+                <div class="stat stat-clickable" id="statCardWarning" onclick="irAEstado('warning')" title="Ver publicaciones próximas a preparar colecta">
                     <div class="stat-value" id="statWarning">—</div>
                     <div class="stat-label">Preparar Colecta</div>
-                    <div class="stat-sub">Próximos a requerir flete</div>
                 </div>
-                <div class="stat stat-danger">
+                <div class="stat stat-clickable" id="statCardCritical" onclick="irAQuiebreInminente()" title="Hacer clic para ir directamente al artículo con quiebre inminente en la tabla">
                     <div class="stat-value" id="statCritical">—</div>
                     <div class="stat-label">Quiebre Inminente</div>
-                    <div class="stat-sub">¡Mandar flete hoy mismo!</div>
                 </div>
             </div>
 
-        <!-- ── Contenido Principal ──────────────────────── -->
-        <div class="main-content">
-            <!-- Columna Izquierda: Tabla y Monitoreo -->
-            <div class="card" id="cardStockPrincipal">
-                <!-- Barra de Depósito Integrada -->
-                <div class="depot-toolbar">
-                    <div class="depot-selector-group">
-                        <span style="font-size: 13px; font-weight: 700; color: var(--text2);">Depósito:</span>
-                        <span id="depotSingleLabelPill" style="font-size: 13px; font-weight: 700; color: var(--text);">Mercado Envíos Full (Villa Celina)</span>
-                        <select id="activeWarehouseSelect" class="depot-select" onchange="cambiarDeposito(this.value)" style="display: none;">
-                            <option value="meli_full" selected>Mercado Envíos Full (Villa Celina)</option>
-                        </select>
-                    </div>
-
-                    <div class="depot-info-pill">
-                        Demora flete: <strong id="depotTransitDaysText">5 días</strong> · Cobertura objetivo: <strong id="depotTargetDaysText">30 días</strong>
-                    </div>
-                </div>
-
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-                    <h2 style="margin: 0;">Pronóstico y Rotación de Stock</h2>
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                        <button class="btn btn-secondary btn-sm" id="btnToggleFullscreenTable" onclick="toggleFullscreenTable()" title="Ver en pantalla completa para revisar más artículos cómodamente">
-                            <svg id="fsIconExpand" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-                            </svg>
-                            <svg id="fsIconCompress" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
-                                <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
-                            </svg>
-                            <span id="btnToggleFullscreenText">Pantalla Completa</span>
-                        </button>
-                        <button class="btn btn-secondary btn-sm" id="btnHistorialColectasTop" onclick="abrirHistorialColectas()" title="Ver historial de envíos y remitos oficiales generados">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <polyline points="14 2 14 8 20 8"></polyline>
-                                <line x1="16" y1="13" x2="8" y2="13"></line>
-                                <line x1="16" y1="17" x2="8" y2="17"></line>
-                                <polyline points="10 9 9 9 8 9"></polyline>
-                            </svg>
-                            <span>Historial Envíos (<span id="topbarHistorialBadge">0</span>)</span>
-                        </button>
-                        <button class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="abrirModalColecta()">
-                            Armar Colecta
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Filtros -->
-                <div class="filter-bar">
-                    <input type="text" class="filter-input" id="searchInput" 
-                           placeholder="Buscar por SKU, título o MLA..." 
-                           oninput="onSearchChange(this.value)">
-
-                    <select class="filter-select" id="filterStatusSelect" onchange="onFilterChange(this.value)">
-                        <option value="all">Todos los estados</option>
-                        <option value="action_required">Requieren Colecta Hoy</option>
-                        <option value="warning">Preparar colecta</option>
-                        <option value="critical">Quiebre crítico / Sin stock</option>
-                        <option value="ok">Stock óptimo</option>
-                    </select>
-                </div>
-
-                <!-- Tabla Principal -->
-                <div class="table-responsive">
-                    <table class="stock-table">
-                        <thead>
-                            <tr>
-                                <th>Publicación / SKU</th>
-                                <th class="num-cell" title="Unidades disponibles reales hoy en este depósito">Stock Actual</th>
-                                <th class="num-cell" title="Venta promedio diaria de unidades">Ritmo (VPD)</th>
-                                <th class="num-cell" title="Días que te dura el stock antes de quebrar">Días Cobertura</th>
-                                <th class="num-cell" title="Fecha estimada en la que se agota totalmente el stock si no se repone">Quiebra el</th>
-                                <th class="num-cell" title="Día límite en el que tenés que entrar a MercadoLibre a pedir la colecta para que el camión llegue antes de quebrar">Cuándo pedir Colecta a MeLi</th>
-                                <th class="num-cell" title="Días de stock teórico que querés mantener de este producto">Stock Deseado</th>
-                                <th class="num-cell">Estado</th>
-                            </tr>
-                        </thead>
-                        <tbody id="stockTableBody">
-                            <!-- Filas inyectadas por app.js -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Columna Derecha: Control y Widget de Alertas -->
-            <div class="sidebar-col">
-                <!-- Card 1: Widget de Alertas de Reposición -->
-                <div class="card" id="widgetAlertasCard">
-                    <h2>Alertas de Reposición</h2>
-                    <div id="widgetAlertContainer">
-                        <!-- Inyectado dinámicamente por app.js -->
-                    </div>
-                </div>
-
-                <!-- Card 2: Cuenta MercadoLibre -->
-                <div class="card">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <h2 style="margin: 0;">Mercado Libre</h2>
-                        <button onclick="abrirConfiguracion('meli')" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 3px 8px; font-weight: 600;" title="Administrar cuentas de Mercado Libre en Configuración">Gestionar</button>
-                    </div>
-                    <div class="nested-box">
-                        <div class="nested-title">
-                            <span>Estado de Conexión</span>
-                            <span id="sidebarConnStatusBadge" class="badge badge-ok">Activo</span>
-                        </div>
-                        <div style="font-size: 13.5px; color: var(--text2); line-height: 1.8;">
-                            <div>Cuenta: <strong id="sidebarAccountName" style="color: var(--text);">Cargando...</strong></div>
-                            <div>Depósito: <strong id="sidebarDepotName" style="color: var(--text);">Mercado Envíos Full (Villa Celina)</strong></div>
-                            <div>Último chequeo: <span id="lastSyncText">Al instante</span></div>
+            <!-- ── Contenido Principal (Ancho Completo Alineado) ────────────── -->
+            <div class="main-content">
+                <div class="card" id="cardStockPrincipal">
+                    <!-- Barra de Depósito Integrada -->
+                    <div class="depot-toolbar">
+                        <div class="depot-selector-group">
+                            <span style="font-size: 13px; font-weight: 600; color: var(--text2);">Depósito:</span>
+                            <span id="depotSingleLabelPill" style="font-size: 13px; font-weight: 600; color: var(--text);">Mercado Envíos Full (Villa Celina)</span>
+                            <select id="activeWarehouseSelect" class="depot-select" onchange="cambiarDeposito(this.value)" style="display: none;">
+                                <option value="meli_full" selected>Mercado Envíos Full (Villa Celina)</option>
+                            </select>
                         </div>
 
-                        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);">
-                            <button id="btnCheckStockNow" onclick="sincronizarAhora()" class="btn btn-secondary btn-sm" style="width: 100%; justify-content: center; font-weight: 700; font-size: 13px;">
-                                <span id="syncBtnText">Chequear Stock Real</span>
+                        <div class="depot-info-pill">
+                            Demora flete: <strong id="depotTransitDaysText">5 días</strong> · Cobertura objetivo: <strong id="depotTargetDaysText">30 días</strong>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                        <h2 style="margin: 0;">Pronóstico y Rotación de Stock</h2>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <button class="btn btn-secondary btn-sm" id="btnHistorialColectasTop" onclick="abrirHistorialColectas()" title="Ver historial de envíos y hojas de despacho generadas">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                                    <polyline points="10 9 9 9 8 9"></polyline>
+                                </svg>
+                                <span>Historial Envíos (<span id="topbarHistorialBadge">0</span>)</span>
+                            </button>
+                            <button class="btn btn-sm" onclick="abrirModalColecta()">
+                                Armar Colecta
                             </button>
                         </div>
                     </div>
+
+                    <!-- Filtros -->
+                    <div class="filter-bar">
+                        <input type="text" class="filter-input" id="searchInput" 
+                               placeholder="Buscar por SKU, título o MLA..." 
+                               oninput="onSearchChange(this.value)">
+
+                        <select class="filter-select" id="filterStatusSelect" onchange="onFilterChange(this.value)">
+                            <option value="all">Todos los estados</option>
+                            <option value="action_required">Requieren Colecta Hoy</option>
+                            <option value="warning">Preparar colecta</option>
+                            <option value="critical">Quiebre crítico / Sin stock</option>
+                            <option value="ok">Stock óptimo</option>
+                        </select>
+                    </div>
+
+                    <!-- Tabla Principal con Ordenamiento de Columnas -->
+                    <div class="table-responsive">
+                        <table class="stock-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable-th" onclick="ordenarPor('title')" title="Ordenar por publicación o SKU">
+                                        <div class="th-content">
+                                            <span>Publicación / SKU</span>
+                                            <span class="sort-icon" id="sort-icon-title">↕</span>
+                                        </div>
+                                    </th>
+                                    <th class="sortable-th num-cell" onclick="ordenarPor('current_stock')" title="Ordenar por stock actual disponible">
+                                        <div class="th-content th-content-center">
+                                            <span>Stock</span>
+                                            <span class="sort-icon" id="sort-icon-current_stock">↕</span>
+                                        </div>
+                                    </th>
+                                    <th class="sortable-th num-cell" onclick="ordenarPor('vpd')" title="Ordenar por venta promedio diaria">
+                                        <div class="th-content th-content-center">
+                                            <span>Venta/día</span>
+                                            <span class="sort-icon" id="sort-icon-vpd">↕</span>
+                                        </div>
+                                    </th>
+                                    <th class="sortable-th num-cell" onclick="ordenarPor('days_left')" title="Ordenar por días de cobertura restante">
+                                        <div class="th-content th-content-center">
+                                            <span>Cobertura</span>
+                                            <span class="sort-icon" id="sort-icon-days_left">↕</span>
+                                        </div>
+                                    </th>
+                                    <th class="sortable-th num-cell" onclick="ordenarPor('stockout_date')" title="Ordenar por fecha estimada de quiebre">
+                                        <div class="th-content th-content-center">
+                                            <span>Quiebre</span>
+                                            <span class="sort-icon" id="sort-icon-stockout_date">↕</span>
+                                        </div>
+                                    </th>
+                                    <th class="sortable-th num-cell" onclick="ordenarPor('reorder_deadline_date')" title="Ordenar por día límite para pedir colecta en MeLi">
+                                        <div class="th-content th-content-center">
+                                            <span>Pedir Colecta</span>
+                                            <span class="sort-icon" id="sort-icon-reorder_deadline_date">↕</span>
+                                        </div>
+                                    </th>
+                                    <th class="sortable-th num-cell" onclick="ordenarPor('target_stock_days')" title="Ordenar por días de stock deseado">
+                                        <div class="th-content th-content-center">
+                                            <span>Obj. Días</span>
+                                            <span class="sort-icon" id="sort-icon-target_stock_days">↕</span>
+                                        </div>
+                                    </th>
+                                    <th class="sortable-th num-cell" onclick="ordenarPor('status')" title="Ordenar por criticidad del estado">
+                                        <div class="th-content th-content-center">
+                                            <span>Estado</span>
+                                            <span class="sort-icon" id="sort-icon-status">↕</span>
+                                        </div>
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody id="stockTableBody">
+                                <!-- Filas inyectadas por app.js -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
-        </div>
         </div> <!-- Fin de #viewMainDashboard -->
     </div> <!-- Fin de .container -->
 
@@ -511,7 +505,7 @@
             <div class="modal-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
                 <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <h3 style="color: var(--accent); font-size: 21px; font-weight: 800; margin: 0;">Colectas & Envíos a Full</h3>
+                        <h3 style="color: var(--accent); font-size: 21px; font-weight: 800; margin: 0;">Armar Colecta & Envío a Full</h3>
                         <span class="plan-badge pro" style="font-size: 11px; padding: 2px 7px;">Villa Celina</span>
                     </div>
                     <p style="font-size: 13px; color: var(--text2); margin-top: 4px; margin-bottom: 0;">
@@ -519,6 +513,9 @@
                     </p>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="irAHistorialDesdeColecta()" title="Ver historial de envíos generados">
+                        Ver Historial de Envíos (<span id="colectaHistorialBadge">0</span>)
+                    </button>
                     <button type="button" class="btn btn-secondary btn-sm" id="btnToggleResumenColecta" onclick="toggleResumenColecta()" title="Plegar o desplegar métricas superiores para maximizar el espacio de los artículos">
                         Plegar Resumen
                     </button>
@@ -535,16 +532,6 @@
                 </div>
             </div>
 
-            <!-- Pestañas del Modal: Planificador vs Historial -->
-            <div style="display: flex; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
-                <button type="button" class="btn btn-sm" id="btnTabPlanificarColecta" style="background: var(--accent); color: #111; font-weight: 700;" onclick="switchColectaTab('planificar')">
-                    Planificar Nuevo Envío
-                </button>
-                <button type="button" class="btn btn-secondary btn-sm" id="btnTabHistorialColecta" onclick="switchColectaTab('historial')">
-                    Historial de Envíos (<span id="colectaHistorialBadge">0</span>)
-                </button>
-            </div>
-
             <!-- ── Banner de Seguridad Garantizada (Modo Interno) ── -->
             <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 9px 13px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
                 <div style="display: flex; align-items: center; gap: 9px;">
@@ -553,7 +540,7 @@
                     </svg>
                     <div style="font-size: 12px; color: var(--text); line-height: 1.4;">
                         <strong style="color: var(--good);">Modo Seguro de Control Interno:</strong> 
-                        Este remito y conteo de cajas es para tu depósito y tu chofer. 
+                        Esta hoja de despacho y conteo de cajas es para tu depósito y tu chofer. 
                         <span style="color: var(--text2);"><strong>NO genera compromisos ni colectas en Mercado Libre.</strong> Cero riesgo de alterar tu cuenta oficial.</span>
                     </div>
                 </div>
@@ -683,29 +670,142 @@
                     <div style="display: flex; gap: 8px;">
                         <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
                         <button type="button" class="btn" style="background: var(--accent); color: #111; font-weight: 800;" onclick="confirmarDespachoColecta()">
-                            Generar Envío y Remito Oficial
+                            Generar Envío y Hoja de Despacho
                         </button>
+                    </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal Dedicado e Independiente: Historial de Envíos a Full ───────────── -->
+    <div class="modal-overlay" id="modalHistorialEnvios" style="display: none; z-index: 1450;">
+        <div class="modal-card modal-card-large" id="modalHistorialEnviosCard" style="max-width: 1060px; width: 96%; max-height: 90vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <h3 style="color: var(--accent); font-size: 21px; font-weight: 800; margin: 0;">Historial de Envíos a Full</h3>
+                        <span class="plan-badge pro" style="font-size: 11px; padding: 2px 7px;">Villa Celina</span>
+                        <span id="historialTotalBadge" style="background: var(--surf2); border: 1px solid var(--border); border-radius: 12px; font-size: 11px; padding: 2px 8px; color: var(--text2); font-weight: 600;">0 envíos</span>
+                    </div>
+                    <p style="font-size: 13px; color: var(--text2); margin-top: 4px; margin-bottom: 0;">
+                        Listado de todos los despachos planificados y enviados. Podés editar cualquier envío mientras no haya sido despachado, modificar cantidades, agregar o quitar productos, o imprimir el remito oficial.
+                    </p>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="irACrearColectaDesdeHistorial()">
+                        + Armar Nuevo Envío
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="cargarHistorialColectas()" title="Actualizar lista">
+                        Actualizar
+                    </button>
+                    <button class="modal-close" onclick="cerrarModalHistorialEnvios()">✕</button>
+                </div>
+            </div>
+
+            <!-- Contenedor con Scroll de la lista de envíos -->
+            <div class="modal-body-scroll" style="flex: 1; overflow-y: auto; margin-bottom: 12px; min-height: 200px;">
+                <div id="historialEnviosContainer">
+                    <div style="text-align: center; padding: 40px; color: var(--text2);">
+                        Cargando historial de envíos...
                     </div>
                 </div>
             </div>
 
-            <!-- ── VISTA 2: Historial de Envíos Realizados ── -->
-            <div id="colectaTabHistorial" style="display: none; flex-direction: column; flex: 1; min-height: 0;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <span style="font-size: 13px; color: var(--text2);">Envíos de reposición generados y su estado de entrega en Villa Celina:</span>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="cargarHistorialColectas()">Actualizar Historial</button>
+            <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 8px;">
+                <div style="font-size: 12px; color: var(--text2);">
+                    Tip: Los envíos en estado <strong>Programado</strong> o <strong>Borrador</strong> son totalmente editables. Una vez marcados como <strong>En Camino</strong> o <strong>Ingresado</strong>, quedan fijados para auditoría.
+                </div>
+                <button type="button" class="btn btn-secondary" onclick="cerrarModalHistorialEnvios()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Modal Editor de Envío / Colecta Inbound (Edición Total) ──────────────── -->
+    <div class="modal-overlay" id="modalEditarEnvio" style="display: none; z-index: 1550;">
+        <div class="modal-card modal-card-large" style="max-width: 1060px; width: 96%; max-height: 92vh; display: flex; flex-direction: column;">
+            <div class="modal-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <h3 style="color: var(--accent); font-size: 20px; font-weight: 800; margin: 0;">Editar Envío: <span id="editarEnvioCodigoHeader" style="color: var(--text);"></span></h3>
+                        <span id="editarEnvioStatusBadge" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700;"></span>
+                    </div>
+                    <p style="font-size: 12.5px; color: var(--text2); margin-top: 4px; margin-bottom: 0;">
+                        Modificá fecha de retiro, agregá o quitá artículos, y ajustá cantidades o unidades por bulto antes de enviar a Villa Celina.
+                    </p>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <button class="modal-close" onclick="cerrarModalEditarEnvio()">✕</button>
+                </div>
+            </div>
+
+            <!-- Parámetros Principales del Envío -->
+            <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <label style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase;">Fecha de Retiro / Despacho</label>
+                    <input type="date" id="editarEnvioFechaRetiro" class="filter-input" style="padding: 6px 10px; font-size: 13px; font-weight: 600; width: 160px;">
                 </div>
 
-                <div class="modal-body-scroll" style="margin: 0 0 10px 0;">
-                    <div id="colectaHistorialContainer">
-                        <div style="text-align: center; padding: 40px; color: var(--text2);">
-                            Cargando historial de envíos...
-                        </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <label style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase;">Tipo de Embalaje</label>
+                    <select id="editarEnvioPackaging" class="filter-select" style="padding: 6px 10px; font-size: 13px; font-weight: 600;">
+                        <option value="cajas_master">Cajas Máster Rotuladas</option>
+                        <option value="pallets">Pallets Completos</option>
+                        <option value="bultos_varios">Bultos Mixtos</option>
+                    </select>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 220px;">
+                    <label style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase;">Observaciones para Chofer / Depósito</label>
+                    <input type="text" id="editarEnvioNotas" class="filter-input" placeholder="Ej: Chofer Juan DNI 33..., entregar en rampa 4 de Villa Celina" style="padding: 6px 10px; font-size: 13px;">
+                </div>
+            </div>
+
+            <!-- Buscador para AGREGAR NUEVOS ARTÍCULOS al envío -->
+            <div style="background: rgba(245, 166, 35, 0.05); border: 1px dashed var(--border-hover); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+                    <label style="font-size: 12px; font-weight: 700; color: var(--accent);">+ Agregar Artículo al Envío desde el Catálogo Full</label>
+                    <span style="font-size: 11px; color: var(--text2);">Escribí SKU, título o MLA para buscar y sumar productos</span>
+                </div>
+                <div style="position: relative;">
+                    <input type="text" id="editarEnvioBuscarInput" class="filter-input" placeholder="Buscar por SKU, título o MLA para agregar..." oninput="onBuscarArticuloParaAgregar(this.value)" autocomplete="off" style="width: 100%; padding: 8px 12px; font-size: 13px;">
+                    <div id="editarEnvioResultadosBusqueda" style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--surf2); border: 1px solid var(--border-hover); border-radius: 6px; max-height: 240px; overflow-y: auto; z-index: 100; box-shadow: 0 8px 24px rgba(0,0,0,0.5); margin-top: 4px;">
+                        <!-- Resultados renderizados aquí -->
                     </div>
                 </div>
+            </div>
 
-                <div style="display: flex; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--border);">
-                    <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
+            <!-- Tabla de Artículos Editables -->
+            <div class="modal-body-scroll" style="flex: 1; overflow-y: auto; min-height: 200px; border: 1px solid var(--border); border-radius: 6px;">
+                <table class="inventory-table" style="width: 100%; font-size: 12px; border-collapse: collapse;">
+                    <thead style="position: sticky; top: 0; background: var(--surf2); z-index: 2;">
+                        <tr>
+                            <th style="padding: 8px 10px; text-align: left;">Artículo / SKU</th>
+                            <th style="padding: 8px 10px; text-align: center; width: 85px;">Stock Full</th>
+                            <th style="padding: 8px 10px; text-align: center; width: 75px;">VPD</th>
+                            <th style="padding: 8px 10px; text-align: center; width: 115px;">Unidades a Enviar</th>
+                            <th style="padding: 8px 10px; text-align: center; width: 110px;">Unid. / Caja</th>
+                            <th style="padding: 8px 10px; text-align: center; width: 85px;">Bultos</th>
+                            <th style="padding: 8px 10px; text-align: center; width: 60px;">Quitar</th>
+                        </tr>
+                    </thead>
+                    <tbody id="editarEnvioTbody">
+                        <!-- Filas renderizadas dinámicamente -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Barra Inferior de Totales y Acciones -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 12px; margin-top: 8px; border-top: 1px solid var(--border);">
+                <div style="display: flex; gap: 18px; font-size: 13px; align-items: center;">
+                    <div>Artículos: <strong id="editarEnvioTotalItems">0</strong></div>
+                    <div>Unidades: <strong id="editarEnvioTotalUnits" style="color: var(--accent); font-size: 15px;">0 un.</strong></div>
+                    <div>Bultos estimados: <strong id="editarEnvioTotalBoxes" style="color: var(--good); font-size: 15px;">0 cajas</strong></div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="cerrarModalEditarEnvio()">Cancelar</button>
+                    <button type="button" class="btn" style="background: var(--accent); color: #111; font-weight: 800; padding: 9px 18px;" id="btnGuardarEdicionEnvio" onclick="guardarEdicionEnvio()">
+                        Guardar Cambios
+                    </button>
                 </div>
             </div>
         </div>
@@ -726,12 +826,12 @@
                 Módulo Pago: Envíos & Colectas a Full
             </h3>
             <p style="font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 16px;">
-                Automatizá la preparación de despachos hacia el depósito de Mercado Libre en Villa Celina, generá remitos oficiales con código de barras y eliminá quiebres de stock.
+                Automatizá la preparación de despachos hacia el depósito de Mercado Libre en Villa Celina, generá hojas de despacho con código de barras y eliminá quiebres de stock.
             </p>
             <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; text-align: left; margin-bottom: 18px; font-size: 12.5px; line-height: 1.6;">
                 <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                     <span style="color: var(--accent); font-weight: 700;">✓</span>
-                    <span><strong>Remitos Oficiales A4 con Código de Barras y QR</strong> listos para chofer y control de depósito.</span>
+                    <span><strong>Hojas de Despacho A4 con Código de Barras y QR</strong> listos para chofer y control de depósito.</span>
                 </div>
                 <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                     <span style="color: var(--accent); font-weight: 700;">✓</span>
@@ -768,14 +868,14 @@
                         <line x1="12" y1="8" x2="12.01" y2="8"></line>
                     </svg>
                     <h3 style="color: var(--accent); font-size: 18px; font-weight: 800; margin: 0;">
-                        ¿Cómo funciona la Planificación y los Remitos?
+                        ¿Cómo funciona la Planificación y los Despachos?
                     </h3>
                 </div>
                 <button class="modal-close" onclick="cerrarModalExplicacionColecta()">✕</button>
             </div>
 
             <p style="font-size: 13px; color: var(--text2); line-height: 1.5; margin-bottom: 16px;">
-                EnvioBot está diseñado para darte <strong>tranquilidad total</strong>. Armar un remito o planificar un envío acá <strong>nunca va a mandar órdenes a ciegas ni alterar tu cuenta de Mercado Libre</strong>. Este es el circuito:
+                EnvioBot está diseñado para darte <strong>tranquilidad total</strong>. Armar una hoja de despacho o planificar un envío acá <strong>nunca va a mandar órdenes a ciegas ni alterar tu cuenta de Mercado Libre</strong>. Este es el circuito:
             </p>
 
             <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
@@ -792,9 +892,9 @@
                 <div style="display: flex; gap: 12px; background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
                     <div style="background: #64b5f6; color: #111; font-weight: 800; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px;">2</div>
                     <div>
-                        <strong style="color: var(--text); font-size: 13.5px;">Generación de Remito Oficial A4 (100% Interno y Seguro)</strong>
+                        <strong style="color: var(--text); font-size: 13.5px;">Generación de Hoja de Despacho A4 (Control Interno)</strong>
                         <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0 0; line-height: 1.45;">
-                            Al tocar "Generar Envío y Remito", se crea un documento formal con código de barras, bultos y chofer para tu depósito. <strong>Mercado Libre NO recibe ninguna orden en esta etapa.</strong> Tu cuenta queda intacta. En EnvioBot, estos artículos se marcan como <em>"En Tránsito"</em> para pausar las alarmas de quiebre.
+                            Al tocar "Generar Envío y Hoja de Despacho", se crea un documento de control con código de barras, bultos y chofer para tu depósito. <strong>Mercado Libre NO recibe ninguna orden en esta etapa.</strong> Tu cuenta queda intacta. En EnvioBot, estos artículos se marcan como <em>"En Tránsito"</em> para pausar las alarmas de quiebre.
                         </p>
                     </div>
                 </div>
@@ -804,7 +904,7 @@
                     <div>
                         <strong style="color: var(--text); font-size: 13.5px;">Presentación en Mercado Libre (Vos tenés el control total)</strong>
                         <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0 0; line-height: 1.45;">
-                            Con el remito impreso: si vas con flete propio a Villa Celina, el chofer viaja con el remito. Si vas a pedir colecta oficial a MeLi, cargás las cajas calculadas en la sección oficial de MeLi cuando vos lo decidas. Nada se ejecuta en MeLi sin tu clic explícito.
+                            Con la hoja de despacho impresa: el chofer viaja con el documento de control de bultos. Si vas a pedir colecta oficial a MeLi, cargás las cajas calculadas en la sección oficial de MeLi cuando vos lo decidas. Nada se ejecuta en MeLi sin tu clic explícito.
                         </p>
                     </div>
                 </div>
@@ -822,7 +922,10 @@
     <div class="modal-overlay" id="configModal">
         <div class="modal-card modal-card-config">
             <div class="modal-header">
-                <h3 style="color: var(--accent-text); font-size: 18px; font-weight: 800;">Configuración del Sistema</h3>
+                <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                    <h3 style="color: var(--accent-text); font-size: 18px; font-weight: 800; margin: 0;">Configuración del Sistema</h3>
+                    <span id="planBadge" class="plan-badge trial" onclick="abrirModalPlan()" title="Ver estado del plan y suscripción" style="cursor: pointer;">Plan EnvioBot Full</span>
+                </div>
                 <button class="modal-close" onclick="cerrarConfiguracion()">✕</button>
             </div>
 
@@ -839,6 +942,9 @@
                 </button>
                 <button class="config-tab-btn" id="tabBtnTeam" onclick="switchConfigTab('team')">
                     Equipo / Colaboradores
+                </button>
+                <button class="config-tab-btn" id="tabBtnBranding" onclick="switchConfigTab('branding')">
+                    Mi Marca (Logo & Colores)
                 </button>
             </div>
 
@@ -1136,6 +1242,122 @@
                             </table>
                         </div>
                     </div>
+
+                    <!-- TAB 5: Mi Marca & Co-Branding (Logo & Colores) -->
+                    <div id="configTabBranding" style="display: none;">
+                        <div style="margin-bottom: 20px;">
+                            <h4 style="font-size: 14.5px; font-weight: 700; color: var(--text);">Personalización de Marca & Co-Branding</h4>
+                            <p style="font-size: 12.5px; color: var(--text2); margin-top: 2px; line-height: 1.45;">
+                                Vestí EnvioBot Full con la identidad de tu empresa o tienda. Al subir tu logo, el sistema extrae automáticamente tu color insignia, adapta los botones y acentos de la plataforma, y membreta tus hojas de despacho de colecta.
+                            </p>
+
+                            <!-- Interruptor Principal -->
+                            <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; margin: 14px 0; display: flex; align-items: center; justify-content: space-between;">
+                                <div>
+                                    <label for="cfgBrandEnabled" style="font-weight: 700; color: var(--text); font-size: 13.5px; cursor: pointer; display: block;">
+                                        Activar Co-Branding de mi Empresa
+                                    </label>
+                                    <span style="font-size: 11.5px; color: var(--text2);">
+                                        Reemplaza el logo general en el encabezado y en las impresiones de hojas de despacho.
+                                    </span>
+                                </div>
+                                <input type="checkbox" id="cfgBrandEnabled" style="width: 18px; height: 18px; cursor: pointer;" onchange="actualizarEstadoBrandingForm()">
+                            </div>
+
+                            <!-- Campos de Branding -->
+                            <div id="cfgBrandFieldsContainer" style="display: flex; flex-direction: column; gap: 16px;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="cfgBrandName" style="font-weight: 600; color: var(--text);">Nombre de tu Empresa / Marca</label>
+                                    <input type="text" id="cfgBrandName" placeholder="Ej: Mister Nut" style="width: 100%; box-sizing: border-box; padding: 9px 12px; background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; color: var(--text);" oninput="actualizarPreviewBranding()">
+                                </div>
+
+                                <!-- Zona de Carga de Logo -->
+                                <div>
+                                    <label style="font-weight: 600; color: var(--text); display: block; margin-bottom: 6px;">Logo de la Empresa (Cualquier formato o resolución)</label>
+                                    <div id="brandDropzone" class="brand-dropzone" onclick="document.getElementById('brandFileInput').click()">
+                                        <input type="file" id="brandFileInput" accept="image/*" style="display: none;" onchange="manejarSeleccionLogo(event)">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 6px;">
+                                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                            <polyline points="21 15 16 10 5 21"></polyline>
+                                        </svg>
+                                        <div style="font-weight: 600; font-size: 13px; color: var(--text);">
+                                            Arrastrá tu logo aquí o hacé clic para buscar
+                                        </div>
+                                        <div style="font-size: 11.5px; color: var(--text2); margin-top: 3px;">
+                                            PNG, JPG, SVG, WebP. El sistema detecta bordes, recorta espacios vacíos y optimiza automáticamente.
+                                        </div>
+                                        <div id="dropzoneStatusText" style="display: none; margin-top: 7px; font-size: 11.5px; color: var(--good); font-weight: 700; background: var(--good-bg); border: 1px solid var(--good-border); border-radius: 4px; padding: 4px 8px;">
+                                            ✓ Logo actual cargado. Hacé clic o arrastrá para reemplazarlo.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Preview del Logo y Color Extraído -->
+                                <div id="cfgBrandPreviewSection" style="background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: center;">
+                                    <div>
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                            <span style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase;">Logo Procesado</span>
+                                            <button type="button" id="btnQuitarLogo" class="btn btn-secondary btn-xs" style="color: #ff5252; border-color: rgba(255,82,82,0.4); display: none; padding: 2px 7px; font-size: 11px; font-weight: 700;" onclick="quitarLogoBranding()">
+                                                Quitar Logo
+                                            </button>
+                                        </div>
+                                        <div style="background: var(--surface); border: 1px dashed var(--border); border-radius: 6px; height: 56px; display: flex; align-items: center; justify-content: center; padding: 4px 10px;">
+                                            <img id="cfgBrandLogoPreviewImg" src="" alt="Sin logo" style="max-height: 44px; max-width: 100%; object-fit: contain; display: none;">
+                                            <span id="cfgBrandNoLogoText" style="font-size: 12px; color: var(--text2);">Sin logo cargado</span>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <span style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; display: block; margin-bottom: 6px;">Color Insignia Detectado</span>
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <input type="color" id="cfgBrandPrimaryColor" value="#f5a623" style="width: 44px; height: 40px; border: none; border-radius: 6px; cursor: pointer; background: transparent;" onchange="cambiarColorPrimarioBranding(this.value)">
+                                            <div>
+                                                <code id="cfgBrandColorHex" style="font-size: 13px; font-weight: 700; color: var(--text);">#f5a623</code>
+                                                <div style="font-size: 11px; color: var(--text2);">Acento de botones y bordes</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Vista Previa del Encabezado (Live Mockup) -->
+                                <div>
+                                    <span style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase; display: block; margin-bottom: 6px;">Vista Previa en el Encabezado</span>
+                                    <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;">
+                                        <div id="mockupHeaderBrand" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;">
+                                            <div id="mockupLogoPlaceholder" style="font-weight: 800; font-size: 18px; color: var(--text); display: flex; align-items: center; justify-content: center;">
+                                                Mister Nut
+                                            </div>
+                                            <div id="mockupPoweredBy" class="enviobot-badge-dark">
+                                                <span class="powered-txt">powered by</span>
+                                                <div class="badge-sep"></div>
+                                                <div class="logo-unit">
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                                        <path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
+                                                        <polyline points="3.4 7.1 12 12 20.6 7.1"></polyline>
+                                                        <line x1="12" y1="21.1" x2="12" y2="12"></line>
+                                                    </svg>
+                                                    <span class="logo-title" style="font-size: 12px;">EnvioBot <span class="logo-full">Full</span></span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button type="button" class="btn btn-sm" style="pointer-events: none;">Botón Muestra</button>
+                                    </div>
+                                </div>
+
+
+                                <!-- Acciones y Presets Rápidos -->
+                                <div style="border-top: 1px solid var(--border); padding-top: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="cargarDemoMisterNut()" title="Probar con el logo y color de muestra de Mister Nut">
+                                        Probar Demo Mister Nut
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="restaurarBrandingOriginal()" style="color: var(--danger); border-color: rgba(255,82,82,0.3);">
+                                        Restaurar EnvioBot Full Original
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Footer Fijo al Fondo del Modal -->
@@ -1380,8 +1602,8 @@
     </div>
 
     <!-- Scripts -->
-    <script src="js/theme.js?v=20261012_7"></script>
-    <script src="js/notifications.js?v=20261012_7"></script>
-    <script src="js/app.js?v=20261012_7"></script>
+    <script src="js/theme.js?v=20261013_1"></script>
+    <script src="js/notifications.js?v=20261013_1"></script>
+    <script src="js/app.js?v=20261013_1"></script>
 </body>
 </html>
