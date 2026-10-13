@@ -65,61 +65,30 @@ body {
 }
 
 .container {
-    max-width: 1240px;
+    max-width: 1380px;
     margin: 0 auto;
-    padding: 18px 20px 40px;
-}
-
-/* ── Topbar Sticky ────────────────────────────────── */
-.topbar {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-    background: var(--bg);
-    padding-bottom: 8px;
-    margin-bottom: 12px;
-    box-shadow: 0 10px 14px -8px rgba(0, 0, 0, 0.45);
+    padding: 20px;
 }
 
 header {
     background: var(--surface);
-    padding: 14px 18px;
+    padding: 20px;
     border-radius: 8px;
-    margin-bottom: 10px;
+    margin-bottom: 24px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border: 1px solid var(--border);
 }
 
-.logo-wrap {
-    display: inline-flex;
+header h1 {
+    font-size: 20px;
+    color: var(--text);
+    display: flex;
     align-items: center;
     gap: 10px;
-    background: var(--logo-bg);
-    padding: 6px 12px;
-    border-radius: 8px;
-    text-decoration: none;
-    color: var(--text);
-}
-
-.logo-badge {
-    font-size: 10.5px;
     font-weight: 800;
-    letter-spacing: 0.05em;
-}
-
-.suite-tabs {
-    display: inline-flex;
-    background: var(--surf2);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 2px;
-}
-
-.suite-tab:hover:not(.active) {
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--text) !important;
+    letter-spacing: -0.2px;
 }
 
 .user-info {
@@ -131,38 +100,45 @@ header {
     color: var(--text2);
 }
 
-.top-actions {
+.header-actions {
     display: flex;
     gap: 8px;
     align-items: center;
+    margin-top: 2px;
 }
 
-.icon-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-family: inherit;
-    background: transparent;
-    cursor: pointer;
+.header-link {
     text-decoration: none;
     font-size: 12px;
     color: var(--text2);
     border: 1px solid var(--border);
-    padding: 5px 10px;
+    padding: 3px 9px;
     border-radius: 4px;
     transition: all 0.15s ease;
 }
 
-.icon-btn:hover {
+.header-link:hover {
     color: var(--text);
-    border-color: var(--accent);
+    border-color: var(--border-hover);
 }
 
-/* ── Barra de Métricas (Status Bar) ───────────────── */
+.header-link-accent {
+    border: none;
+    padding: 3px 4px;
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.header-link-accent:hover {
+    color: #ffb84d;
+}
+
+/* ── Barra de Métricas (Status Bar Estilo EnvioBot Pedidos) ─ */
 .status-bar {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+    gap: 15px;
+    margin-bottom: 24px;
 }
 
 @media (max-width: 900px) {
@@ -179,63 +155,87 @@ header {
 
 .stat {
     background: var(--surface);
-    padding: 12px 16px;
+    padding: 15px;
     border-radius: 8px;
     border: 1px solid var(--border);
     display: flex;
     flex-direction: column;
     justify-content: center;
-    transition: border-color 0.15s ease;
-}
-
-.stat:hover {
-    border-color: var(--border-hover);
 }
 
 .stat-value {
     font-size: 24px;
-    font-weight: 800;
-    color: var(--text);
+    font-weight: bold;
+    color: var(--accent);
     letter-spacing: -0.02em;
 }
 
-.stat.stat-ok .stat-value { color: var(--text); }
-.stat.stat-warn .stat-value { color: var(--warn); }
-.stat.stat-danger .stat-value { color: var(--danger); }
-
-
 .stat-label {
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--text);
-    margin-top: 2px;
-}
-
-.stat-sub {
-    font-size: 11px;
+    font-size: 12px;
     color: var(--text2);
-    margin-top: 1px;
+    margin-top: 5px;
 }
 
-/* ── Layout Principal ────────────────────────────── */
+.stat-clickable {
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stat-clickable:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.stat-clickable.stat-active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+
+@keyframes rowGlow {
+    0% { background: rgba(245, 166, 35, 0.35); }
+    50% { background: rgba(245, 166, 35, 0.15); }
+    100% { background: transparent; }
+}
+
+.row-highlight {
+    animation: rowGlow 2.5s ease-out forwards;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+
+.btn-pedir-colecta {
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    background: var(--accent);
+    color: #111;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.btn-pedir-colecta:hover {
+    background: #ffb84d;
+    transform: scale(1.04);
+}
+
+/* ── Layout Principal (100% Alineado al Encabezado) ─────── */
 .main-content {
-    display: grid;
-    grid-template-columns: 2.2fr 0.95fr;
-    gap: 18px;
-    align-items: start;
-}
-
-@media (max-width: 1024px) {
-    .main-content {
-        grid-template-columns: 1fr;
-    }
+    width: 100%;
+    display: block;
 }
 
 .card {
     background: var(--surface);
     border-radius: 8px;
-    padding: 18px;
+    padding: 20px;
     border: 1px solid var(--border);
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .card h2 {
@@ -343,16 +343,51 @@ table.stock-table th {
     font-weight: 700;
     font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 10px 12px;
+    letter-spacing: 0.03em;
+    padding: 7px 8px;
     border-bottom: 1px solid var(--border);
     white-space: nowrap;
 }
 
+.sortable-th {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.sortable-th:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+}
+
+.th-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.th-content-center {
+    justify-content: center;
+}
+
+.sort-icon {
+    font-size: 11px;
+    opacity: 0.35;
+    display: inline-block;
+    transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.sort-icon.active {
+    opacity: 1;
+    color: var(--accent);
+    font-weight: bold;
+}
+
 table.stock-table td {
-    padding: 12px;
+    padding: 7px 8px;
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
+    font-size: 12px;
 }
 
 table.stock-table tr:last-child td {
@@ -367,12 +402,12 @@ table.stock-table tr:hover td {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-width: 240px;
+    min-width: 190px;
 }
 
 .product-thumb {
-    width: 42px;
-    height: 42px;
+    width: 34px;
+    height: 34px;
     border-radius: 4px;
     object-fit: cover;
     background: var(--surf2);
@@ -388,12 +423,17 @@ table.stock-table tr:hover td {
     -webkit-box-orient: vertical;
     overflow: hidden;
     line-height: 1.35;
+    font-size: 13px;
 }
 
 .product-meta {
     font-size: 11px;
     color: var(--text2);
     margin-top: 2px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
 }
 
 .num-cell {
@@ -406,30 +446,21 @@ table.stock-table tr:hover td {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: 11px;
-    font-weight: 700;
-    padding: 3px 8px;
-    border-radius: 12px;
-    border: 1px solid transparent;
+    font-size: 12px;
+    font-weight: 600;
     white-space: nowrap;
 }
 
 .badge-ok {
-    color: var(--good);
-    background: var(--good-bg);
-    border-color: var(--good-border);
+    color: var(--text2);
 }
 
 .badge-warn {
-    color: var(--warn);
-    background: var(--warn-bg);
-    border-color: var(--warn-border);
+    color: var(--accent);
 }
 
 .badge-danger {
     color: var(--danger);
-    background: var(--danger-bg);
-    border-color: var(--danger-border);
 }
 
 .badge-dot {
@@ -437,6 +468,18 @@ table.stock-table tr:hover td {
     height: 6px;
     border-radius: 50%;
     background: currentColor;
+}
+
+.channel-pill {
+    font-size: 11px;
+    color: var(--text2);
+    text-decoration: none;
+    transition: color 0.15s ease;
+}
+
+.channel-pill:hover {
+    color: var(--text);
+    text-decoration: underline;
 }
 
 .lead-time-input {
@@ -622,7 +665,7 @@ table.stock-table tr:hover td {
 }
 
 .input-days-2digit {
-    width: 44px;
+    width: 38px;
     padding: 4px 2px;
     background: var(--surf2);
     border: 1px solid var(--border-hover);
@@ -755,25 +798,16 @@ table.stock-table tr:hover td {
 /* ── Badges de Fecha para Pedir Colecta a MeLi ────── */
 .badge-date-today {
     display: inline-block;
-    background: rgba(255, 82, 82, 0.18);
-    border: 1px solid rgba(255, 82, 82, 0.45);
-    color: #ff5252;
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-weight: 800;
-    font-size: 11.5px;
-    letter-spacing: -0.1px;
+    color: var(--danger);
+    font-weight: 700;
+    font-size: 12px;
 }
 
 .badge-date-soon {
     display: inline-block;
-    background: rgba(245, 166, 35, 0.16);
-    border: 1px solid rgba(245, 166, 35, 0.45);
-    color: var(--accent-text);
-    padding: 3px 8px;
-    border-radius: 4px;
-    font-weight: 700;
-    font-size: 11.5px;
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 12px;
 }
 
 .badge-date-normal {
@@ -1428,13 +1462,13 @@ table.stock-table tr:hover td {
 }
 
 .stock-table th {
-    padding: 8px 10px !important;
-    font-size: 11.5px !important;
+    padding: 7px 8px !important;
+    font-size: 11px !important;
 }
 
 .stock-table td {
-    padding: 8px 10px !important;
-    font-size: 12.5px !important;
+    padding: 7px 8px !important;
+    font-size: 12px !important;
 }
 
 /* ── Pantalla Completa para Modal de Colectas y Envíos ── */
@@ -1477,3 +1511,82 @@ table.stock-table tr:hover td {
     border-radius: 4px !important;
     line-height: 1.4 !important;
 }
+
+/* ── Co-Branding y Personalización de Marca ──────────────────────── */
+.brand-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 20px 16px;
+    text-align: center;
+    background: var(--surface);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.brand-dropzone:hover, .brand-dropzone.dragover {
+    border-color: var(--accent);
+    background: var(--surf2);
+}
+
+.header-client-logo {
+    max-height: 48px;
+    max-width: 240px;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+}
+
+.powered-by-pill, .enviobot-badge-dark {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: transparent;
+    border: none;
+    padding: 0;
+    box-shadow: none;
+    box-sizing: border-box;
+    text-decoration: none;
+    user-select: none;
+    margin: 0 auto;
+}
+
+.enviobot-badge-dark .powered-txt {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text2);
+    letter-spacing: 0.2px;
+    text-transform: lowercase;
+    line-height: 1;
+}
+
+.enviobot-badge-dark .badge-sep {
+    width: 1px;
+    height: 11px;
+    background: var(--border-hover);
+    opacity: 0.6;
+}
+
+.enviobot-badge-dark .logo-unit {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.enviobot-badge-dark .logo-title {
+    font-size: 12.5px;
+    font-weight: 800;
+    color: var(--text);
+    letter-spacing: -0.2px;
+    line-height: 1;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.enviobot-badge-dark .logo-full {
+    color: var(--accent);
+    font-weight: 800;
+}
+

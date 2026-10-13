@@ -52,6 +52,10 @@ let currentUser = null;
 let currentAccount = 'all';
 let currentPlanInfo = null;
 let currentAuthTab = 'login';
+let currentLogisticEvents = [];
+let currentNextLogisticEvent = null;
+let activeColectaMultiplier = 1.0;
+let activeColectaEventName = '';
 
 // Dataset demo interactivo (funciona aún sin backend)
 const BASE_ITEMS_CATALOG = [
@@ -241,6 +245,7 @@ async function cargarDatos() {
             if (data.plan_info) {
                 actualizarBadgePlan(data.plan_info);
             }
+            cargarMonitorEventosLogisticos();
             if (data.items && data.items.length > 0) {
                 itemsData = data.items.map(it => adaptarItemDesdeBackend(it));
                 recalcularTodo();
@@ -1165,12 +1170,56 @@ function toggleResumenColecta() {
     }
 }
 
-async function abrirModalColecta(targetItemId = null) {
+function calcularSugeridoColectaItem(it, daysFactor) {
+    const mult = (activeColectaMultiplier && activeColectaMultiplier > 1.0) ? activeColectaMultiplier : 1.0;
+    const effectiveVpd = (it.vpd || 0) * mult;
+    let suggested = Math.max(0, Math.ceil((daysFactor * effectiveVpd) - (it.current_stock || 0)));
+    if ((it.status === 'critical' || it.status === 'out_of_stock' || (it.current_stock || 0) <= 0) && suggested <= 0) {
+        suggested = Math.max(1, Math.round(effectiveVpd * daysFactor) || 5);
+    }
+    return suggested;
+}
+
+function actualizarBannerModoEventoColecta() {
+    const banner = document.getElementById('colectaEventoBufferBanner');
+    const textEl = document.getElementById('colectaEventoNombreText');
+    if (!banner) return;
+    if (activeColectaMultiplier && activeColectaMultiplier > 1.0) {
+        banner.style.display = 'flex';
+        const pct = Math.round((activeColectaMultiplier - 1) * 100);
+        if (textEl) textEl.textContent = `${activeColectaEventName || 'Mega-Evento'} (+${pct}%)`;
+    } else {
+        banner.style.display = 'none';
+    }
+}
+
+function quitarModoEventoColecta() {
+    activeColectaMultiplier = 1.0;
+    activeColectaEventName = '';
+    actualizarBannerModoEventoColecta();
+    recalcularColecta();
+    showToast("Buffer de evento desactivado. Se restauró demanda habitual.", "info");
+}
+
+async function abrirModalColecta(targetItemId = null, options = {}) {
+    cerrarModalHistorialEnvios();
+    const modalEdit = document.getElementById('modalEditarEnvio');
+    if (modalEdit) modalEdit.style.display = 'none';
     const modal = document.getElementById('colectaModal');
     if (!modal) return;
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
     const destText = document.getElementById('colectaDestinoText');
     if (destText) destText.textContent = wh.name;
+
+    // Configuración de modo evento comercial
+    if (options && options.multiplier) {
+        activeColectaMultiplier = options.multiplier;
+        activeColectaEventName = options.eventName || '';
+    } else if (!options || !options.keepMultiplier) {
+        activeColectaMultiplier = 1.0;
+        activeColectaEventName = '';
+    }
+    actualizarBannerModoEventoColecta();
 
     // Verificar permisos del módulo pago en backend
     await verificarEstadoInboundUsuario();
@@ -1191,14 +1240,15 @@ async function abrirModalColecta(targetItemId = null) {
     const daysFactor = targetGlobalDays + leadTime + transit;
 
     itemsData.forEach(it => {
-        let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
+        let suggested = calcularSugeridoColectaItem(it, daysFactor);
         const isTarget = targetItemId && (it.id === targetItemId || it.id === Number(targetItemId));
         const isUrgent = (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
 
         // Si el artículo requiere reposición urgente o es el target, asegurar unidades positivas
         if (isUrgent || isTarget) {
             if (suggested <= 0) {
-                suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
+                const effectiveVpd = (it.vpd || 0) * (activeColectaMultiplier || 1.0);
+                suggested = Math.max(1, Math.round(effectiveVpd * daysFactor) || 5);
             }
             colectaSelectedItems.set(it.id, suggested);
             const defaultUnitsBox = (it.units_per_box && it.units_per_box > 0) ? it.units_per_box : 0;
@@ -1214,8 +1264,11 @@ async function abrirModalColecta(targetItemId = null) {
     if (targetItemId) {
         const targetObj = itemsData.find(x => x.id === targetItemId || x.id === Number(targetItemId));
         if (targetObj && !colectaSelectedItems.has(targetObj.id)) {
-            let suggested = Math.max(1, Math.ceil((daysFactor * targetObj.vpd) - targetObj.current_stock));
-            if (suggested <= 0) suggested = Math.max(1, Math.round(targetObj.vpd * daysFactor) || 5);
+            let suggested = calcularSugeridoColectaItem(targetObj, daysFactor);
+            if (suggested <= 0) {
+                const effectiveVpd = (targetObj.vpd || 0) * (activeColectaMultiplier || 1.0);
+                suggested = Math.max(1, Math.round(effectiveVpd * daysFactor) || 5);
+            }
             colectaSelectedItems.set(targetObj.id, suggested);
             colectaBoxUnits.set(targetObj.id, targetObj.units_per_box || 0);
         }
@@ -1299,10 +1352,7 @@ function recalcularColecta() {
 
     itemsData.forEach(it => {
         if (colectaSelectedItems.has(it.id)) {
-            let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
-            if ((it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0) && suggested <= 0) {
-                suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
-            }
+            let suggested = calcularSugeridoColectaItem(it, daysFactor);
             colectaSelectedItems.set(it.id, suggested > 0 ? suggested : 1);
         }
     });
@@ -1319,11 +1369,10 @@ function toggleSelectAllColecta(checked) {
     colectaSelectedItems.clear();
     if (checked) {
         itemsData.forEach(it => {
-            let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
-            if ((it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0) && suggested <= 0) {
-                suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
-            }
-            colectaSelectedItems.set(it.id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
+            let suggested = calcularSugeridoColectaItem(it, daysFactor);
+            const mult = (activeColectaMultiplier && activeColectaMultiplier > 1.0) ? activeColectaMultiplier : 1.0;
+            const effectiveVpd = (it.vpd || 0) * mult;
+            colectaSelectedItems.set(it.id, suggested > 0 ? suggested : Math.max(1, Math.round(effectiveVpd * 7) || 1));
             if (!colectaBoxUnits.has(it.id)) {
                 colectaBoxUnits.set(it.id, it.units_per_box || 0);
             }
@@ -1342,11 +1391,10 @@ function toggleItemColecta(id, checked) {
         const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
         const transit = wh.defaultTransit || 3;
         const daysFactor = targetDays + leadTime + transit;
-        let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
-        if ((it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0) && suggested <= 0) {
-            suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
-        }
-        colectaSelectedItems.set(id, suggested > 0 ? suggested : Math.max(1, Math.round(it.vpd * 7) || 1));
+        let suggested = calcularSugeridoColectaItem(it, daysFactor);
+        const mult = (activeColectaMultiplier && activeColectaMultiplier > 1.0) ? activeColectaMultiplier : 1.0;
+        const effectiveVpd = (it.vpd || 0) * mult;
+        colectaSelectedItems.set(id, suggested > 0 ? suggested : Math.max(1, Math.round(effectiveVpd * 7) || 1));
         if (!colectaBoxUnits.has(id)) colectaBoxUnits.set(id, it.units_per_box || 0);
     } else {
         colectaSelectedItems.delete(id);
@@ -1421,10 +1469,7 @@ function renderizarFilasColecta(highlightItemId = null) {
 
     itemsOrdenados.forEach(it => {
         const isSelected = colectaSelectedItems.has(it.id);
-        let suggested = Math.max(0, Math.ceil((daysFactor * it.vpd) - it.current_stock));
-        if ((it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0) && suggested <= 0) {
-            suggested = Math.max(1, Math.round(it.vpd * daysFactor) || 5);
-        }
+        let suggested = calcularSugeridoColectaItem(it, daysFactor);
         const unitsToSend = colectaSelectedItems.get(it.id) !== undefined ? colectaSelectedItems.get(it.id) : suggested;
         const unitsPerBox = colectaBoxUnits.get(it.id) !== undefined ? colectaBoxUnits.get(it.id) : (it.units_per_box || 0);
         const boxesEst = unitsPerBox > 0 ? Math.ceil(unitsToSend / unitsPerBox) : (unitsToSend > 0 ? 1 : 0);
@@ -1722,6 +1767,8 @@ window.abrirRemitoOficial = abrirRemitoOficial;
 
 function abrirHistorialColectas() {
     cerrarModalColecta();
+    const modalEdit = document.getElementById('modalEditarEnvio');
+    if (modalEdit) modalEdit.style.display = 'none';
     const modal = document.getElementById('modalHistorialEnvios');
     if (modal) modal.style.display = 'flex';
     cargarHistorialColectas();
@@ -1972,6 +2019,9 @@ async function abrirModalEditarEnvio(shipmentId) {
     const token = getToken();
     if (!token) return;
 
+    cerrarModalColecta();
+    cerrarModalHistorialEnvios();
+
     try {
         const res = await fetch(`${API_BASE}/full/inbound/shipments/${shipmentId}`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -1979,12 +2029,14 @@ async function abrirModalEditarEnvio(shipmentId) {
         const data = await res.json();
         if (!data.ok || !data.shipment) {
             alert(data.error || "No se pudo cargar el envío para editar.");
+            abrirHistorialColectas();
             return;
         }
 
         const sh = data.shipment;
-        if (sh.status in ['in_transit', 'delivered', 'cancelled'] || ['in_transit', 'delivered', 'cancelled'].includes(sh.status)) {
-            alert(`No se puede modificar un envío en estado '${sh.status}'. Solo se pueden editar envíos programados o borradores.`);
+        if (['in_transit', 'delivered', 'cancelled'].includes(sh.status)) {
+            alert(`No se puede modificar un envío en estado '${sh.status}'. Solo se pueden editar envíos en preparación o borradores.`);
+            abrirHistorialColectas();
             return;
         }
 
@@ -2042,22 +2094,123 @@ async function abrirModalEditarEnvio(shipmentId) {
         }
 
         renderizarItemsEdicion();
+        verificarAlertasStockEdicion();
 
         const modal = document.getElementById('modalEditarEnvio');
         if (modal) modal.style.display = 'flex';
     } catch (e) {
         alert("Error de conexión al cargar envío: " + e.message);
+        abrirHistorialColectas();
     }
 }
 window.abrirModalEditarEnvio = abrirModalEditarEnvio;
 
-function cerrarModalEditarEnvio() {
+function cerrarModalEditarEnvio(volverAlHistorial = true) {
     const modal = document.getElementById('modalEditarEnvio');
     if (modal) modal.style.display = 'none';
     shipmentEnEdicionId = null;
     itemsEnEdicion = [];
+    if (volverAlHistorial) {
+        abrirHistorialColectas();
+    }
 }
 window.cerrarModalEditarEnvio = cerrarModalEditarEnvio;
+
+function verificarAlertasStockEdicion() {
+    const alertBox = document.getElementById('editarEnvioAlertasStock');
+    const listContainer = document.getElementById('editarEnvioListaSugeridosCriticos');
+    if (!alertBox || !listContainer) return;
+
+    if (!Array.isArray(itemsData) || itemsData.length === 0) {
+        alertBox.style.display = 'none';
+        return;
+    }
+
+    const idsEnEdicion = new Set(itemsEnEdicion.map(it => String(it.item_id || '')));
+    const skusEnEdicion = new Set(itemsEnEdicion.map(it => (it.sku || '').toLowerCase()).filter(Boolean));
+
+    // Buscar productos críticos o con quiebre que NO están en la colecta actual
+    const criticosFuera = itemsData.filter(it => {
+        const itemIdStr = String(it.item_id || it.id);
+        const itemSku = (it.sku || '').toLowerCase();
+        if (idsEnEdicion.has(itemIdStr)) return false;
+        if (itemSku && skusEnEdicion.has(itemSku)) return false;
+
+        const isRisk = (it.status === 'critical' || it.status === 'warning' || it.status === 'out_of_stock' || (it.days_left !== null && it.days_left <= 10) || it.current_stock <= 0);
+        return isRisk;
+    });
+
+    if (criticosFuera.length === 0) {
+        alertBox.style.display = 'none';
+        listContainer.innerHTML = '';
+        return;
+    }
+
+    alertBox.style.display = 'block';
+    listContainer.innerHTML = criticosFuera.slice(0, 5).map(it => {
+        const vpd = parseFloat(it.vpd) || 0;
+        const stock = parseInt(it.current_stock, 10) || 0;
+        let sug = Math.max(1, Math.ceil((25 * vpd) - stock));
+        if (sug <= 0) sug = Math.max(1, Math.round(vpd * 25) || 5);
+        const skuStr = it.sku ? `SKU: ${it.sku}` : 'Sin SKU';
+
+        return `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; gap: 8px;">
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: 700; color: var(--text); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${it.title}</div>
+                    <div style="font-size: 11px; color: var(--text2); display: flex; gap: 8px; margin-top: 1px;">
+                        <span style="color: var(--accent); font-family: monospace;">${skuStr}</span>
+                        <span>Stock Full: <strong style="color: ${stock <= 0 ? '#ef4444' : 'var(--text)'};">${stock}</strong></span>
+                        <span>Ritmo: <strong>${vpd}/día</strong></span>
+                        <span style="color: #64b5f6;">Sugerido: <strong>${sug} un.</strong></span>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700; font-size: 11px; padding: 4px 9px; white-space: nowrap;" 
+                        onclick="agregarItemCriticoAEdicion(${it.id}, ${sug})">
+                    + Sumar a esta colecta
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+window.verificarAlertasStockEdicion = verificarAlertasStockEdicion;
+
+function agregarItemCriticoAEdicion(itemId, sugUnits) {
+    const it = itemsData.find(x => x.id === itemId);
+    if (!it) return;
+
+    const upb = (it.units_per_box && it.units_per_box > 0) ? it.units_per_box : 0;
+    const unitsToSend = Math.max(1, sugUnits || upb || 10);
+    const boxCount = upb > 0 ? Math.ceil(unitsToSend / upb) : 1;
+
+    itemsEnEdicion.push({
+        id: null,
+        item_id: String(it.item_id || it.id),
+        inventory_id: it.inventory_id || null,
+        variation_id: it.variation_id || null,
+        variation_name: it.variation_name || null,
+        sku: it.sku || '',
+        title: it.title || 'Producto sin título',
+        current_full_stock: parseInt(it.current_stock, 10) || 0,
+        vpd: parseFloat(it.vpd) || 0,
+        suggested_units: unitsToSend,
+        units_to_send: unitsToSend,
+        units_per_box: upb,
+        box_count: boxCount
+    });
+
+    renderizarItemsEdicion();
+    verificarAlertasStockEdicion();
+    showToast(`Artículo "${it.sku || it.title.substring(0, 25)}" sumado al envío (${unitsToSend} un.).`, "info");
+}
+window.agregarItemCriticoAEdicion = agregarItemCriticoAEdicion;
+
+function onAjustarSugeridoEdicion(idx, units) {
+    if (!itemsEnEdicion[idx]) return;
+    onCambiarUnidadesEdicion(idx, units);
+    renderizarItemsEdicion();
+}
+window.onAjustarSugeridoEdicion = onAjustarSugeridoEdicion;
 
 function renderizarItemsEdicion() {
     const tbody = document.getElementById('editarEnvioTbody');
@@ -2067,7 +2220,7 @@ function renderizarItemsEdicion() {
         tbody.innerHTML = `
             <tr>
                 <td colspan="7" style="text-align: center; padding: 30px; color: var(--text2);">
-                    No hay productos en este envío. Buscá y agregá productos con el buscador de arriba.
+                    No hay productos en este envío. Podés sumar artículos con el buscador de arriba o desde las sugerencias de quiebre.
                 </td>
             </tr>
         `;
@@ -2078,6 +2231,18 @@ function renderizarItemsEdicion() {
     tbody.innerHTML = itemsEnEdicion.map((it, idx) => {
         const skuHtml = it.sku ? `<span style="font-family: monospace; font-size: 11px; color: var(--accent);">${it.sku}</span>` : `<span style="font-size: 11px; color: var(--text2);">-</span>`;
         const varHtml = it.variation_name ? `<span style="font-size: 11px; color: var(--text2); display: block;">${it.variation_name}</span>` : '';
+
+        let sugHintHtml = '';
+        if (it.suggested_units && it.suggested_units > 0 && it.suggested_units !== it.units_to_send) {
+            sugHintHtml = `
+                <div style="font-size: 10.5px; color: var(--accent); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                    <span>Sugerido: <strong>${it.suggested_units}</strong></span>
+                    <button type="button" class="btn btn-secondary btn-xs" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px;" onclick="onAjustarSugeridoEdicion(${idx}, ${it.suggested_units})" title="Ajustar cantidad a unidades sugeridas">
+                        Ajustar
+                    </button>
+                </div>
+            `;
+        }
 
         return `
             <tr style="border-bottom: 1px solid var(--border);">
@@ -2094,6 +2259,7 @@ function renderizarItemsEdicion() {
                     <input type="number" min="1" max="99999" value="${it.units_to_send}" 
                            oninput="onCambiarUnidadesEdicion(${idx}, this.value)" 
                            style="width: 80px; text-align: center; padding: 4px 6px; font-size: 13px; font-weight: 700; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
+                    ${sugHintHtml}
                 </td>
                 <td style="padding: 8px 10px; text-align: center;">
                     <input type="number" min="0" max="99999" value="${it.units_per_box || 0}" 
@@ -2150,8 +2316,11 @@ window.onCambiarUnitsPerBoxEdicion = onCambiarUnitsPerBoxEdicion;
 
 function quitarItemDeEdicion(idx) {
     if (!itemsEnEdicion[idx]) return;
+    const itemQuitado = itemsEnEdicion[idx];
     itemsEnEdicion.splice(idx, 1);
     renderizarItemsEdicion();
+    verificarAlertasStockEdicion();
+    showToast(`Artículo "${itemQuitado.sku || itemQuitado.title.substring(0, 25)}" quitado del envío.`, "info");
 }
 window.quitarItemDeEdicion = quitarItemDeEdicion;
 
@@ -2266,6 +2435,7 @@ function agregarItemAEdicion(itemId) {
     }
 
     renderizarItemsEdicion();
+    verificarAlertasStockEdicion();
     showToast(`Artículo "${it.sku || it.title.substring(0, 25)}" sumado al envío.`, "info");
 }
 window.agregarItemAEdicion = agregarItemAEdicion;
@@ -2324,9 +2494,8 @@ async function guardarEdicionEnvio() {
         const data = await res.json();
         if (data.ok) {
             showToast("Envío actualizado correctamente.", "success");
-            cerrarModalEditarEnvio();
-            cargarHistorialColectas();
-            // Actualizar tabla principal de stock para reflejar nuevo stock en tránsito
+            cerrarModalEditarEnvio(true);
+            // Actualizar tabla principal de stock para reflejar nuevo stock en preparación / tránsito
             if (typeof cargarDatos === 'function') cargarDatos();
         } else {
             alert(data.error || "No se pudo actualizar el envío.");
@@ -4485,6 +4654,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await cargarSettingsBackend();
         cargarDatos();
         cargarHistorialColectas(true);
+        cargarMonitorEventosLogisticos();
     }
 
     // 7. Verificar visibilidad del botón de instalación de aplicación en escritorio
@@ -5439,5 +5609,251 @@ window.cambiarColorPrimarioBranding = cambiarColorPrimarioBranding;
 window.cargarDemoMisterNut = cargarDemoMisterNut;
 window.quitarLogoBranding = quitarLogoBranding;
 window.restaurarBrandingOriginal = restaurarBrandingOriginal;
+
+// =====================================================================
+// MÓDULO: MONITOR LOGÍSTICO DE MEGA-EVENTOS Y CALENDARIO FULL
+// =====================================================================
+
+async function cargarMonitorEventosLogisticos() {
+    const banner = document.getElementById('logisticEventBanner');
+    if (!banner) return;
+    const token = getToken();
+    if (!token) {
+        banner.style.display = 'none';
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/full/logistic-events`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+
+        if (data.ok && data.next_event) {
+            currentLogisticEvents = data.events || [];
+            currentNextLogisticEvent = data.next_event;
+            const ev = data.next_event;
+
+            const nameEl = document.getElementById('eventNameText');
+            const cutoffEl = document.getElementById('eventCutoffBadge');
+            const turnosEl = document.getElementById('eventTurnosBadge');
+            const msgEl = document.getElementById('eventMessageText');
+            const iconEl = document.getElementById('eventIcon');
+
+            if (nameEl) nameEl.textContent = ev.name;
+
+            const [cYear, cMonth, cDay] = ev.inbound_cutoff_date.split('-');
+            const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+            const cutoffTexto = `${parseInt(cDay, 10)} de ${meses[parseInt(cMonth, 10) - 1] || cMonth}`;
+
+            if (cutoffEl) {
+                if (ev.days_to_cutoff <= 0) {
+                    cutoffEl.textContent = `Corte Full: CERRADO (${cutoffTexto})`;
+                    cutoffEl.style.background = 'rgba(239, 68, 68, 0.25)';
+                    cutoffEl.style.color = '#fca5a5';
+                } else {
+                    cutoffEl.textContent = `Corte Full: ${cutoffTexto} (Faltan ${ev.days_to_cutoff} días)`;
+                }
+            }
+
+            if (turnosEl) {
+                turnosEl.textContent = `⚠️ Turnos en Celina: demora de ${ev.typical_turnos_delay_days} días`;
+            }
+
+            if (msgEl) {
+                if (ev.days_to_cutoff <= 0) {
+                    msgEl.innerHTML = `El período de ingresos a Villa Celina para <strong>${ev.name}</strong> ya finalizó. Full opera en <em>Dock Freeze</em> para expedición.`;
+                } else if (ev.safe_booking_days_left <= 0) {
+                    msgEl.innerHTML = `⚠️ <strong>¡Atención crítica!</strong> La demora actual de turnos (${ev.typical_turnos_delay_days}d) ya supera los días hasta el corte (${ev.days_to_cutoff}d). Si sacás turno hoy, podrías ingresar después de la fecha límite.`;
+                } else {
+                    msgEl.innerHTML = `Corte de ingresos a Villa Celina el <strong>${cutoffTexto}</strong>. Con turnos a ${ev.typical_turnos_delay_days} días, <strong>te quedan solo ${ev.safe_booking_days_left} días de margen para sacar turno</strong> antes de que se agoten los slots pre-evento.`;
+                }
+            }
+
+            if (iconEl) {
+                iconEl.textContent = ev.is_booking_urgent ? '🚨' : '🗓️';
+            }
+
+            // Botón dinámico de buffer
+            const pctBuffer = Math.round((ev.demand_multiplier - 1) * 100);
+            const btnBuffer = banner.querySelector('button[onclick*="abrirColectaConModoEvento"]');
+            if (btnBuffer) {
+                const shortName = ev.name.includes('Cyber') ? 'Cyber' : (ev.name.includes('Black') ? 'Black Friday' : 'Evento');
+                btnBuffer.textContent = `📦 Planificar para ${shortName} (+${pctBuffer}%)`;
+            }
+
+            banner.style.display = 'flex';
+        } else {
+            banner.style.display = 'none';
+        }
+    } catch (err) {
+        console.warn("Error cargando eventos logísticos:", err);
+        banner.style.display = 'none';
+    }
+}
+
+function abrirModalCalendarioEventos() {
+    const modal = document.getElementById('modalCalendarioEventos');
+    if (!modal) return;
+    
+    const delayInput = document.getElementById('inputTurnosDelayModal');
+    if (delayInput && currentNextLogisticEvent) {
+        delayInput.value = currentNextLogisticEvent.typical_turnos_delay_days || 7;
+    }
+
+    renderizarListaEventosModal(currentLogisticEvents);
+    modal.style.display = 'flex';
+}
+
+function cerrarModalCalendarioEventos() {
+    const modal = document.getElementById('modalCalendarioEventos');
+    if (modal) modal.style.display = 'none';
+}
+
+async function guardarDemoraTurnosModal() {
+    const delayInput = document.getElementById('inputTurnosDelayModal');
+    if (!delayInput || !currentNextLogisticEvent) return;
+
+    const delay = parseInt(delayInput.value, 10);
+    if (isNaN(delay) || delay < 1) {
+        showToast("Ingresá una cantidad de días válida.", "warning");
+        return;
+    }
+
+    const token = getToken();
+    try {
+        const res = await fetch(`${API_BASE}/full/logistic-events/${currentNextLogisticEvent.id}/turnos-delay`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ delay_days: delay })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showToast(`Demora de turnos en Celina actualizada a ${delay} días.`, "success");
+            await cargarMonitorEventosLogisticos();
+            renderizarListaEventosModal(currentLogisticEvents);
+        } else {
+            showToast("No se pudo actualizar la demora: " + (data.error || "error"), "error");
+        }
+    } catch (err) {
+        console.error("Error actualizando demora de turnos:", err);
+        showToast("Error de conexión al guardar demora.", "error");
+    }
+}
+
+function renderizarListaEventosModal(events) {
+    const container = document.getElementById('listaEventosLogisticosContainer');
+    if (!container) return;
+
+    if (!events || events.length === 0) {
+        container.innerHTML = `
+            <div style="padding: 24px; text-align: center; color: var(--text2); font-size: 13px;">
+                No hay eventos logísticos configurados en este momento.
+            </div>
+        `;
+        return;
+    }
+
+    const meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const fmt = (dStr) => {
+        if (!dStr) return '—';
+        const [y, m, d] = dStr.split('-');
+        return `${parseInt(d, 10)} ${meses[parseInt(m, 10) - 1] || m} ${y}`;
+    };
+
+    container.innerHTML = events.map(ev => {
+        const pctBuffer = Math.round((ev.demand_multiplier - 1) * 100);
+        const isUrgent = ev.is_booking_urgent;
+        const borderColor = isUrgent ? 'rgba(239, 68, 68, 0.4)' : 'var(--border)';
+
+        let statusText = 'Próximo';
+        let statusColor = '#3b82f6';
+        if (ev.status === 'inbound_warning') {
+            statusText = '⚠️ Ventana de Ingreso Crítica';
+            statusColor = '#f59e0b';
+        } else if (ev.status === 'inbound_locked') {
+            statusText = '🔒 Dock Freeze (Ingreso Cerrado)';
+            statusColor = '#ef4444';
+        } else if (ev.status === 'event_active') {
+            statusText = '🔥 Evento en Curso';
+            statusColor = '#10b981';
+        }
+
+        return `
+            <div style="background: var(--surface); border: 1.5px solid ${borderColor}; border-radius: 8px; padding: 14px 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
+                    <div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <strong style="font-size: 15px; color: var(--text);">${ev.name}</strong>
+                            <span style="font-size: 11px; font-weight: 700; color: ${statusColor}; background: rgba(0,0,0,0.2); padding: 2px 7px; border-radius: 4px; border: 1px solid ${statusColor};">
+                                ${statusText}
+                            </span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text2); margin-top: 3px;">
+                            Fecha del evento: <strong>${fmt(ev.event_start)} al ${fmt(ev.event_end)}</strong>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-sm" onclick="cerrarModalCalendarioEventos(); abrirColectaConModoEvento(${ev.demand_multiplier}, '${ev.name}');" style="background: var(--accent); color: #111; font-weight: 800; font-size: 11.5px; padding: 5px 12px;">
+                        Planificar con +${pctBuffer}%
+                    </button>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; background: var(--surf2); border-radius: 6px; padding: 10px 12px; margin-top: 8px; font-size: 12px;">
+                    <div>
+                        <div style="color: var(--text2); font-size: 11px;">Corte de Ingreso Full:</div>
+                        <strong style="color: #ff8080;">${fmt(ev.inbound_cutoff_date)}</strong>
+                        <div style="font-size: 11px; color: var(--text2);">Faltan: <strong>${ev.days_to_cutoff} días</strong></div>
+                    </div>
+                    <div>
+                        <div style="color: var(--text2); font-size: 11px;">Congelamiento (Dock Freeze):</div>
+                        <strong style="color: #f59e0b;">${fmt(ev.dock_freeze_start)}</strong>
+                        <div style="font-size: 11px; color: var(--text2);">Muelle cerrado a recepción</div>
+                    </div>
+                    <div>
+                        <div style="color: var(--text2); font-size: 11px;">Margen Seguro para Turno:</div>
+                        <strong style="color: ${ev.safe_booking_days_left <= 3 ? '#ff4d4d' : 'var(--good)'};">
+                            ${ev.safe_booking_days_left > 0 ? `${ev.safe_booking_days_left} días restantes` : '0 días (Turnos colapsados)'}
+                        </strong>
+                        <div style="font-size: 11px; color: var(--text2);">Demora en Celina: ${ev.typical_turnos_delay_days}d</div>
+                    </div>
+                </div>
+
+                <div style="font-size: 11.5px; color: var(--text2); margin-top: 8px; line-height: 1.4;">
+                    ${ev.description || ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function abrirColectaConModoEvento(multiplier = null, eventName = null) {
+    if (!multiplier && currentNextLogisticEvent) {
+        multiplier = currentNextLogisticEvent.demand_multiplier || 1.5;
+    }
+    if (!eventName && currentNextLogisticEvent) {
+        eventName = currentNextLogisticEvent.name || 'Evento Comercial';
+    }
+    if (!multiplier) multiplier = 1.5;
+    if (!eventName) eventName = 'Mega-Evento';
+
+    activeColectaMultiplier = multiplier;
+    activeColectaEventName = eventName;
+
+    abrirModalColecta(null, { multiplier: activeColectaMultiplier, eventName: activeColectaEventName, keepMultiplier: true });
+
+    const pct = Math.round((multiplier - 1) * 100);
+    showToast(`Modo ${eventName} activado (+${pct}% demanda buffer)`, "info");
+}
+
+window.cargarMonitorEventosLogisticos = cargarMonitorEventosLogisticos;
+window.abrirModalCalendarioEventos = abrirModalCalendarioEventos;
+window.cerrarModalCalendarioEventos = cerrarModalCalendarioEventos;
+window.guardarDemoraTurnosModal = guardarDemoraTurnosModal;
+window.abrirColectaConModoEvento = abrirColectaConModoEvento;
+window.quitarModoEventoColecta = quitarModoEventoColecta;
+
 
 

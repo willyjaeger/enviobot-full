@@ -21,18 +21,18 @@ function toggleTheme() {
 }
 
 function updateThemeToggleUI(theme) {
+    const btn = document.getElementById('themeToggleBtn');
     const label = document.getElementById('themeLabel');
     const icon = document.getElementById('themeIcon');
-    if (!label) return;
 
-    if (theme === 'light') {
-        label.textContent = 'Modo oscuro';
-        if (icon) {
+    const text = theme === 'light' ? 'Modo oscuro' : 'Modo claro';
+    if (btn) btn.textContent = text;
+    if (label) label.textContent = text;
+
+    if (icon) {
+        if (theme === 'light') {
             icon.innerHTML = '<path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>';
-        }
-    } else {
-        label.textContent = 'Modo claro';
-        if (icon) {
+        } else {
             icon.innerHTML = '<path d="M20 14.5A8.5 8.5 0 019.5 4 8.5 8.5 0 1020 14.5z"></path>';
         }
     }

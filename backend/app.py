@@ -2719,6 +2719,101 @@ def get_inbound_shipment_remito_html(shipment_id):
     return html_content, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 # -------------------------------------------------------------
+# RUTAS DE MONITOR LOGÍSTICO Y EVENTOS E-COMMERCE (CYBER, BLACK FRIDAY)
+# -------------------------------------------------------------
+
+@app.route("/api/full/logistic-events", methods=["GET"])
+@jwt_required()
+def get_logistic_events():
+    """Devuelve los mega-eventos comerciales, fechas de corte de Full y cuenta regresiva de turnos."""
+    conn = get_db()
+    today = datetime.utcnow().date()
+    
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT * FROM logistic_events 
+            WHERE is_active = 1 
+            ORDER BY event_start ASC
+        """)
+        raw_events = cur.fetchall() or []
+        
+    conn.close()
+    
+    processed = []
+    next_event = None
+    
+    for ev in raw_events:
+        cutoff = ev["inbound_cutoff_date"]
+        freeze = ev["dock_freeze_start"]
+        start = ev["event_start"]
+        end = ev["event_end"]
+        
+        days_to_cutoff = (cutoff - today).days
+        days_to_freeze = (freeze - today).days
+        days_to_start = (start - today).days
+        
+        # Estado dinámico según calendario
+        if today > end:
+            dyn_status = "finished"
+        elif today >= start:
+            dyn_status = "event_active"
+        elif today >= freeze:
+            dyn_status = "inbound_locked"
+        elif days_to_cutoff <= 14:
+            dyn_status = "inbound_warning"
+        else:
+            dyn_status = "upcoming"
+            
+        turnos_delay = ev.get("typical_turnos_delay_days", 7)
+        safe_booking_days = max(0, days_to_cutoff - turnos_delay)
+        
+        ev_dict = {
+            "id": ev["id"],
+            "name": ev["name"],
+            "slug": ev["slug"],
+            "event_start": str(start),
+            "event_end": str(end),
+            "inbound_cutoff_date": str(cutoff),
+            "dock_freeze_start": str(freeze),
+            "typical_turnos_delay_days": turnos_delay,
+            "demand_multiplier": float(ev.get("demand_multiplier", 1.50)),
+            "status": dyn_status,
+            "description": ev.get("description", ""),
+            "days_to_cutoff": days_to_cutoff,
+            "days_to_freeze": days_to_freeze,
+            "days_to_start": days_to_start,
+            "safe_booking_days_left": safe_booking_days,
+            "is_booking_urgent": (days_to_cutoff > 0 and safe_booking_days <= 5)
+        }
+        processed.append(ev_dict)
+        
+        if dyn_status in ("inbound_warning", "upcoming") and next_event is None:
+            next_event = ev_dict
+            
+    # Si no hay próximo en warning, tomar el primero activo
+    if next_event is None and processed:
+        next_event = processed[0]
+        
+    return jsonify({
+        "ok": True,
+        "events": processed,
+        "next_event": next_event,
+        "today": str(today)
+    }), 200
+
+@app.route("/api/full/logistic-events/<int:event_id>/turnos-delay", methods=["PUT"])
+@jwt_required()
+def update_event_turnos_delay(event_id):
+    """Permite actualizar la demora de turnos actual reportada en Villa Celina."""
+    data = request.get_json() or {}
+    delay = int(data.get("delay_days", 7))
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE logistic_events SET typical_turnos_delay_days=%s WHERE id=%s", (delay, event_id))
+    conn.close()
+    return jsonify({"ok": True, "message": f"Demora de turnos actualizada a {delay} días."}), 200
+
+# -------------------------------------------------------------
 # RUTAS ESTÁTICAS DE FRONTEND
 # -------------------------------------------------------------
 
