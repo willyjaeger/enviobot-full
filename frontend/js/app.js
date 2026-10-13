@@ -307,6 +307,7 @@ function adaptarItemDesdeBackend(raw) {
         current_stock: raw.current_stock_full || 0,
         not_available_stock: raw.not_available_stock_full || 0,
         in_process_stock: raw.in_process_stock !== undefined ? raw.in_process_stock : (raw.not_available_stock_full || 0),
+        in_preparation_stock: raw.in_preparation_stock || 0,
         in_transit_stock: raw.in_transit_stock || 0,
         total_incoming: raw.total_incoming || 0,
         covered_days_left: raw.covered_days_left !== undefined ? raw.covered_days_left : null,
@@ -328,8 +329,9 @@ function recalcularTodo() {
     itemsData.forEach(it => {
         const stock = it.current_stock;
         const inProcess = it.in_process_stock || 0;
+        const inPrep = it.in_preparation_stock || 0;
         const inTransit = it.in_transit_stock || 0;
-        const totalIncoming = inProcess + inTransit;
+        const totalIncoming = inProcess + inPrep + inTransit;
         const totalCoveredStock = stock + totalIncoming;
 
         const vpd = it.vpd;
@@ -361,27 +363,27 @@ function recalcularTodo() {
             }
             it.reorder_deadline_date = deadlineDate.toISOString().split('T')[0];
 
-            // Semáforo inteligente considerando mercadería entrante (en recepción Full o en tránsito)
+            // Semáforo inteligente considerando mercadería entrante (en recepción Full, en tránsito o en preparación)
             if (stock <= 0) {
                 if (inProcess > 0) {
                     it.status = 'in_reception';
                 } else if (inTransit > 0) {
                     it.status = 'in_transit';
+                } else if (inPrep > 0) {
+                    it.status = 'in_preparation';
                 } else {
                     it.status = 'out_of_stock';
                 }
+            } else if (inProcess > 0 && (stock + inProcess) / Math.max(vpd, 0.01) > (prep + transit)) {
+                it.status = 'in_reception';
+            } else if (inTransit > 0 && (stock + inProcess + inTransit) / Math.max(vpd, 0.01) > (prep + transit)) {
+                it.status = 'in_transit';
+            } else if (inPrep > 0) {
+                it.status = 'in_preparation';
             } else if (it.days_left <= (prep + transit)) {
-                if (totalIncoming > 0 && coveredDays > totalAdvance) {
-                    it.status = inProcess > 0 ? 'in_reception' : 'in_transit';
-                } else {
-                    it.status = 'critical';
-                }
+                it.status = 'critical';
             } else if (it.days_left <= totalAdvance) {
-                if (totalIncoming > 0 && coveredDays > totalAdvance) {
-                    it.status = inProcess > 0 ? 'in_reception' : 'in_transit';
-                } else {
-                    it.status = 'warning';
-                }
+                it.status = 'warning';
             } else {
                 it.status = 'ok';
             }
@@ -400,6 +402,7 @@ function recalcularTodo() {
             if (stock <= 0) {
                 if (inProcess > 0) it.status = 'in_reception';
                 else if (inTransit > 0) it.status = 'in_transit';
+                else if (inPrep > 0) it.status = 'in_preparation';
                 else it.status = 'out_of_stock';
             } else {
                 it.status = 'ok';
@@ -424,11 +427,11 @@ function actualizarMetricas() {
     itemsData.forEach(it => {
         if (it.status === 'ok') ok++;
         else if (it.status === 'warning') warn++;
-        else if (it.status === 'in_reception' || it.status === 'in_transit') inProcess++;
+        else if (it.status === 'in_reception' || it.status === 'in_transit' || it.status === 'in_preparation') inProcess++;
         else crit++;
 
         const targetDays = it.target_stock_days || wh.defaultTarget || 30;
-        const totalCovered = it.current_stock + (it.in_process_stock || 0) + (it.in_transit_stock || 0);
+        const totalCovered = it.current_stock + (it.in_process_stock || 0) + (it.in_transit_stock || 0) + (it.in_preparation_stock || 0);
         const faltante = Math.max(0, Math.round((targetDays * it.vpd) - totalCovered));
         if ((it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock') && faltante > 0) {
             totalUnits += faltante;
@@ -751,7 +754,7 @@ function renderizarTabla() {
             valA = Number(a.target_stock_days !== undefined ? a.target_stock_days : 0);
             valB = Number(b.target_stock_days !== undefined ? b.target_stock_days : 0);
         } else if (currentSortColumn === 'status') {
-            const statusOrder = { 'out_of_stock': 1, 'critical': 2, 'warning': 3, 'in_reception': 4, 'in_transit': 5, 'ok': 6 };
+            const statusOrder = { 'out_of_stock': 1, 'critical': 2, 'warning': 3, 'in_preparation': 4, 'in_transit': 5, 'in_reception': 6, 'ok': 7 };
             valA = statusOrder[a.status] || 99;
             valB = statusOrder[b.status] || 99;
         } else {
@@ -783,10 +786,12 @@ function renderizarTabla() {
             badgeHtml = '<span class="badge badge-warn">Preparar</span>';
         } else if (it.status === 'critical') {
             badgeHtml = '<span class="badge badge-danger">Crítico</span>';
-        } else if (it.status === 'in_reception') {
-            badgeHtml = `<span style="color: var(--text2); font-size: 12px; font-weight: 600;" title="${it.in_process_stock} un. en recepción en MeLi">En recepción</span>`;
+        } else if (it.status === 'in_preparation') {
+            badgeHtml = `<span style="color: #64b5f6; font-size: 12px; font-weight: 700;" title="${it.in_preparation_stock} un. en colecta generada / en preparación en depósito">En preparación</span>`;
         } else if (it.status === 'in_transit') {
-            badgeHtml = `<span style="color: var(--text2); font-size: 12px; font-weight: 600;" title="${it.in_transit_stock} un. despachadas hacia Full">En tránsito</span>`;
+            badgeHtml = `<span style="color: #ffb74d; font-size: 12px; font-weight: 700;" title="${it.in_transit_stock} un. despachadas en camino hacia Full">En tránsito</span>`;
+        } else if (it.status === 'in_reception') {
+            badgeHtml = `<span style="color: #81c784; font-size: 12px; font-weight: 700;" title="${it.in_process_stock} un. en recepción en MeLi">En recepción</span>`;
         } else {
             badgeHtml = '<span class="badge badge-danger">Sin stock</span>';
         }
@@ -800,10 +805,12 @@ function renderizarTabla() {
 
         // FECHA DE QUIEBRE ESTIMADA (Sobria y legible)
         let quiebraElHtml = '—';
-        if (it.status === 'in_reception') {
-            quiebraElHtml = `<span style="color: var(--text2);" title="Mercadería en depósito MeLi siendo procesada">+${it.in_process_stock} en MeLi</span>`;
+        if (it.status === 'in_preparation') {
+            quiebraElHtml = `<span style="color: #64b5f6; font-weight: 600;" title="Colecta generada en depósito">+${it.in_preparation_stock} en preparación</span>`;
         } else if (it.status === 'in_transit') {
-            quiebraElHtml = `<span style="color: var(--text2);" title="Envío despachado en camino">+${it.in_transit_stock} en camino</span>`;
+            quiebraElHtml = `<span style="color: #ffb74d; font-weight: 600;" title="Envío despachado en camino">+${it.in_transit_stock} en camino</span>`;
+        } else if (it.status === 'in_reception') {
+            quiebraElHtml = `<span style="color: #81c784; font-weight: 600;" title="Mercadería en depósito MeLi siendo procesada">+${it.in_process_stock} en MeLi</span>`;
         } else if (it.current_stock <= 0) {
             quiebraElHtml = '<span style="color: var(--danger); font-weight: 600;">Agotado</span>';
         } else if (it.days_left >= 900 || !it.stockout_date) {
@@ -817,10 +824,12 @@ function renderizarTabla() {
 
         // CUÁNDO PEDIR COLECTA EN MELI (Limpio y directo, con botón de acción)
         let fechaColectaHtml = '—';
-        if (it.status === 'in_reception') {
-            fechaColectaHtml = `<span style="color: var(--text2);" title="Pendiente de escaneo en MeLi">+${it.in_process_stock} un. en ingreso</span>`;
+        if (it.status === 'in_preparation') {
+            fechaColectaHtml = `<span style="color: #64b5f6; font-weight: 600;" title="Colecta generada, pendiente de retiro">+${it.in_preparation_stock} un. en preparación</span>`;
         } else if (it.status === 'in_transit') {
-            fechaColectaHtml = `<span style="color: var(--text2);" title="Despacho en viaje hacia Full">+${it.in_transit_stock} un. en camino</span>`;
+            fechaColectaHtml = `<span style="color: #ffb74d; font-weight: 600;" title="Despacho en viaje hacia Full">+${it.in_transit_stock} un. en camino</span>`;
+        } else if (it.status === 'in_reception') {
+            fechaColectaHtml = `<span style="color: #81c784; font-weight: 600;" title="Pendiente de escaneo en MeLi">+${it.in_process_stock} un. en ingreso</span>`;
         } else if (it.reorder_deadline_date || it.current_stock <= 0 || it.status === 'critical' || it.status === 'out_of_stock') {
             const daysToDeadline = it.days_to_deadline !== undefined ? it.days_to_deadline : (it.days_left - totalAdvance);
             const roundedDays = Math.max(1, Math.round(daysToDeadline));
@@ -854,8 +863,8 @@ function renderizarTabla() {
         const meliItemLink = (it.item_id && (!it.channels || it.channels.length === 0)) ? '' : (it.item_id ? `<span>·</span> <a href="${it.permalink || `https://articulo.mercadolibre.com.ar/${it.item_id}`}" target="_blank" class="channel-pill" onclick="event.stopPropagation();">${it.item_id}</a>` : '');
 
         let incomingSummary = '';
-        if (it.in_process_stock > 0 || it.in_transit_stock > 0) {
-            const incUnits = (it.in_process_stock || 0) + (it.in_transit_stock || 0);
+        const incUnits = (it.in_process_stock || 0) + (it.in_transit_stock || 0) + (it.in_preparation_stock || 0);
+        if (incUnits > 0) {
             incomingSummary = ` <span style="color: var(--text2); font-size: 11px;">(+${incUnits})</span>`;
         }
 
@@ -1777,8 +1786,8 @@ async function cargarHistorialColectas(soloBadge = false) {
 
             container.innerHTML = inboundShipmentsList.map(sh => {
                 const statusMap = {
-                    'scheduled': { text: 'Programado / Por Retirar', color: '#64b5f6', bg: 'rgba(33, 150, 243, 0.15)' },
-                    'in_transit': { text: 'En Camino a Villa Celina', color: '#ffb74d', bg: 'rgba(255, 152, 0, 0.15)' },
+                    'scheduled': { text: 'En Preparación', color: '#64b5f6', bg: 'rgba(33, 150, 243, 0.15)' },
+                    'in_transit': { text: 'En Tránsito', color: '#ffb74d', bg: 'rgba(255, 152, 0, 0.15)' },
                     'delivered': { text: 'Ingresado en Full', color: '#81c784', bg: 'rgba(76, 175, 80, 0.15)' },
                     'cancelled': { text: 'Cancelado', color: '#9e9e9e', bg: 'rgba(158, 158, 158, 0.15)' }
                 };
@@ -1812,9 +1821,9 @@ async function cargarHistorialColectas(soloBadge = false) {
                                     Ver Artículos (${sh.total_items})
                                 </button>
                                 <select onchange="cambiarEstadoEnvioInbound(${sh.id}, this.value)" class="filter-select" style="padding: 4px 8px; font-size: 11px;">
-                                    <option value="scheduled" ${sh.status === 'scheduled' ? 'selected' : ''}>Programado</option>
-                                    <option value="in_transit" ${sh.status === 'in_transit' ? 'selected' : ''}>En Camino</option>
-                                    <option value="delivered" ${sh.status === 'delivered' ? 'selected' : ''}>Ingresado</option>
+                                    <option value="scheduled" ${sh.status === 'scheduled' ? 'selected' : ''}>En Preparación</option>
+                                    <option value="in_transit" ${sh.status === 'in_transit' ? 'selected' : ''}>En Tránsito</option>
+                                    <option value="delivered" ${sh.status === 'delivered' ? 'selected' : ''}>Ingresado en Full</option>
                                     <option value="cancelled" ${sh.status === 'cancelled' ? 'selected' : ''}>Cancelar</option>
                                 </select>
                                 <button type="button" class="btn btn-secondary btn-sm" title="Eliminar envío" onclick="eliminarEnvioInbound(${sh.id})">✕</button>
@@ -2002,7 +2011,7 @@ async function abrirModalEditarEnvio(shipmentId) {
 
         const badge = document.getElementById('editarEnvioStatusBadge');
         if (badge) {
-            badge.textContent = 'Programado / Editable';
+            badge.textContent = 'En Preparación / Editable';
             badge.style.background = 'rgba(33, 150, 243, 0.15)';
             badge.style.color = '#64b5f6';
         }

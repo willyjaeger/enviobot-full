@@ -1152,26 +1152,38 @@ def get_full_items():
                     c_item["sales_last_15d"] += (row.get("sales_last_15d") or 0)
                     c_item["sales_last_30d"] += (row.get("sales_last_30d") or 0)
 
-        # ── Mercadería en Tránsito hacia Full (Envíos Activos EnvioBot) ────────
+        # ── Mercadería en Preparación vs Tránsito hacia Full (Envíos Activos EnvioBot) ────────
         cur.execute("""
-            SELECT isi.item_id, isi.inventory_id, isi.sku, SUM(isi.units_to_send) AS total_in_transit
+            SELECT s.status, isi.item_id, isi.inventory_id, isi.sku, SUM(isi.units_to_send) AS total_units
             FROM inbound_shipment_items isi
             JOIN inbound_shipments s ON s.id = isi.shipment_id
             WHERE s.user_id = %s AND s.status IN ('scheduled', 'in_transit')
-            GROUP BY isi.item_id, isi.inventory_id, isi.sku
+            GROUP BY s.status, isi.item_id, isi.inventory_id, isi.sku
         """, (account_id,))
-        transit_rows = cur.fetchall()
+        shipment_rows = cur.fetchall()
+
+        prep_by_sku = {}
+        prep_by_inv = {}
+        prep_by_item = {}
+
         transit_by_sku = {}
         transit_by_inv = {}
         transit_by_item = {}
-        for tr in transit_rows:
-            qty = int(tr.get("total_in_transit") or 0)
-            if tr.get("sku"):
-                transit_by_sku[tr["sku"].strip().upper()] = transit_by_sku.get(tr["sku"].strip().upper(), 0) + qty
-            if tr.get("inventory_id"):
-                transit_by_inv[tr["inventory_id"].strip()] = transit_by_inv.get(tr["inventory_id"].strip(), 0) + qty
-            if tr.get("item_id"):
-                transit_by_item[tr["item_id"].strip()] = transit_by_item.get(tr["item_id"].strip(), 0) + qty
+
+        for r in shipment_rows:
+            qty = int(r.get("total_units") or 0)
+            st = r.get("status")
+            sku_k = (r.get("sku") or "").strip().upper()
+            inv_k = (r.get("inventory_id") or "").strip()
+            item_k = (r.get("item_id") or "").strip()
+
+            target_sku_dict = prep_by_sku if st == "scheduled" else transit_by_sku
+            target_inv_dict = prep_by_inv if st == "scheduled" else transit_by_inv
+            target_item_dict = prep_by_item if st == "scheduled" else transit_by_item
+
+            if sku_k: target_sku_dict[sku_k] = target_sku_dict.get(sku_k, 0) + qty
+            if inv_k: target_inv_dict[inv_k] = target_inv_dict.get(inv_k, 0) + qty
+            if item_k: target_item_dict[item_k] = target_item_dict.get(item_k, 0) + qty
 
         # ── Recalcular Métricas Consolidadas y Semáforos ──────────────────────────
         today = datetime.utcnow().date()
@@ -1191,15 +1203,18 @@ def get_full_items():
             inv_key = (c_item.get("inventory_id") or "").strip()
             item_key = (c_item.get("item_id") or "").strip()
 
+            prep_units = prep_by_inv.get(inv_key, 0) or prep_by_sku.get(sku_key, 0) or prep_by_item.get(item_key, 0)
             raw_transit_units = transit_by_inv.get(inv_key, 0) or transit_by_sku.get(sku_key, 0) or transit_by_item.get(item_key, 0)
             in_process_units = c_item.get("not_available_stock_full", 0)
-            c_item["in_process_stock"] = in_process_units
-            
-            # Si el usuario despachó 130 un y MeLi ya recibió 60 un en muelle, lo remanente en camino son 70 un
+
+            # Si el usuario despachó unidades en tránsito y MeLi ya empezó a recibir en muelle:
             remaining_transit = max(0, raw_transit_units - in_process_units) if raw_transit_units > 0 else 0
-            in_transit_units = remaining_transit
+
+            c_item["in_process_stock"] = in_process_units
+            c_item["in_preparation_stock"] = prep_units
             c_item["in_transit_stock"] = remaining_transit
-            total_incoming = in_process_units + remaining_transit
+
+            total_incoming = in_process_units + prep_units + remaining_transit
             c_item["total_incoming"] = total_incoming
             total_covered_stock = stock + total_incoming
 
@@ -1225,24 +1240,26 @@ def get_full_items():
                 c_item["reorder_deadline_date"] = None
                 c_item["suggested_restock_units"] = 0
 
-            # Semáforo Inteligente considerando Stock en Recepción de MeLi y en Tránsito
+            # Semáforo Inteligente considerando Recepción MeLi, En Tránsito y En Preparación
             if stock <= 0:
                 if in_process_units > 0:
                     c_item["status"] = "in_reception"
                 elif remaining_transit > 0:
                     c_item["status"] = "in_transit"
+                elif prep_units > 0:
+                    c_item["status"] = "in_preparation"
                 else:
                     c_item["status"] = "out_of_stock"
+            elif in_process_units > 0 and (stock + in_process_units) / max(vpd, 0.01) > (lt + transit):
+                c_item["status"] = "in_reception"
+            elif remaining_transit > 0 and (stock + in_process_units + remaining_transit) / max(vpd, 0.01) > (lt + transit):
+                c_item["status"] = "in_transit"
+            elif prep_units > 0:
+                c_item["status"] = "in_preparation"
             elif c_item["days_left"] <= (lt + transit):
-                if total_incoming > 0 and c_item["covered_days_left"] > total_advance:
-                    c_item["status"] = "in_reception" if in_process_units > 0 else "in_transit"
-                else:
-                    c_item["status"] = "critical"
+                c_item["status"] = "critical"
             elif c_item["days_left"] <= total_advance:
-                if total_incoming > 0 and c_item["covered_days_left"] > total_advance:
-                    c_item["status"] = "in_reception" if in_process_units > 0 else "in_transit"
-                else:
-                    c_item["status"] = "warning"
+                c_item["status"] = "warning"
             else:
                 c_item["status"] = "ok"
 
@@ -1253,7 +1270,7 @@ def get_full_items():
             if status_filter == "action_required":
                 output_items = [x for x in output_items if x["status"] in ("warning", "critical", "out_of_stock")]
             elif status_filter == "in_process":
-                output_items = [x for x in output_items if x["status"] in ("in_reception", "in_transit")]
+                output_items = [x for x in output_items if x["status"] in ("in_reception", "in_transit", "in_preparation")]
             else:
                 output_items = [x for x in output_items if x["status"] == status_filter]
 
