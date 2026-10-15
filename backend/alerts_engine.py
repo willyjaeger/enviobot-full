@@ -36,7 +36,7 @@ if not logger.handlers:
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "enviobot")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "5DI1LCoeuFEzJpLznuJudFfq")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "enviobot_web")
 DB_PORT = int(os.getenv("DB_PORT", 3306))
 

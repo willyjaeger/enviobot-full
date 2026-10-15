@@ -18,12 +18,12 @@ load_dotenv()
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "enviobot")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "5DI1LCoeuFEzJpLznuJudFfq")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "enviobot_web")
 DB_PORT = int(os.getenv("DB_PORT", 3306))
 
 ML_CLIENT_ID = os.getenv("ML_CLIENT_ID", os.getenv("ML_SHARED_CLIENT_ID", "1845856849463362"))
-ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "2f2cg8ZGY4X9pLOFxgPUOAQefHQePf6q")
+ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "")
 MELI_API = "https://api.mercadolibre.com"
 
 def get_db():

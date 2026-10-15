@@ -39,7 +39,9 @@ app = Flask(__name__, static_folder="../frontend", static_url_path="")
 CORS(app)
 
 # Configuración JWT
-app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY", "77efb414952adef4ecf2163c0f7935b2f44126c317cec0119f4d5e97f8c5f8d2")
+if not os.getenv("JWT_SECRET_KEY"):
+    raise RuntimeError("Falta JWT_SECRET_KEY en el .env: la app no arranca sin clave propia.")
+app.config["JWT_SECRET_KEY"] = os.getenv("JWT_SECRET_KEY")
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(days=30)
 jwt = JWTManager(app)
 
@@ -52,7 +54,7 @@ DB_PORT = int(os.getenv("DB_PORT", 3306))
 
 # MercadoLibre App (EnvioBot Full)
 ML_CLIENT_ID = os.getenv("ML_CLIENT_ID", os.getenv("ML_SHARED_CLIENT_ID", "1845856849463362"))
-ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "2f2cg8ZGY4X9pLOFxgPUOAQefHQePf6q")
+ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "")
 ML_REDIRECT_URI = os.getenv("ML_REDIRECT_URI", "https://enviobot.com.ar/api/full/ml/auth/callback")
 MELI_API = "https://api.mercadolibre.com"
 
@@ -344,7 +346,7 @@ def get_user_full_subscription(user_id, conn):
         }
 
     email = (u.get("email") or "").lower()
-    is_admin = bool(u.get("is_admin", 0)) or email in ("guillermo.jaeger@gmail.com", "admin@enviobot.com.ar") or "admin" in email
+    is_admin = bool(u.get("is_admin", 0)) or email in ("guillermo.jaeger@gmail.com", "admin@enviobot.com.ar")
 
     is_blocked = bool(u.get("is_blocked", 0))
     if is_blocked:
@@ -403,7 +405,7 @@ def is_admin_user(user_id):
     if u.get("is_admin"):
         return True
     email = (u.get("email") or "").lower()
-    return email in ("guillermo.jaeger@gmail.com", "admin@enviobot.com.ar") or "admin" in email
+    return email in ("guillermo.jaeger@gmail.com", "admin@enviobot.com.ar")
 
 def get_account_user_id(user_id, conn=None):
     """

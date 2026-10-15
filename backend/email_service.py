@@ -32,7 +32,7 @@ if not logger.handlers:
 # Variables de entorno por defecto
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 DB_USER = os.getenv("DB_USER", "enviobot" if os.path.exists("/var/www") else "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "5DI1LCoeuFEzJpLznuJudFfq" if os.path.exists("/var/www") else "")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME", "enviobot_web")
 DB_PORT = int(os.getenv("DB_PORT", 3306))
 
@@ -104,7 +104,7 @@ def get_welcome_smtp_config() -> dict:
         "host": (db_cfg.get("smtp_host") or os.getenv("WELCOME_SMTP_HOST", DEFAULT_SMTP_HOST)).strip(),
         "port": port,
         "user": user,
-        "password": db_cfg.get("smtp_password") or os.getenv("WELCOME_SMTP_PASSWORD", "Willy/48462800"),
+        "password": db_cfg.get("smtp_password") or os.getenv("WELCOME_SMTP_PASSWORD", ""),
         "sender_name": (db_cfg.get("smtp_sender_name") or os.getenv("WELCOME_SENDER_NAME", "EnvioBot")).strip(),
         "sender_email": user,
         "reply_to": REPLY_TO_EMAIL
@@ -131,7 +131,7 @@ def get_alert_smtp_config() -> dict:
         "host": (db_cfg.get("smtp_alertafull_host") or os.getenv("ALERT_SMTP_HOST", DEFAULT_SMTP_HOST)).strip(),
         "port": port,
         "user": user,
-        "password": db_cfg.get("smtp_alertafull_password") or os.getenv("ALERT_SMTP_PASSWORD", "Willy/48462800alef"),
+        "password": db_cfg.get("smtp_alertafull_password") or os.getenv("ALERT_SMTP_PASSWORD", ""),
         "sender_name": (db_cfg.get("smtp_alertafull_sender_name") or os.getenv("ALERT_SENDER_NAME", "EnvioBot Full")).strip(),
         "sender_email": user,
         "reply_to": REPLY_TO_EMAIL
