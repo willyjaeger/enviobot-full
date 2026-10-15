@@ -35,9 +35,9 @@ Navegador (frontend/)  --HTTP+JWT-->  Flask + MySQL (backend/)  <--cron cada 4 h
 
 ## Brechas contra los criterios comunes (a cerrar, de a una, con OK de Guillermo)
 
-1. **Secretos en el repo:** `ML_CLIENT_SECRET`, contraseña de la base y `JWT_SECRET_KEY` como valores por defecto en `app.py` y `worker.py`; contraseña de root del VPS en `deploy.py`. Rotar y pasar a `.env`.
-2. **Admin por email:** `"admin" in email` en `app.py` (`get_user_full_subscription` e `is_admin_user`). Pasar a `is_admin` + un `admin_required`.
-3. **Deploy:** `deploy.py` y `deploy_direct.py` usan contraseña de root y no hacen respaldo ni vuelta atrás; apuntan a `/var/www/enviobot-full` (el criterio común es `/opt/<app>/`). Pasar a llave SSH y al esquema seguro.
+1. **Secretos (a medias, 2026-10-15):** sacados del código y cargados en el `.env` del servidor (con `JWT_SECRET_KEY` nueva); desplegado. **FALTA ROTAR** las claves viejas, que siguen en el historial de GitHub: secreto de ML, contraseña de la base (`enviobot`), contraseñas de los mails y contraseña de root del VPS. Cuidado al rotar la de la base: la usan app, worker y alertas.
+2. **Admin por email (a medias):** ya no vale `"admin" in email`; queda una lista exacta de 2 emails en `app.py`. Falta pasar a solo `is_admin` en la base (con OK: hay que marcar a Guillermo en la tabla) y un `admin_required`.
+3. **Deploy (hecho):** `desplegar_seguro.py` (llave SSH `enviobot-vps`, respaldo, verificación y vuelta atrás), lanzado con `SUBIR_A_PRODUCCION.bat`. Quedan en el servidor `/var/www/enviobot-full/` (el criterio común dice `/opt/<app>/`; mover es decisión aparte) y los respaldos en `backups/`. El `.env` del servidor no se toca por script.
 4. **Archivos sueltos:** tres `admin_index_*.html` y dos copias de la matriz xlsx en la raíz.
 5. **Documentación vieja:** `README.md` y `backend/schema.sql` describen una base `enviobot_full` independiente; el código usa `enviobot_web` y `ml_access_token`. No hay migraciones numeradas.
 6. **Estética:** revisar el panel contra los criterios de marca e íconos (nombre "EnvioBot Full", cero emojis, íconos de contorno).
