@@ -1,0 +1,49 @@
+# EnvioBot Full — guía para Claude
+
+@../enviobot-comun/CRITERIOS_ENVIOBOT.md
+
+Lo de arriba son los criterios comunes a todas las apps de EnvioBot (forma de trabajar, marca, íconos, seguridad, deploy). **Lo que sigue es solo lo propio de EnvioBot Full.** Si hay conflicto, mandan los criterios comunes.
+
+## Qué es
+
+**EnvioBot Full** es la app para vendedores de MercadoLibre Argentina que usan Mercado Envíos Full. Mira el stock en la bodega de MeLi, calcula la velocidad de venta, proyecta cuándo se quiebra el stock y avisa con tiempo para preparar el envío. Además tiene un módulo pago de colectas (inbound) para reponer Full. Es un producto independiente de EnvioBot Pedidos: un cliente puede usar uno, el otro o los dos (con un solo usuario, ver criterios comunes).
+
+## Arquitectura
+
+```
+Navegador (frontend/)  --HTTP+JWT-->  Flask + MySQL (backend/)  <--cron cada 4 h--  worker.py  -->  API de MercadoLibre
+```
+
+| Pieza | Dónde | Notas |
+|---|---|---|
+| API | `backend/app.py` (~2.500 líneas) | Auth, OAuth de MeLi con PKCE, items, settings, destinatarios, depósitos, equipo, admin de clientes, inbound. También sirve el frontend |
+| Sincronización y pronóstico | `backend/worker.py` | Cron cada 4 h; renueva tokens, trae publicaciones `fulfillment`, stock real y ventas 7/15/30 días |
+| Alertas | `backend/alerts_engine.py` | Clasifica ok/warning/critical, no repite en 20 h, digest diario por cliente |
+| WhatsApp / Email | `backend/whatsapp_service.py`, `email_service.py` | Evolution API o gateway HTTP (con modo simulación); SMTP |
+| Colectas | `backend/inbound_service.py` | Envíos a Full, cajas, remito HTML |
+| Panel | `frontend/index.html`, `js/app.js` (~4.100 líneas), `sw.js` | PWA con notificaciones nativas |
+| Base | MySQL, base `enviobot_web` | `backend/schema.sql` está desactualizado respecto del código |
+
+## Modelo de negocio
+
+- **Velocidad de venta (VPD)** = 0,5·(v7/7) + 0,35·(v15/15) + 0,15·(v30/30). Días restantes = stock / VPD.
+- **Crítico:** días restantes ≤ demora del flete. **Preparar envío:** ≤ demora + colchón. **Óptimo:** más que eso.
+- **Acceso por cliente:** `users.has_full`, `has_pedidos`, `has_inbound`, `is_blocked`. Colaboradores con `owner_id` ven la cuenta del titular (`get_account_user_id`).
+- **Planes** (`PLAN_LIMITS` en `app.py`): límites de cuentas de MeLi, destinatarios y depósitos.
+- **Una publicación puede tener variaciones**, cada una con su `inventory_id` y SKU; el stock real sale de `/inventories/{id}/stock/fulfillment`.
+- Colectas (inbound) es un módulo **pago**, con interruptor por cliente (`has_inbound`).
+
+## Brechas contra los criterios comunes (a cerrar, de a una, con OK de Guillermo)
+
+1. **Secretos en el repo:** `ML_CLIENT_SECRET`, contraseña de la base y `JWT_SECRET_KEY` como valores por defecto en `app.py` y `worker.py`; contraseña de root del VPS en `deploy.py`. Rotar y pasar a `.env`.
+2. **Admin por email:** `"admin" in email` en `app.py` (`get_user_full_subscription` e `is_admin_user`). Pasar a `is_admin` + un `admin_required`.
+3. **Deploy:** `deploy.py` y `deploy_direct.py` usan contraseña de root y no hacen respaldo ni vuelta atrás; apuntan a `/var/www/enviobot-full` (el criterio común es `/opt/<app>/`). Pasar a llave SSH y al esquema seguro.
+4. **Archivos sueltos:** tres `admin_index_*.html` y dos copias de la matriz xlsx en la raíz.
+5. **Documentación vieja:** `README.md` y `backend/schema.sql` describen una base `enviobot_full` independiente; el código usa `enviobot_web` y `ml_access_token`. No hay migraciones numeradas.
+6. **Estética:** revisar el panel contra los criterios de marca e íconos (nombre "EnvioBot Full", cero emojis, íconos de contorno).
+7. **Usuario único:** definir con Pedidos cómo se detecta el mismo usuario y que ambas apps usen el mismo hash de contraseña.
+
+## Referencias
+
+- `README.md` (modelo de pronóstico; el resto está desactualizado), `ARQUITECTURA_ALERTAS.md`, `docs/`.
+- App hermana: `C:\Proyectos\enviobot-web` (EnvioBot Pedidos).
