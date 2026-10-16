@@ -30,7 +30,8 @@ from whatsapp_service import (
     WHATSAPP_SIMULATION_MODE, EVOLUTION_API_URL, WHATSAPP_GATEWAY_URL
 )
 from alerts_engine import procesar_alertas_usuario
-from email_service import enviar_email_prueba, enviar_email_bienvenida_verificacion
+from email_service import enviar_email, enviar_email_prueba, enviar_email_bienvenida_verificacion
+import equipo as _equipo
 from inbound_service import render_remito_html
 
 load_dotenv()
@@ -423,10 +424,43 @@ def get_account_user_id(user_id, conn=None):
             u = cur.fetchone()
             if u and u.get("owner_id"):
                 return int(u["owner_id"])
+            # Equipo prendido: un usuario vinculado al abono de otro (por ejemplo uno de
+            # EnvioBot Pedidos) trabaja sobre la cuenta del titular. Sin "equipo", igual que siempre.
+            try:
+                cur.execute("SELECT abono_de FROM users WHERE id=%s", (user_id,))
+                ab = cur.fetchone()
+                if ab and ab.get("abono_de") and _equipo.equipo_activo(cur, user_id):
+                    return int(_equipo.raiz(cur, user_id))
+            except Exception:
+                pass
             return int(user_id)
     finally:
         if should_close:
             conn.close()
+
+
+def _mail_equipo(to_email, to_name, asunto, html, texto):
+    """True solo si el mail salió de verdad (en modo simulación no cuenta como enviado)."""
+    r = enviar_email(to_email, asunto, texto, html)
+    return bool(r.get("ok")) and not r.get("simulated")
+
+
+# Pantalla Equipo (roles, invitaciones y cuentas visibles). Apagada salvo que el admin la
+# prenda a mano para un abono: ver backend/equipo.py.
+_equipo.init(app, get_db, _mail_equipo, enviar_mensaje_whatsapp, hash_pw,
+             os.getenv("APP_URL", "https://enviobot.com.ar/full"))
+
+
+def _equipo_prendido(user_id):
+    """¿Tiene "equipo" prendido este usuario? Para frenar los endpoints viejos de equipo."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            return _equipo.equipo_activo(cur, user_id)
+    except Exception:
+        return False
+    finally:
+        conn.close()
 
 # -------------------------------------------------------------
 # RUTAS DE AUTENTICACIÓN (LOGIN / SIGNUP FACILITADO)
@@ -589,7 +623,7 @@ def login():
             return jsonify({"ok": False, "blocked": True, "error": "Tu cuenta se encuentra bloqueada por la administración. Comunicate con soporte."}), 403
 
         user_id = user["id"]
-        account_id = user["owner_id"] if user.get("owner_id") else user_id
+        account_id = get_account_user_id(user_id, conn)
 
         # Cuentas de MeLi vinculadas (de la cuenta titular)
         cur.execute("""
@@ -601,6 +635,10 @@ def login():
         """, (account_id,))
         ml_accounts = cur.fetchall()
 
+    with conn.cursor() as cur:
+        visibles = _equipo.cuentas_visibles(cur, user_id)
+    if visibles is not None:
+        ml_accounts = [a for a in ml_accounts if a["ml_user_id"] in visibles]
     plan_info = get_user_plan_info(account_id, conn)
     conn.close()
 
@@ -682,7 +720,7 @@ def me():
             conn.close()
             return jsonify({"ok": False, "blocked": True, "error": "Tu cuenta ha sido bloqueada por la administración."}), 403
 
-        account_id = user["owner_id"] if user.get("owner_id") else user_id
+        account_id = get_account_user_id(user_id, conn)
 
         cur.execute("""
             SELECT id, ml_user_id, ml_nickname,
@@ -692,6 +730,9 @@ def me():
             ORDER BY id ASC
         """, (account_id,))
         ml_accounts = cur.fetchall()
+        visibles = _equipo.cuentas_visibles(cur, user_id)
+        if visibles is not None:
+            ml_accounts = [a for a in ml_accounts if a["ml_user_id"] in visibles]
 
     plan_info = get_user_plan_info(account_id, conn)
     conn.close()
@@ -827,10 +868,18 @@ def ml_auth_login():
 
     if user_id:
         conn = get_db()
-        plan_info = get_user_plan_info(user_id, conn)
+        cuenta_id = user_id
+        with conn.cursor() as cur:
+            # Equipo prendido: solo un administrador conecta cuentas, y quedan en la cuenta del negocio.
+            if _equipo.equipo_activo(cur, user_id):
+                if _equipo.rol_de(cur, user_id) != "admin":
+                    conn.close()
+                    return jsonify({"ok": False, "error": "Solo un administrador de tu equipo puede conectar cuentas de MercadoLibre."}), 403
+                cuenta_id = get_account_user_id(user_id, conn)
+        plan_info = get_user_plan_info(cuenta_id, conn)
         max_accs = plan_info["limits"]["max_ml_accounts"]
         with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) AS count FROM ml_credentials WHERE user_id=%s", (user_id,))
+            cur.execute("SELECT COUNT(*) AS count FROM ml_credentials WHERE user_id=%s", (cuenta_id,))
             current_accs = cur.fetchone()["count"]
         conn.close()
 
@@ -934,8 +983,14 @@ def ml_auth_callback():
                 cur.execute("UPDATE users SET has_full = 1 WHERE id = %s", (user_id,))
                 cur.execute("INSERT IGNORE INTO user_settings (user_id) VALUES (%s)", (user_id,))
 
+            # Equipo prendido: las cuentas quedan en la cuenta del negocio (la del titular), aunque las
+            # conecte un administrador; sin equipo, a nombre de quien las conecta, como siempre.
+            titular_id = user_id
+            if _equipo.equipo_activo(cur, user_id):
+                titular_id = get_account_user_id(user_id, conn)
+
             # Guardar o actualizar credenciales MeLi
-            cur.execute("SELECT id FROM ml_credentials WHERE user_id=%s AND ml_user_id=%s", (user_id, meli_user_id))
+            cur.execute("SELECT id FROM ml_credentials WHERE user_id=%s AND ml_user_id=%s", (titular_id, meli_user_id))
             row = cur.fetchone()
             if row:
                 cur.execute("""
@@ -948,14 +1003,14 @@ def ml_auth_callback():
                 cur.execute("""
                     INSERT INTO ml_credentials (user_id, ml_user_id, ml_access_token, ml_refresh_token, ml_token_expires_at, ml_nickname)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                """, (user_id, meli_user_id, access_token, refresh_token, expires_at, nickname))
+                """, (titular_id, meli_user_id, access_token, refresh_token, expires_at, nickname))
                 cred_id = cur.lastrowid
         conn.close()
 
         # Lanzar sincronización en background
         try:
             from worker import sync_account_full_catalog
-            threading.Thread(target=sync_account_full_catalog, args=(user_id, cred_id, access_token, meli_user_id), daemon=True).start()
+            threading.Thread(target=sync_account_full_catalog, args=(titular_id, cred_id, access_token, meli_user_id), daemon=True).start()
         except Exception as e:
             print(f"Aviso sync thread: {e}")
 
@@ -983,6 +1038,9 @@ def get_ml_accounts():
             ORDER BY id ASC
         """, (account_id,))
         accs = cur.fetchall()
+        visibles = _equipo.cuentas_visibles(cur, user_id)
+        if visibles is not None:
+            accs = [a for a in accs if a["ml_user_id"] in visibles]
     plan_info = get_user_plan_info(account_id, conn)
     conn.close()
 
@@ -995,6 +1053,7 @@ def get_ml_accounts():
 
 @app.route("/api/full/ml/accounts/<int:acc_id>", methods=["DELETE"])
 @jwt_required()
+@_equipo.requiere_rol('admin')
 def delete_ml_account(acc_id):
     """Desvincula una cuenta de MercadoLibre y limpia su inventario asociado."""
     user_id = int(get_jwt_identity())
@@ -1077,6 +1136,15 @@ def get_full_items():
         if account_filter and account_filter != "all":
             query += " AND i.ml_credential_id = %s"
             params.append(int(account_filter))
+
+        # Equipo: quien no es administrador ve solo las cuentas que le habilitaron.
+        visibles = _equipo.cuentas_visibles(cur, user_id)
+        if visibles is not None:
+            if visibles:
+                query += " AND c.ml_user_id IN (" + ",".join(["%s"] * len(visibles)) + ")"
+                params.extend(visibles)
+            else:
+                query += " AND 1 = 0"
 
         cur.execute(query, tuple(params))
         raw_items = cur.fetchall()
@@ -1314,6 +1382,7 @@ def get_full_items():
 
 @app.route("/api/full/items/<int:item_id>", methods=["PUT"])
 @jwt_required()
+@_equipo.requiere_rol('operator')
 def update_item(item_id):
     """Actualiza Tiempo de Preparación (Lead Time), Buffer o Unidades por Caja de un producto."""
     user_id = int(get_jwt_identity())
@@ -1379,6 +1448,7 @@ def update_item(item_id):
 @app.route("/api/full/sync", methods=["POST"])
 @app.route("/api/full/sync-now", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('operator')
 def trigger_sync():
     """Dispara sincronización inmediata de todas las cuentas del usuario."""
     user_id = int(get_jwt_identity())
@@ -1431,6 +1501,7 @@ def get_recipients():
 
 @app.route("/api/full/recipients", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('admin')
 def add_recipient():
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
@@ -1490,6 +1561,7 @@ def add_recipient():
 
 @app.route("/api/full/verify/send-email", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('admin')
 def send_email_verification():
     """Envía el email de bienvenida con código de 6 dígitos."""
     user_id = int(get_jwt_identity())
@@ -1583,6 +1655,7 @@ def check_email_verification():
 
 @app.route("/api/full/verify/send-whatsapp", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('admin')
 def send_whatsapp_verification():
     """Envía un mensaje de verificación por WhatsApp a un número específico."""
     user_id = int(get_jwt_identity())
@@ -1614,6 +1687,7 @@ def send_whatsapp_verification():
 
 @app.route("/api/full/recipients/<int:recipient_id>", methods=["DELETE"])
 @jwt_required()
+@_equipo.requiere_rol('admin')
 def delete_recipient(recipient_id):
     user_id = int(get_jwt_identity())
     conn = get_db()
@@ -1624,6 +1698,7 @@ def delete_recipient(recipient_id):
 
 @app.route("/api/full/recipients/test-whatsapp", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('admin')
 def test_whatsapp():
     data = request.get_json() or {}
     phone = data.get("phone", "").strip()
@@ -1649,6 +1724,7 @@ def test_whatsapp():
 
 @app.route("/api/full/alerts/trigger-now", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('operator')
 def trigger_alerts_now():
     """Permite forzar la evaluación y disparo inmediato de alertas desde el panel."""
     user_id = int(get_jwt_identity())
@@ -1721,6 +1797,7 @@ def get_warehouses():
 
 @app.route("/api/full/warehouses", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('admin')
 def create_warehouse():
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
@@ -1750,6 +1827,10 @@ def create_warehouse():
 @jwt_required()
 def user_settings_route():
     user_id = int(get_jwt_identity())
+    if request.method == "PUT":
+        _no = _equipo.chequear_rol("admin")
+        if _no:
+            return _no
     conn = get_db()
     account_id = get_account_user_id(user_id, conn)
     if request.method == "GET":
@@ -1928,6 +2009,7 @@ def user_settings_route():
 
 @app.route("/api/full/settings/test-email", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('admin')
 def test_email():
     """Envía un correo de prueba para verificar las credenciales SMTP de DonWeb."""
     user_id = int(get_jwt_identity())
@@ -2010,6 +2092,8 @@ def invite_team_member():
       Se le asigna la clave inicial (123456 por defecto) y se lo obliga a definir una nueva contraseña.
     """
     current_user_id = int(get_jwt_identity())
+    if _equipo_prendido(current_user_id):
+        return jsonify({"ok": False, "error": "Tu equipo ahora se maneja desde la pantalla Equipo (con invitación por link)."}), 409
     data = request.get_json() or {}
     email = data.get("email", "").strip().lower()
     full_name = data.get("full_name", "").strip()
@@ -2087,6 +2171,8 @@ def invite_team_member():
 def delete_team_member(member_id):
     """Elimina o desactiva un colaborador del equipo."""
     current_user_id = int(get_jwt_identity())
+    if _equipo_prendido(current_user_id):
+        return jsonify({"ok": False, "error": "Tu equipo ahora se maneja desde la pantalla Equipo."}), 409
     conn = get_db()
     account_id = get_account_user_id(current_user_id, conn)
     with conn.cursor() as cur:
@@ -2311,6 +2397,7 @@ def list_inbound_shipments():
 
 @app.route("/api/full/inbound/shipments", methods=["POST"])
 @jwt_required()
+@_equipo.requiere_rol('operator')
 def create_inbound_shipment():
     """Crea una nueva orden de colecta / envío inbound a Full."""
     user_id = int(get_jwt_identity())
@@ -2488,6 +2575,7 @@ def get_inbound_shipment_detail(shipment_id):
 
 @app.route("/api/full/inbound/shipments/<int:shipment_id>", methods=["PUT"])
 @jwt_required()
+@_equipo.requiere_rol('operator')
 def update_inbound_shipment(shipment_id):
     """Actualiza una orden de colecta / envío inbound existente (solo si no fue despachado)."""
     user_id = int(get_jwt_identity())
@@ -2633,6 +2721,7 @@ def update_inbound_shipment(shipment_id):
 
 @app.route("/api/full/inbound/shipments/<int:shipment_id>/status", methods=["PUT"])
 @jwt_required()
+@_equipo.requiere_rol('operator')
 def update_inbound_shipment_status(shipment_id):
     """Actualiza el estado operativo de un envío (scheduled, in_transit, delivered, cancelled)."""
     user_id = int(get_jwt_identity())
@@ -2656,6 +2745,7 @@ def update_inbound_shipment_status(shipment_id):
 
 @app.route("/api/full/inbound/shipments/<int:shipment_id>", methods=["DELETE"])
 @jwt_required()
+@_equipo.requiere_rol('operator')
 def delete_inbound_shipment(shipment_id):
     """Elimina una colecta o envío programado."""
     user_id = int(get_jwt_identity())
@@ -2805,6 +2895,7 @@ def get_logistic_events():
 
 @app.route("/api/full/logistic-events/<int:event_id>/turnos-delay", methods=["PUT"])
 @jwt_required()
+@_equipo.requiere_rol('operator')
 def update_event_turnos_delay(event_id):
     """Permite actualizar la demora de turnos actual reportada en Villa Celina."""
     data = request.get_json() or {}

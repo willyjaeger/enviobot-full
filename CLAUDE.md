@@ -21,6 +21,7 @@ Navegador (frontend/)  --HTTP+JWT-->  Flask + MySQL (backend/)  <--cron cada 4 h
 | Alertas | `backend/alerts_engine.py` | Clasifica ok/warning/critical, no repite en 20 h, digest diario por cliente |
 | WhatsApp / Email | `backend/whatsapp_service.py`, `email_service.py` | Evolution API o gateway HTTP (con modo simulación); SMTP |
 | Colectas | `backend/inbound_service.py` | Envíos a Full, cajas, remito HTML |
+| Equipo | `backend/equipo.py`, `frontend/invitacion.html`, sección Equipo de `app.js` | Roles por app, invitación por link (WhatsApp/mail), cuentas de ML visibles por persona. Usa las tablas de la migración 047 (`enviobot-web/backend/`, base compartida). **Apagado salvo** `user_features` "equipo" = on puesto a mano. Spec en `enviobot-comun/ESPECIFICACION_USUARIOS.md` |
 | Panel | `frontend/index.html`, `js/app.js` (~4.100 líneas), `sw.js` | PWA con notificaciones nativas |
 | Base | MySQL, base `enviobot_web` | `backend/schema.sql` está desactualizado respecto del código |
 

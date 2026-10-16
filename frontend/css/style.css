@@ -1590,3 +1590,31 @@ table.stock-table tr:hover td {
     font-weight: 800;
 }
 
+
+/* ── Pantalla Equipo (Configuración > Equipo). Solo variables: sirve en tema oscuro y claro. ── */
+.eq-barra { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.eq-nota { font-size: 12px; color: var(--text2); line-height: 1.6; margin-bottom: 12px; }
+.eq-fila { display: flex; gap: 12px; padding: 12px; background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; }
+.eq-av { width: 36px; height: 36px; border-radius: 50%; background: var(--surface); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
+.eq-cuerpo { flex: 1; min-width: 0; }
+.eq-cab { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 6px 12px; }
+.eq-nombre { font-size: 13px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+.eq-mail { font-size: 12px; color: var(--text2); overflow-wrap: anywhere; }
+.eq-etiqueta { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--text2); margin-left: 6px; vertical-align: 1px; font-weight: 400; }
+.eq-etiqueta.eq-yo { border-color: var(--accent); color: var(--accent-text); }
+.eq-ctrl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.eq-cuentas { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text2); }
+.eq-cuenta { display: flex; align-items: center; gap: 8px; padding: 3px 0; flex-wrap: wrap; }
+.eq-cuenta label { color: var(--text); cursor: pointer; }
+.eq-estado { font-size: 11px; color: var(--text2); }
+.eq-form { padding: 14px; background: var(--surf2); border: 1px solid var(--accent); border-radius: 8px; margin-bottom: 12px; }
+.eq-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.eq-campos label, .eq-tit { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+.eq-roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.eq-rol { display: block; padding: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; font-size: 12px; color: var(--text2); line-height: 1.5; }
+.eq-rol b { display: block; color: var(--text); font-size: 13px; margin-bottom: 2px; }
+.eq-rol:has(input:checked) { border-color: var(--accent); }
+.eq-rol input { margin-right: 6px; }
+.eq-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.eq-pend { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; color: var(--text2); }
+.eq-link { color: var(--text2); text-decoration: underline; cursor: pointer; }

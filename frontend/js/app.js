@@ -2817,7 +2817,7 @@ function switchConfigTab(tab) {
         if (btnTeam) btnTeam.classList.add('active');
         if (btnSave) btnSave.style.display = 'none';
         if (btnCancel) btnCancel.textContent = 'Cerrar';
-        cargarMiembrosEquipo();
+        cargarEquipoNuevo();
     } else if (tab === 'branding') {
         if (tabBranding) tabBranding.style.display = 'block';
         if (btnBranding) btnBranding.classList.add('active');
@@ -2825,6 +2825,241 @@ function switchConfigTab(tab) {
         if (btnCancel) btnCancel.textContent = 'Cancelar';
         cargarBrandingEnFormulario();
     }
+}
+
+// ── EQUIPO: personas del negocio, rol en Full, cuentas que ven e invitaciones ──
+// Solo aparece si el admin prendió "equipo" para este abono; si no, queda la pantalla vieja.
+let _equipo = null;
+const _EQ_ROLES = {
+    admin: ['Administrador', 'Gestiona el equipo, las cuentas, los destinatarios y la configuración.'],
+    operator: ['Operador', 'Trabaja con los productos, las colectas y la sincronización. No gestiona equipo ni cuentas.'],
+    viewer: ['Solo ver', 'Consulta el panel sin modificar nada.']
+};
+const _EQ_TIPO = { titular: 'Titular', colaborador: 'Colaborador de Full', usuario_pedidos: 'Usuario de Pedidos' };
+
+function eqEsc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function eqFetch(ruta, metodo, cuerpo) {
+    const opts = { method: metodo || 'GET', headers: { 'Authorization': `Bearer ${getToken()}` } };
+    if (cuerpo !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(cuerpo); }
+    return fetch(`${API_BASE}${ruta}`, opts).then(r => r.json());
+}
+
+async function cargarEquipoNuevo() {
+    const nuevo = document.getElementById('equipoNuevoBox');
+    const viejo = document.getElementById('equipoLegacy');
+    if (!nuevo || !viejo) { cargarMiembrosEquipo(); return; }
+    try {
+        const e = getToken() ? await eqFetch('/full/equipo/estado') : { habilitado: false };
+        if (e.ok && e.habilitado) {
+            nuevo.style.display = 'block';
+            viejo.style.display = 'none';
+            await recargarEquipo();
+            return;
+        }
+    } catch (err) { /* sin conexión o sin la función: pantalla vieja */ }
+    nuevo.style.display = 'none';
+    viejo.style.display = 'block';
+    cargarMiembrosEquipo();
+}
+
+async function recargarEquipo() {
+    const box = document.getElementById('equipoNuevoBox');
+    const d = await eqFetch('/full/equipo');
+    if (!d.ok) { box.textContent = d.error || 'No se pudo cargar el equipo.'; return; }
+    _equipo = d;
+    const formAbierto = !!(document.getElementById('equipoForm') && document.getElementById('equipoForm').innerHTML);
+    box.innerHTML = `
+        <div class="eq-barra">
+            <h4 style="font-size: 14.5px; font-weight: 700; color: var(--text); margin: 0;">Equipo de ${eqEsc(d.negocio || 'tu negocio')}</h4>
+            ${d.soy_admin ? `<button type="button" class="btn btn-secondary btn-sm" onclick="equipoAbrirForm()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align: -2px;"><path d="M12 5v14M5 12h14"/></svg> Invitar persona</button>` : ''}
+        </div>
+        <div class="eq-nota">Cada persona entra con su propio email y contraseña. Elegís qué rol tiene en EnvioBot Full y qué cuentas de MercadoLibre ve. Las cuentas las conectan los administradores.</div>
+        <div id="equipoForm"></div>
+        <div id="equipoLista"></div>
+        <div id="equipoPend"></div>`;
+    pintarEquipo();
+    if (formAbierto) equipoAbrirForm();
+}
+
+function pintarEquipo() {
+    const d = _equipo;
+    document.getElementById('equipoLista').innerHTML = d.miembros.map(m => {
+        const ini = (m.nombre || '?').trim().split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase();
+        const editable = d.soy_admin && m.tipo !== 'titular';
+        const opciones = (m.rol === 'none' ? '<option value="none" selected>Sin acceso a Full</option>' : '') +
+            d.roles.map(r => `<option value="${r.codigo}"${r.codigo === m.rol ? ' selected' : ''}>${eqEsc(r.nombre)}</option>`).join('');
+        const rolHtml = editable
+            ? `<select class="filter-select" style="font-size: 12px; padding: 5px 8px;" onchange="equipoCambiarRol(${m.id}, this.value)" aria-label="Rol de ${eqEsc(m.nombre)}">${opciones}</select>`
+            : `<span class="eq-estado">${m.rol === 'none' ? 'Sin acceso a Full' : eqEsc((_EQ_ROLES[m.rol] || [m.rol])[0])}</span>`;
+        const quitar = editable && !m.soy_yo && m.rol !== 'none'
+            ? `<a class="eq-link" onclick="equipoQuitar(${m.id})">Quitar de Full</a>` : '';
+        let cuentasHtml;
+        if (m.rol === 'none') {
+            cuentasHtml = '<div class="eq-cuenta">Todavía no tiene acceso a EnvioBot Full. Elegí un rol para darle acceso.</div>';
+        } else if (m.rol === 'admin') {
+            cuentasHtml = '<div class="eq-cuenta">Ve todas las cuentas del negocio (los administradores ven y conectan cualquiera).</div>';
+        } else if (!d.cuentas.length) {
+            cuentasHtml = '<div class="eq-cuenta">Todavía no hay cuentas de MercadoLibre conectadas en el negocio.</div>';
+        } else {
+            cuentasHtml = d.cuentas.map(c => {
+                const hab = m.habilitadas.some(h => h.platform === c.platform && h.external_id === c.external_id);
+                const id = `eqc-${m.id}-${c.platform}-${eqEsc(c.external_id)}`;
+                return `<div class="eq-cuenta"><input type="checkbox" id="${id}" data-p="${eqEsc(c.platform)}" data-e="${eqEsc(c.external_id)}"
+                    ${hab ? 'checked' : ''} ${editable ? '' : 'disabled'} onchange="equipoGuardarCuentas(${m.id})">
+                    <label for="${id}">${eqEsc(c.nombre)}</label></div>`;
+            }).join('');
+        }
+        return `<div class="eq-fila" id="eqm-${m.id}">
+            <div class="eq-av" aria-hidden="true">${eqEsc(ini)}</div>
+            <div class="eq-cuerpo">
+                <div class="eq-cab">
+                    <div>
+                        <div class="eq-nombre">${eqEsc(m.nombre)}<span class="eq-etiqueta">${eqEsc(_EQ_TIPO[m.tipo] || '')}</span>${m.soy_yo ? '<span class="eq-etiqueta eq-yo">Vos</span>' : ''}</div>
+                        <div class="eq-mail">${eqEsc(m.email)}</div>
+                    </div>
+                    <div class="eq-ctrl">${rolHtml}${quitar}</div>
+                </div>
+                <div class="eq-cuentas"><div style="margin-bottom: 2px;">Cuentas de MercadoLibre que ve</div>${cuentasHtml}</div>
+            </div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('equipoPend').innerHTML = d.pendientes.length
+        ? `<div style="font-size: 13px; font-weight: 700; color: var(--text); margin: 14px 0 4px;">Invitaciones sin usar</div>` + d.pendientes.map(p => `
+            <div class="eq-pend">
+                <span><b style="color: var(--text);">${eqEsc(p.nombre || '')}</b> · ${eqEsc((_EQ_ROLES[p.rol] || [''])[0])}
+                    ${p.email ? ' · ' + eqEsc(p.email) : ''}${p.celular ? ' · ' + eqEsc(p.celular) : ''}
+                    · vence ${new Date(p.vence).toLocaleDateString('es-AR')}</span>
+                <span class="eq-ctrl">
+                    <a class="eq-link" onclick="equipoCopiar('${eqEsc(p.code)}')">Copiar link</a>
+                    ${p.celular ? `<a class="eq-link" onclick="window.open(equipoUrlWhatsApp('${eqEsc(p.celular)}', '${eqEsc(p.nombre || '')}', '${eqEsc(p.code)}'), '_blank')">WhatsApp</a>` : ''}
+                    ${d.soy_admin ? `<a class="eq-link" onclick="equipoCancelar(${p.id})">Cancelar</a>` : ''}
+                </span>
+            </div>`).join('')
+        : '';
+}
+
+async function equipoCambiarRol(id, rol) {
+    const d = await eqFetch(`/full/equipo/miembros/${id}`, 'PUT', { rol });
+    if (!d.ok) showToast(d.error || 'No se pudo cambiar el rol.', 'error');
+    await recargarEquipo();
+}
+
+async function equipoGuardarCuentas(id) {
+    const fila = document.getElementById(`eqm-${id}`);
+    const cuentas = [...fila.querySelectorAll('input[type=checkbox]:checked')].map(i => ({ platform: i.dataset.p, external_id: i.dataset.e }));
+    const d = await eqFetch(`/full/equipo/miembros/${id}`, 'PUT', { cuentas });
+    showToast(d.ok ? 'Cuentas guardadas.' : (d.error || 'No se pudo guardar.'), d.ok ? 'success' : 'error');
+    await recargarEquipo();
+}
+
+async function equipoQuitar(id) {
+    const m = _equipo.miembros.find(x => x.id === id);
+    if (!confirm(`¿Sacar a ${m ? m.nombre : 'esta persona'} de EnvioBot Full? Su usuario no se borra: solo pierde el acceso a Full.`)) return;
+    const d = await eqFetch(`/full/equipo/miembros/${id}`, 'DELETE');
+    if (!d.ok) showToast(d.error || 'No se pudo quitar.', 'error');
+    await recargarEquipo();
+}
+
+async function equipoCancelar(id) {
+    if (!confirm('¿Cancelar esta invitación? El link deja de funcionar.')) return;
+    const d = await eqFetch(`/full/equipo/invitaciones/${id}`, 'DELETE');
+    if (!d.ok) showToast(d.error || 'No se pudo cancelar.', 'error');
+    await recargarEquipo();
+}
+
+function equipoAbrirForm() {
+    const form = document.getElementById('equipoForm');
+    if (!form) return;
+    const d = _equipo;
+    form.innerHTML = `<div class="eq-form">
+        <div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 10px;">Invitar a una persona</div>
+        <div class="eq-campos">
+            <div><label for="eqNombre">Nombre</label><input id="eqNombre" class="filter-input" style="width: 100%;" autocomplete="off" placeholder="Ej: Dani"></div>
+            <div><label for="eqCelular">Celular (para WhatsApp)</label><input id="eqCelular" class="filter-input" style="width: 100%;" inputmode="tel" autocomplete="off" placeholder="Ej: 11 5555 0000"></div>
+            <div><label for="eqEmail">Email (opcional)</label><input id="eqEmail" type="email" class="filter-input" style="width: 100%;" autocomplete="off" placeholder="nombre@correo.com"></div>
+        </div>
+        <div class="eq-tit">Qué rol tiene en EnvioBot Full</div>
+        <div class="eq-roles">${d.roles.map(r => `
+            <label class="eq-rol"><b><input type="radio" name="eqRol" value="${r.codigo}"${r.codigo === 'operator' ? ' checked' : ''}>${eqEsc(_EQ_ROLES[r.codigo][0])}</b>${eqEsc(_EQ_ROLES[r.codigo][1])}</label>`).join('')}</div>
+        <div class="eq-tit">Cuentas de MercadoLibre que ve</div>
+        <div id="eqCuentasInv">${d.cuentas.length ? d.cuentas.map(c => `
+            <div class="eq-cuenta"><input type="checkbox" id="eqi-${c.platform}-${eqEsc(c.external_id)}" data-p="${eqEsc(c.platform)}" data-e="${eqEsc(c.external_id)}" checked>
+            <label for="eqi-${c.platform}-${eqEsc(c.external_id)}">${eqEsc(c.nombre)}</label></div>`).join('')
+            : '<div class="eq-cuenta">Todavía no hay cuentas conectadas en el negocio.</div>'}</div>
+        <div class="eq-acciones">
+            <button type="button" class="btn btn-sm" onclick="equipoEnviar('whatsapp')">Enviar por WhatsApp</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="equipoEnviar('email')">Enviar por email</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="equipoEnviar('link')">Solo copiar el link</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('equipoForm').innerHTML = ''">Cerrar</button>
+        </div>
+        <div class="eq-nota" style="margin: 10px 0 0;">La persona recibe un link que vale 7 días y sirve una sola vez. Al abrirlo elige su contraseña y entra directo.</div>
+    </div>`;
+    document.getElementById('eqNombre').focus();
+}
+
+function equipoLinkInvitacion(code) {
+    return `${location.origin}${location.pathname.replace(/[^/]*$/, '')}invitacion.html?inv=${encodeURIComponent(code)}`;
+}
+
+// Para abrir WhatsApp a mano (el botón "WhatsApp" de una invitación pendiente).
+function equipoNumeroWhatsApp(crudo) {
+    let n = (crudo || '').replace(/\D/g, '').replace(/^0+/, '');
+    if (!n) return '';
+    if (!n.startsWith('54')) n = '54' + n;
+    if (!n.startsWith('549')) n = '549' + n.slice(2);
+    return n;
+}
+
+function equipoUrlWhatsApp(celular, nombre, code) {
+    const primero = (nombre || '').split(' ')[0];
+    const negocio = _equipo && _equipo.negocio ? _equipo.negocio : 'mi negocio';
+    const texto = `Hola ${primero}! Te invito a usar EnvioBot Full con ${negocio}. Entrá con este link y elegí tu contraseña (vale 7 días): ${equipoLinkInvitacion(code)}`;
+    return `https://wa.me/${equipoNumeroWhatsApp(celular)}?text=${encodeURIComponent(texto)}`;
+}
+
+async function equipoCopiar(code) {
+    try {
+        await navigator.clipboard.writeText(equipoLinkInvitacion(code));
+        showToast('Link copiado. Pasáselo a la persona.', 'success');
+    } catch (e) {
+        prompt('Copiá este link y pasáselo a la persona:', equipoLinkInvitacion(code));
+    }
+}
+
+async function equipoEnviar(via) {
+    const nombre = document.getElementById('eqNombre').value.trim();
+    const celular = document.getElementById('eqCelular').value.trim();
+    const email = document.getElementById('eqEmail').value.trim();
+    if (!nombre) { showToast('Poné el nombre de la persona.', 'error'); return; }
+    if (via === 'whatsapp' && !celular) { showToast('Para WhatsApp falta el celular.', 'error'); return; }
+    if (via === 'email' && !email) { showToast('Para el email falta la dirección.', 'error'); return; }
+    const rol = (document.querySelector('input[name=eqRol]:checked') || {}).value || 'operator';
+    const cuentas = [...document.querySelectorAll('#eqCuentasInv input:checked')].map(i => ({ platform: i.dataset.p, external_id: i.dataset.e }));
+    const d = await eqFetch('/full/equipo/invitaciones', 'POST', {
+        nombre, rol, cuentas,
+        celular: via === 'email' ? '' : celular,
+        email: via === 'whatsapp' ? '' : email,
+        enviar_whatsapp: via === 'whatsapp',
+        enviar_email: via === 'email'
+    });
+    if (!d.ok) { showToast(d.error || 'No se pudo crear la invitación.', 'error'); return; }
+    if (via === 'whatsapp') {
+        const w = d.enviado && d.enviado.whatsapp;
+        if (w && w.ok && !w.simulated) showToast(`Invitación enviada por WhatsApp a ${nombre}.`, 'success');
+        else { window.open(equipoUrlWhatsApp(celular, nombre, d.code), '_blank'); showToast('El envío automático no está activo: se abrió WhatsApp con el mensaje listo.', 'info'); }
+    } else if (via === 'email') {
+        if (d.enviado && d.enviado.email) showToast(`Invitación enviada a ${email}.`, 'success');
+        else { await equipoCopiar(d.code); showToast('No se pudo mandar el email desde acá. Copié el link para que se lo pases.', 'info'); }
+    } else {
+        await equipoCopiar(d.code);
+    }
+    document.getElementById('equipoForm').innerHTML = '';
+    await recargarEquipo();
 }
 
 // ── GESTIÓN DE EQUIPO Y COLABORADORES (FRAN / MIEMBROS) ───────────────
