@@ -3613,7 +3613,7 @@ function pintarEquipo() {
                     · vence ${new Date(p.vence).toLocaleDateString('es-AR')}</span>
                 <span class="eq-ctrl">
                     <a class="eq-link" onclick="equipoCopiar('${eqEsc(p.code)}')">Copiar link</a>
-                    ${p.celular ? `<a class="eq-link" onclick="window.open(equipoUrlWhatsApp('${eqEsc(p.celular)}', '${eqEsc(p.nombre || '')}', '${eqEsc(p.code)}'), '_blank')">WhatsApp</a>` : ''}
+                    ${p.celular ? `<a class="eq-link" onclick="equipoReenviarWhatsApp(${p.id})">Reenviar por WhatsApp</a>` : ''}
                     ${d.soy_admin ? `<a class="eq-link" onclick="equipoCancelar(${p.id})">Cancelar</a>` : ''}
                 </span>
             </div>`).join('')
@@ -3699,6 +3699,11 @@ function equipoUrlWhatsApp(celular, nombre, code) {
     return `https://wa.me/${equipoNumeroWhatsApp(celular)}?text=${encodeURIComponent(texto)}`;
 }
 
+async function equipoReenviarWhatsApp(id) {
+    const d = await eqFetch(`/full/equipo/invitaciones/${id}/whatsapp`, 'POST', {});
+    showToast(d.ok ? 'Invitación enviada por WhatsApp.' : (d.error || 'No se pudo enviar por WhatsApp.'), d.ok ? 'success' : 'error');
+}
+
 async function equipoCopiar(code) {
     try {
         await navigator.clipboard.writeText(equipoLinkInvitacion(code));
@@ -3728,7 +3733,7 @@ async function equipoEnviar(via) {
     if (via === 'whatsapp') {
         const w = d.enviado && d.enviado.whatsapp;
         if (w && w.ok && !w.simulated) showToast(`Invitación enviada por WhatsApp a ${nombre}.`, 'success');
-        else { window.open(equipoUrlWhatsApp(celular, nombre, d.code), '_blank'); showToast('El envío automático no está activo: se abrió WhatsApp con el mensaje listo.', 'info'); }
+        else { await equipoCopiar(d.code); showToast('No se pudo mandar por WhatsApp. Copié el link para que se lo pases.', 'info'); }
     } else if (via === 'email') {
         if (d.enviado && d.enviado.email) showToast(`Invitación enviada a ${email}.`, 'success');
         else { await equipoCopiar(d.code); showToast('No se pudo mandar el email desde acá. Copié el link para que se lo pases.', 'info'); }

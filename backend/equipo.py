@@ -386,6 +386,35 @@ def invitar():
         conn.close()
 
 
+@bp.route('/api/full/equipo/invitaciones/<int:inv_id>/whatsapp', methods=['POST'])
+@jwt_required()
+def reenviar_invitacion_whatsapp(inv_id):
+    """Manda de nuevo la invitación por WhatsApp desde el servidor (sin abrir WhatsApp en el navegador)."""
+    conn, cur, yo, root, account_id = _pedido()
+    if conn is None:
+        return yo
+    try:
+        no = _exigir_admin(cur, yo)
+        if no:
+            return no
+        cur.execute('SELECT full_name, phone, grants_json FROM invitations WHERE id = %s AND account_id = %s '
+                    'AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > NOW() LIMIT 1', (inv_id, account_id))
+        inv = cur.fetchone()
+        if not inv or not inv.get('phone'):
+            return jsonify({'ok': False, 'error': 'Esa invitación no existe, venció o no tiene celular.'}), 404
+        code = (json.loads(inv['grants_json'] or '{}')).get('code')
+        if not code:
+            return jsonify({'ok': False, 'error': 'No se pudo armar el link de esa invitación.'}), 409
+        cur.execute('SELECT name FROM accounts WHERE id = %s', (account_id,))
+        negocio = (cur.fetchone() or {}).get('name') or 'su negocio'
+        link = f"{_deps['server_url']}/invitacion.html?inv={code}"
+        res = _deps['enviar_whatsapp'](inv['phone'], _texto_invitacion(inv['full_name'], negocio, link))
+        ok = bool(res and res.get('ok') and not res.get('simulated'))
+        return jsonify({'ok': ok, 'error': None if ok else 'No se pudo enviar por WhatsApp. Probá con Copiar link.'})
+    finally:
+        conn.close()
+
+
 @bp.route('/api/full/equipo/invitaciones/<int:inv_id>', methods=['DELETE'])
 @jwt_required()
 def cancelar_invitacion(inv_id):
