@@ -65,6 +65,23 @@ def aviso_ajuste(stock_hoy, vpd, dias, unidades_colecta, objetivo_dias):
     return ideal if ideal > unidades_colecta else None
 
 
+# Sobrestock: cobertura (con lo que viene en camino) por encima de este múltiplo del objetivo.
+# Es una regla nuestra, no de MercadoLibre: con objetivo de 30 días avisa a partir de los 45.
+FACTOR_SOBRESTOCK = 1.5
+
+
+def umbral_sobrestock(objetivo_dias):
+    return objetivo_dias * FACTOR_SOBRESTOCK
+
+
+def es_sobrestock(stock_hoy, unidades_entrantes, vpd, objetivo_dias):
+    """True si lo que hay (más lo que viene) alcanza para bastante más que el objetivo.
+    Sin ventas no se marca: un producto nuevo o parado no es lo mismo que un exceso."""
+    if vpd <= 0:
+        return False
+    return (stock_hoy + unidades_entrantes) / vpd > umbral_sobrestock(objetivo_dias)
+
+
 def limite_edicion(fecha_retiro):
     """Momento hasta el que se puede modificar la colecta: el día anterior al retiro, 9:40 de
     Buenos Aires. Devuelve un datetime con zona horaria."""

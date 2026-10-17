@@ -1639,3 +1639,4 @@ table.stock-table tr:hover td {
 .pc-vacio { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; font-size: 13px; color: var(--text2); }
 .pc-mas { font-size: 12px; color: var(--text2); margin: 6px 2px 0; }
 .pc-mas a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.pc-exceso { color: var(--text2); font-weight: 600; }

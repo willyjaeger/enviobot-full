@@ -1365,6 +1365,8 @@ def get_full_items():
             c_item["sugerido_al_ingreso"] = _proy.sugerido_al_ingreso(stock, vpd, dias_ingreso, total_incoming, target_cov)
             c_item["aviso_ajuste_units"] = _proy.aviso_ajuste(stock, vpd, dias_ingreso, prep_units, target_cov) if prep_units > 0 else None
             c_item["fecha_ingreso"] = (today + timedelta(days=dias_ingreso)).isoformat()
+            c_item["sobrestock"] = _proy.es_sobrestock(stock, total_incoming, vpd, target_cov)
+            c_item["umbral_sobrestock"] = _proy.umbral_sobrestock(target_cov)
 
             output_items.append(c_item)
 

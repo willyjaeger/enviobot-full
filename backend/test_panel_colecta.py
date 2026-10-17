@@ -93,6 +93,19 @@ class TestPanelJS(unittest.TestCase):
         self.assertNotIn('Ya en colecta', radar)
         self.assertNotIn('Todo bien', out['html'])
 
+    def test_exceso_de_stock_lista_solo_los_marcados_con_su_cobertura(self):
+        out = self._correr([
+            _item(title='Sobra mucho', sobrestock=True, current_stock=300, total_incoming=40, covered_days_left=62.4,
+                  target_stock_days=30, umbral_sobrestock=45),
+            _item(title='Normal', covered_days_left=20),
+        ])
+        self.assertIn('Con exceso de stock (1)', out['html'])
+        exceso = out['html'].split('Con exceso de stock')[1]
+        self.assertIn('Sobra mucho', exceso)
+        self.assertIn('62 días', exceso)
+        self.assertIn('+ 40 en camino', exceso)
+        self.assertNotIn('Normal', out['html'])
+
     def test_datos_de_afuera_se_escapan(self):
         out = self._correr([_item(title='<img src=x onerror=alert(1)>', sku='"><b>', status='critical',
                                   sugerido_al_ingreso=5)])

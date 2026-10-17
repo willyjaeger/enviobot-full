@@ -74,6 +74,25 @@ class TestAvisoAjuste(unittest.TestCase):
         self.assertIsNone(p.aviso_ajuste(0, 1.0, 7, 26, 30))
 
 
+class TestSobrestock(unittest.TestCase):
+    def test_umbral_es_un_multiplo_del_objetivo(self):
+        self.assertEqual(p.umbral_sobrestock(30), 45)
+
+    def test_pasado_del_umbral_es_sobrestock(self):
+        # 50 días de cobertura contra un objetivo de 30.
+        self.assertTrue(p.es_sobrestock(150, 0, 3, 30))
+
+    def test_justo_en_el_umbral_no_es_sobrestock(self):
+        self.assertFalse(p.es_sobrestock(135, 0, 3, 30))
+
+    def test_cuenta_lo_que_viene_en_camino(self):
+        self.assertTrue(p.es_sobrestock(60, 100, 3, 30))
+        self.assertFalse(p.es_sobrestock(60, 0, 3, 30))
+
+    def test_sin_ventas_no_se_marca(self):
+        self.assertFalse(p.es_sobrestock(500, 0, 0, 30))
+
+
 class TestCuentaRegresiva(unittest.TestCase):
     def test_limite_es_el_dia_anterior_a_las_9_40_de_buenos_aires(self):
         lim = p.limite_edicion(date(2026, 10, 23))

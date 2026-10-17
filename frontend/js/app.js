@@ -23,7 +23,8 @@ const ICONOS_SVG = {
     llama: '<path d="M12 12c2-2.96 0-7-1-8 0 3.038-1.773 4.741-3 6-1.226 1.26-2 3.24-2 5a6 6 0 1 0 12 0c0-1.532-1.056-3.94-2-5-1.786 3-2.791 3-4 2z"/>',
     reloj: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     bombilla: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/>',
-    radar: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'
+    radar: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+    capas: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>'
 };
 
 function iconoSvg(nombre, tam = 14) {
@@ -357,7 +358,9 @@ function adaptarItemDesdeBackend(raw) {
         cobertura_post_colecta: raw.cobertura_post_colecta !== undefined ? raw.cobertura_post_colecta : null,
         sugerido_al_ingreso: raw.sugerido_al_ingreso || 0,
         aviso_ajuste_units: raw.aviso_ajuste_units || null,
-        fecha_ingreso: raw.fecha_ingreso || null
+        fecha_ingreso: raw.fecha_ingreso || null,
+        sobrestock: !!raw.sobrestock,
+        umbral_sobrestock: raw.umbral_sobrestock || null
     };
 }
 
@@ -481,11 +484,39 @@ function renderizarPanelColecta() {
             </div>`;
     }
 
-    if (!banner && !bloqueColecta && !bloqueRadar) {
+    // Bloque 3: exceso de stock (más cobertura que el umbral): no conviene mandar más
+    const exceso = itemsData
+        .filter(it => it.sobrestock)
+        .sort((a, b) => (b.covered_days_left || 0) - (a.covered_days_left || 0));
+    let bloqueExceso = '';
+    if (exceso.length > 0) {
+        const filas = exceso.slice(0, maxRadar).map(it => {
+            const enCamino = (it.total_incoming || 0) > 0 ? ` + ${escapeHtml(it.total_incoming)} en camino` : '';
+            const umbral = it.umbral_sobrestock ? ` (objetivo ${escapeHtml(it.target_stock_days)})` : '';
+            return `<tr>
+                <td>${nombreItemPanel(it)}</td>
+                <td class="pc-num">${escapeHtml(it.current_stock)} u.${enCamino}</td>
+                <td class="pc-num pc-exceso">${Math.round(it.covered_days_left || 0)} días${umbral}</td>
+            </tr>`;
+        }).join('');
+        const mas = exceso.length > maxRadar ? `<div class="pc-mas">Y ${exceso.length - maxRadar} más.</div>` : '';
+        bloqueExceso = `
+            <div>
+                <h3 class="pc-block-title">${iconoSvg('capas', 13)}Con exceso de stock (${exceso.length})</h3>
+                <table class="pc-table">
+                    <thead><tr><th>Producto</th><th class="pc-num">Stock</th><th class="pc-num">Cobertura</th></tr></thead>
+                    <tbody>${filas}</tbody>
+                </table>
+                <div class="pc-mas">No conviene mandar más de estos hasta que baje la cobertura.</div>
+                ${mas}
+            </div>`;
+    }
+
+    if (!banner && !bloqueColecta && !bloqueRadar && !bloqueExceso) {
         cont.style.display = 'none';
         return;
     }
-    cont.innerHTML = banner + bloqueColecta + bloqueRadar;
+    cont.innerHTML = banner + bloqueColecta + bloqueRadar + bloqueExceso;
     cont.style.display = 'flex';
 
     // La cuenta regresiva se refresca sola cada minuto.
