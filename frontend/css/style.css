@@ -1780,3 +1780,26 @@ table.stock-table tr:hover td {
 .pc-imp-acciones { display: flex; gap: 8px; margin-top: 10px; }
 .pc-tip-expl { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
 .pc-tip-sub { color: var(--text2); font-size: 11.5px; }
+
+/* ── Proyección de cómo se agotan los productos ───────────────────────────────── */
+.pc-proy { margin-top: 8px; }
+.pc-proy-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.pc-tab { border: 1px solid var(--border); background: var(--surface); color: var(--text2); border-radius: 14px; padding: 3px 12px; font-size: 12px; cursor: pointer; }
+.pc-proy[data-vista="productos"] .pc-tab-productos, .pc-proy[data-vista="juntos"] .pc-tab-juntos { color: var(--text); border-color: var(--c); font-weight: 700; }
+.pc-proy[data-vista="productos"] .pc-proy-juntos, .pc-proy[data-vista="juntos"] .pc-proy-productos { display: none; }
+.pc-graf-grilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.pc-graf-item { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.pc-graf-titulo { font-size: 12.5px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.pc-graf { width: 100%; height: auto; display: block; }
+.pc-g-linea { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; }
+.pc-g-fina { stroke-width: 1.4; opacity: 0.7; }
+.pc-g-primera { stroke-width: 2.6; opacity: 1; }
+.pc-g-area { fill: var(--c); opacity: 0.12; }
+.pc-g-rejilla { stroke: var(--border); stroke-width: 1; }
+.pc-g-umbral { stroke: var(--warn); stroke-dasharray: 4 3; stroke-width: 1; }
+.pc-g-objetivo { stroke: var(--good); stroke-dasharray: 2 3; stroke-width: 1; }
+.pc-g-llega { stroke: var(--text2); stroke-dasharray: 2 2; opacity: 0.6; }
+.pc-g-txt { fill: var(--text2); font-size: 9px; }
+.pc-g-llega-txt { fill: var(--text); }
+.pc-g-repone { fill: var(--warn); stroke: var(--surface); stroke-width: 1.5; }
+.pc-g-quiebre { fill: var(--danger); }

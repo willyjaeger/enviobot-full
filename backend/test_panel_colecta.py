@@ -375,6 +375,63 @@ process.stdout.write(tip.innerHTML);
         self.assertIn('0 en Full + 300 en colectas', html)
         self.assertLess(html.index('Nueces'), html.index('Poco'))   # primero el que más le sobra
 
+    def _proy(self, expr, item, colectas):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('itemsData = [' + process.argv[2] + ']; colectasData = ' + process.argv[3] + ';', ctx);
+const r = vm.runInContext(process.argv[4], ctx);
+process.stdout.write(JSON.stringify(r));
+"""
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(item), json.dumps(colectas), expr],
+                           capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    ITEM = {'sku': '12072', 'title': 'Dátil', 'vpd': 10, 'current_stock': 100, 'lead_time_days': 3, 'transit_delay_days': 2, 'buffer_days': 2, 'target_stock_days': 15}
+
+    def _col_proy(self, dia, unidades, id=4):
+        from datetime import date, timedelta
+        return {'id': id, 'fecha_ingreso': (date.today() + timedelta(days=dia)).isoformat(), 'productos': [{'sku': '12072', 'unidades': unidades}]}
+
+    def test_proyeccion_baja_lo_que_se_vende_y_sube_cuando_entra_la_colecta(self):
+        r = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', self.ITEM, [self._col_proy(5, 300)])
+        stock = [p['stock'] for p in r['puntos']]
+        self.assertEqual(stock[0], 100)
+        self.assertEqual(stock[4], 60)
+        self.assertEqual(stock[5], 50 + 300)       # día 5: llegaron 300
+        self.assertEqual(r['umbral'], 70)          # 10 por día x (3 + 2 + 2) días
+
+    def test_nunca_baja_de_cero_y_marca_el_quiebre(self):
+        r = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', self.ITEM, [])
+        self.assertEqual(min(p['stock'] for p in r['puntos']), 0)
+        self.assertEqual(r['quiebreDia'], 10)
+        self.assertTrue(r['sinStockAntes'])
+
+    def test_el_dia_de_reponer_cuenta_la_colecta_que_ya_viene(self):
+        sin = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', self.ITEM, [])
+        con = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', self.ITEM, [self._col_proy(5, 300)])
+        self.assertEqual(sin['reponerDia'], 3)       # sin colecta: ya está por debajo del nivel enseguida
+        self.assertGreater(con['reponerDia'], 20)    # con 300 u. entrando, lo que hay que reponer es mucho más adelante
+        self.assertFalse(con['sinStockAntes'])
+
+    def test_sin_ventas_no_se_proyecta(self):
+        item = dict(self.ITEM, vpd=0)
+        self.assertIsNone(self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', item, []))
+
+    def test_cada_colecta_trae_los_graficos_por_producto_y_juntos(self):
+        item = dict(self.ITEM)
+        col = self._col(4, 11, True)
+        col['productos'] = [{'titulo': 'Dátil', 'sku': '12072', 'unidades': 150}]
+        html = self._correr([item], None, [col])['html']
+        self.assertIn('Ver cómo se van agotando los productos', html)
+        self.assertIn('Por producto', html)
+        self.assertIn('Todos juntos', html)
+        self.assertIn('<svg class="pc-graf', html)
+        self.assertIn('Reponer antes del', html)
+
     def test_el_mensaje_de_mover_avisa_que_hay_que_cambiar_ml(self):
         js = _leer(os.path.join('js', 'app.js'))
         self.assertIn('Después tenés que hacer el mismo cambio en Mercado Libre', js)
