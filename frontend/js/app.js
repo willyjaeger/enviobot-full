@@ -1228,9 +1228,10 @@ function marcaColectaGrafico(e, dia, ingresoDia, clase, etiqueta, fila) {
 }
 
 // Un producto: unidades en Full según pasan los días, con la entrada de cada colecta y el día de reponer.
-function svgProducto(it, proy, claseColor, hoy, dias) {
+// Con `detalle` sale grande y con cada marca explicada con palabras (es el que se abre al hacer clic).
+function svgProducto(it, proy, claseColor, hoy, dias, detalle) {
     dias = dias || DIAS_PROYECCION;
-    const ancho = 330, alto = 140;
+    const ancho = detalle ? 900 : 330, alto = detalle ? 400 : 140;
     const visibles = proy.puntos.filter(function (p) { return p.dia <= dias; });
     const maxStock = Math.max.apply(null, visibles.map(function (p) { return p.stock; }));
     const ymax = Math.max(maxStock, proy.umbral * 1.4, 1) * 1.1;
@@ -1238,24 +1239,99 @@ function svgProducto(it, proy, claseColor, hoy, dias) {
     const linea = visibles.map(function (p) { return e.x(p.dia).toFixed(1) + ',' + e.y(p.stock).toFixed(1); }).join(' ');
     const area = e.x(0).toFixed(1) + ',' + e.base + ' ' + linea + ' ' + e.x(visibles[visibles.length - 1].dia).toFixed(1) + ',' + e.base;
     let marcas = '';
-    proy.llegadas.filter(function (l) { return l.dia <= dias; }).forEach(function (l) {
-        marcas += marcaColectaGrafico(e, l.dia, l.ingresoDia, '', '+' + l.unidades, 0);
+    proy.llegadas.filter(function (l) { return l.dia <= dias; }).forEach(function (l, i) {
+        const texto = detalle ? '+' + l.unidades + ' u. quedan en venta el ' + fechaDeProyeccion(l.dia, hoy) : '+' + l.unidades;
+        marcas += marcaColectaGrafico(e, l.dia, l.ingresoDia, '', texto, detalle ? i : 0);
     });
     if (proy.reponerDia !== null && proy.reponerDia <= dias) {
         const p = proy.puntos[proy.reponerDia];
-        marcas += '<circle class="pc-g-repone" cx="' + e.x(p.dia).toFixed(1) + '" cy="' + e.y(p.stock).toFixed(1) + '" r="4"><title>Día de reponer</title></circle>';
+        marcas += '<circle class="pc-g-repone" cx="' + e.x(p.dia).toFixed(1) + '" cy="' + e.y(p.stock).toFixed(1) + '" r="' + (detalle ? 6 : 4) + '"><title>Día de reponer</title></circle>';
+        if (detalle) marcas += '<text class="pc-g-txt pc-g-nota" x="' + (e.x(p.dia) + 9).toFixed(1) + '" y="' + (e.y(p.stock) - 8).toFixed(1) + '">Reponer antes del ' + escapeHtml(fechaDeProyeccion(p.dia, hoy)) + '</text>';
     }
     if (proy.quiebreDia !== null && proy.quiebreDia <= dias) {
-        marcas += '<circle class="pc-g-quiebre" cx="' + e.x(proy.quiebreDia).toFixed(1) + '" cy="' + e.base + '" r="4"><title>Se queda sin stock</title></circle>';
+        marcas += '<circle class="pc-g-quiebre" cx="' + e.x(proy.quiebreDia).toFixed(1) + '" cy="' + e.base + '" r="' + (detalle ? 6 : 4) + '"><title>Se queda sin stock</title></circle>';
+        if (detalle) marcas += '<text class="pc-g-txt pc-g-nota" x="' + (e.x(proy.quiebreDia) + 9).toFixed(1) + '" y="' + (e.base - 8) + '">Sin stock el ' + escapeHtml(fechaDeProyeccion(proy.quiebreDia, hoy)) + '</text>';
     }
-    return '<svg class="pc-graf ' + claseColor + '" viewBox="0 0 ' + ancho + ' ' + alto + '" role="img" aria-label="' + escapeHtml('Proyección de ' + it.title) + '">' +
+    let hoyMarca = '';
+    let ejeY = '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.y(proy.umbral) + 3).toFixed(1) + '" text-anchor="end">' + escapeHtml(Math.round(proy.umbral)) + '</text>' +
+        '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.base + 3) + '" text-anchor="end">0</text>';
+    if (detalle) {
+        hoyMarca = '<circle class="pc-g-hoy" cx="' + e.x(0).toFixed(1) + '" cy="' + e.y(proy.puntos[0].stock).toFixed(1) + '" r="5"/>' +
+            '<text class="pc-g-txt pc-g-nota" x="' + (e.x(0) + 9).toFixed(1) + '" y="' + (e.y(proy.puntos[0].stock) - 9).toFixed(1) + '">Hoy: ' + escapeHtml(Math.round(proy.puntos[0].stock)) + ' u.</text>';
+        const pasoY = pasoDeEje(ymax, 6);
+        ejeY = '';
+        for (let v = 0; v <= ymax; v += pasoY) {
+            ejeY += '<line class="pc-g-rejilla" x1="' + GRAF.ml + '" y1="' + e.y(v).toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + e.y(v).toFixed(1) + '"/>' +
+                '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.y(v) + 3).toFixed(1) + '" text-anchor="end">' + escapeHtml(v) + '</text>';
+        }
+    }
+    const etiquetaUmbral = detalle
+        ? '<text class="pc-g-txt" x="' + (ancho - GRAF.mr - 2) + '" y="' + (e.y(proy.umbral) + 15).toFixed(1) + '" text-anchor="end">Nivel de reposición: ' + escapeHtml(Math.round(proy.umbral)) + ' u. (lo que vendés en ' + escapeHtml(Math.round(proy.avance)) + ' días)</text>' : '';
+    return '<svg class="pc-graf ' + claseColor + (detalle ? ' pc-graf-grande' : '') + '" viewBox="0 0 ' + ancho + ' ' + alto + '" role="img" aria-label="' + escapeHtml('Proyección de ' + it.title) + '">' +
         e.ticks +
-        '<text class="pc-g-txt" transform="translate(9 ' + (GRAF.mt + e.h / 2).toFixed(1) + ') rotate(-90)" text-anchor="middle">Unidades en Full</text>' +
+        '<text class="pc-g-txt" transform="translate(' + (detalle ? 12 : 9) + ' ' + (GRAF.mt + e.h / 2).toFixed(1) + ') rotate(-90)" text-anchor="middle">Unidades en Full</text>' +
         '<line class="pc-g-umbral" x1="' + GRAF.ml + '" y1="' + e.y(proy.umbral).toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + e.y(proy.umbral).toFixed(1) + '"/>' +
-        '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.y(proy.umbral) + 3).toFixed(1) + '" text-anchor="end">' + escapeHtml(Math.round(proy.umbral)) + '</text>' +
-        '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.base + 3) + '" text-anchor="end">0</text>' +
+        ejeY + etiquetaUmbral +
         '<polygon class="pc-g-area" points="' + area + '"/>' +
-        '<polyline class="pc-g-linea" points="' + linea + '"/>' + marcas + '</svg>';
+        '<polyline class="pc-g-linea" points="' + linea + '"/>' + marcas + hoyMarca + '</svg>';
+}
+
+// Los números detrás del gráfico, en palabras: qué se vende, qué hay, qué viene y cuándo reponer.
+function htmlDatosProducto(it, proy, colectas, hoy, demora) {
+    const dec = function (n) { return (Math.round(n * 10) / 10).toLocaleString('es-AR'); };
+    const hoyStock = Number(it.current_stock) || 0;
+    const llegadas = proy.llegadas.slice().sort(function (a, b) { return a.dia - b.dia; }).map(function (l) {
+        const col = colectas.find(x => Number(x.id) === Number(l.colectaId));
+        return '<li><b>+' + escapeHtml(l.unidades) + ' u.</b> de la colecta ' + escapeHtml(col ? numeroCorto(col.codigo) : '') +
+            ': entra a Full el ' + escapeHtml(fechaDeProyeccion(l.ingresoDia, hoy)) + ' y queda en venta el ' + escapeHtml(fechaDeProyeccion(l.dia, hoy)) +
+            (demora ? ' (' + escapeHtml(demora) + (demora === 1 ? ' día' : ' días') + ' de demora de Mercado Libre)' : '') + '.</li>';
+    }).join('') || '<li>No tiene ninguna colecta en camino.</li>';
+    const riesgo = textoRiesgoStock(proy, hoy);
+    return '<div class="pc-datos">' +
+        '<div class="pc-dato"><span>Vendés por día</span><b>' + escapeHtml(dec(proy.vpd)) + ' u.</b></div>' +
+        '<div class="pc-dato"><span>Hoy en Full</span><b>' + escapeHtml(dec(hoyStock)) + ' u.</b><small>alcanzan para ' + escapeHtml(Math.round(hoyStock / proy.vpd)) + ' días</small></div>' +
+        '<div class="pc-dato"><span>Tu objetivo</span><b>' + escapeHtml(Math.round(Number(it.target_stock_days) || 0)) + ' días</b><small>de stock que querés tener</small></div>' +
+        '<div class="pc-dato"><span>Nivel de reposición</span><b>' + escapeHtml(Math.round(proy.umbral)) + ' u.</b><small>' + escapeHtml(it.lead_time_days) + ' de preparación + ' + escapeHtml(it.transit_delay_days) + ' de flete + ' + escapeHtml(it.buffer_days) + ' de colchón = ' + escapeHtml(Math.round(proy.avance)) + ' días de venta</small></div>' +
+        '</div>' +
+        '<div class="pc-imp-cabecera">Qué le entra</div><ul class="pc-lista-datos">' + llegadas + '</ul>' +
+        '<div class="pc-imp-cabecera">Qué hacer</div><div class="' + (proy.reponerDia !== null && proy.reponerDia <= 7 ? 'pc-cmp-aviso' : 'pc-fila-nota') + '">' + escapeHtml(textoReponer(proy, hoy)) + '</div>' +
+        (riesgo ? '<div class="pc-cmp-aviso">' + escapeHtml(riesgo) + '</div>' : '') +
+        '<div class="pc-fila-nota" style="margin-top:10px;">Cómo leer el gráfico: la línea son las unidades que quedan en Full cada día. Baja lo que vendés y sube cuando una colecta queda en venta. ' +
+        'La raya naranja punteada es el nivel de reposición: cuando la línea baja de ahí, hay que mandar más. El punto naranja es ese día. El punto rojo, el día en que se queda sin stock. ' +
+        'La franja gris es lo que tarda Mercado Libre en dejar en venta lo que recibe.</div>';
+}
+
+function cerrarDetalleProducto() {
+    const m = document.getElementById('pc-modal-producto');
+    if (m) m.remove();
+}
+
+function abrirDetalleProducto(colectaId, sku) {
+    const hoy = new Date();
+    const demora = demoraAcreditacionDias();
+    const colectas = colectasEfectivas();
+    const c = colectas.find(x => Number(x.id) === Number(colectaId));
+    const it = buscarItemPorSku(sku);
+    const proy = it ? proyeccionProducto(it, colectas, hoy, demora) : null;
+    cerrarDetalleProducto();
+    if (!c || !it || !proy) return;
+    const modal = document.createElement('div');
+    modal.id = 'pc-modal-producto';
+    modal.className = 'pc-modal-fondo';
+    modal.setAttribute('onclick', 'cerrarDetalleProducto()');
+    modal.innerHTML = '<div class="pc-modal-caja" role="dialog" aria-modal="true" onclick="event.stopPropagation()">' +
+        '<div class="pc-modal-cab"><div><div class="pc-hero-titulo">' + escapeHtml(it.title) + '</div>' +
+        '<div class="pc-hero-sub">Cómo se va agotando en las próximas 6 semanas</div></div>' +
+        '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarDetalleProducto()">Cerrar</button></div>' +
+        svgProducto(it, proy, claseColorColecta(c), hoy, DIAS_PROYECCION, true) +
+        htmlDatosProducto(it, proy, colectas, hoy, demora) + '</div>';
+    document.body.appendChild(modal);
+}
+
+if (typeof document !== 'undefined' && document.addEventListener) {
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape') cerrarDetalleProducto();
+    });
 }
 
 function htmlProyeccionProductos(c, colectas, hoy, dias, demora) {
@@ -1276,9 +1352,11 @@ function htmlProyeccionProductos(c, colectas, hoy, dias, demora) {
         const titulo = f.it ? f.it.title : f.p.titulo;
         const cuerpo = f.proy ? svgProducto(f.it, f.proy, claseColorColecta(c), hoy, dias) : '';
         const clase = f.proy && f.proy.reponerDia !== null && f.proy.reponerDia <= 7 ? 'pc-cmp-aviso' : 'pc-fila-nota';
-        return '<div class="pc-graf-item"><div class="pc-graf-titulo">' + escapeHtml(titulo) + '</div>' + cuerpo +
+        const abre = f.proy ? ' data-sku="' + escapeHtml(f.p.sku) + '" onclick="abrirDetalleProducto(' + Number(c.id) + ', this.dataset.sku)" title="Tocá para agrandar" role="button" tabindex="0"' : '';
+        return '<div class="pc-graf-item' + (f.proy ? ' pc-graf-click' : '') + '"' + abre + '><div class="pc-graf-titulo">' + escapeHtml(titulo) + '</div>' + cuerpo +
             '<div class="' + clase + '">' + escapeHtml(textoReponer(f.proy, hoy)) + '</div>' +
-            (textoRiesgoStock(f.proy, hoy) ? '<div class="pc-cmp-aviso">' + escapeHtml(textoRiesgoStock(f.proy, hoy)) + '</div>' : '') + '</div>';
+            (textoRiesgoStock(f.proy, hoy) ? '<div class="pc-cmp-aviso">' + escapeHtml(textoRiesgoStock(f.proy, hoy)) + '</div>' : '') +
+            (f.proy ? '<div class="pc-graf-agrandar">Tocá para agrandar y ver el detalle</div>' : '') + '</div>';
     }).join('') + '</div>';
 }
 
@@ -1351,7 +1429,10 @@ function htmlTodosJuntos(c, colectas, hoy, dias, demora, ocultos) {
 
     const lista = series.filter(function (s) { return s.proy.reponerDia !== null; })
         .sort(function (a, b) { return a.proy.reponerDia - b.proy.reponerDia; }).slice(0, 5)
-        .map(function (s) { return '<span class="pc-chip-mini ' + claseSerie(s.idx) + '"><span class="pc-chip-punto"></span>' + escapeHtml(s.it.title) + ': ' + escapeHtml(textoReponer(s.proy, hoy)) + '</span>'; }).join('');
+        .map(function (s) {
+            const sku = (c.productos || []).map(function (p) { return p.sku; }).find(function (k) { return normalizarSkuPanel(k) === normalizarSkuPanel(s.it.sku); }) || s.it.sku;
+            return '<button type="button" class="pc-chip-mini ' + claseSerie(s.idx) + '" data-sku="' + escapeHtml(sku) + '" onclick="abrirDetalleProducto(' + Number(c.id) + ', this.dataset.sku)" title="Tocá para ver el detalle"><span class="pc-chip-punto"></span>' + escapeHtml(s.it.title) + ': ' + escapeHtml(textoReponer(s.proy, hoy)) + '</button>';
+        }).join('');
     const rangos = [14, 28, 42].map(function (d) {
         return '<button type="button" class="pc-tab' + (d === dias ? ' pc-tab-activo' : '') + '" onclick="cambiarRangoProyeccion(' + Number(c.id) + ', ' + d + ')">' + (d / 7) + ' semanas</button>';
     }).join('');
@@ -1370,13 +1451,13 @@ function htmlProyeccionColecta(c, hoy) {
     const colectas = colectasEfectivas();
     const ef = colectas.find(x => Number(x.id) === Number(c.id)) || c;
     if (!(ef.productos || []).length) return '';
-    const estado = Object.assign({ abierta: false, vista: 'productos', rango: DIAS_PROYECCION, ocultos: {} }, estadoProyeccion[c.id]);
+    const estado = Object.assign({ abierta: false, vista: 'juntos', rango: DIAS_PROYECCION, ocultos: {} }, estadoProyeccion[c.id]);
     const demora = demoraAcreditacionDias();
     return `<details class="pc-detalle"${estado.abierta ? ' open' : ''} ontoggle="recordarProyeccion(${Number(c.id)}, this.open)"><summary>Ver cómo se van agotando los productos</summary>
         <div class="pc-proy" id="pc-proy-${Number(c.id)}" data-vista="${escapeHtml(estado.vista)}">
             <div class="pc-proy-tabs">
-                <button type="button" class="pc-tab pc-tab-productos" onclick="cambiarVistaProyeccion(${Number(c.id)}, 'productos')">Por producto</button>
                 <button type="button" class="pc-tab pc-tab-juntos" onclick="cambiarVistaProyeccion(${Number(c.id)}, 'juntos')">Todos juntos</button>
+                <button type="button" class="pc-tab pc-tab-productos" onclick="cambiarVistaProyeccion(${Number(c.id)}, 'productos')">Uno por producto</button>
                 <label class="pc-demora">Mercado Libre tarda <input type="number" min="0" max="14" value="${demora}" onchange="guardarDemoraAcreditacion(this.value)"> días en dejar en venta lo que recibe</label>
             </div>
             <div class="pc-proy-productos">${htmlProyeccionProductos(ef, colectas, hoy, estado.rango, demora)}</div>
@@ -1387,7 +1468,7 @@ function htmlProyeccionColecta(c, hoy) {
 let estadoProyeccion = {};   // id de colecta -> { abierta, vista, rango, ocultos }
 
 function recordarProyeccion(id, abierta) {
-    estadoProyeccion[id] = Object.assign({ vista: 'productos' }, estadoProyeccion[id], { abierta: abierta });
+    estadoProyeccion[id] = Object.assign({ vista: 'juntos' }, estadoProyeccion[id], { abierta: abierta });
 }
 
 function cambiarVistaProyeccion(id, vista) {
