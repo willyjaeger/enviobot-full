@@ -3,13 +3,14 @@
 // Gestiona notificaciones nativas de escritorio y eventos en segundo plano
 // ==============================================================================
 
-const CACHE_NAME = 'enviobot-full-v18';
+const CACHE_NAME = 'enviobot-full-v19';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './css/style.css',
   './js/app.js',
   './js/theme.js',
+  './js/teclado-formularios.js',
   './js/notifications.js',
   './img/icon.png',
   './img/icon_192.png',
