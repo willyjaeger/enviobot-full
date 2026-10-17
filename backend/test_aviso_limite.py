@@ -15,7 +15,7 @@ import aviso_limite_colecta as a  # noqa: E402
 class TestDiaHabil(unittest.TestCase):
     def test_colecta_del_lunes_se_cierra_el_viernes(self):
         lim = p.limite_edicion(date(2026, 10, 19))  # lunes 19/10
-        self.assertEqual((lim.day, lim.hour, lim.minute), (16, 9, 40))
+        self.assertEqual((lim.day, lim.hour, lim.minute), (16, 9, 44))
         self.assertEqual(lim.weekday(), 4)  # viernes
 
     def test_colecta_del_martes_se_cierra_el_lunes(self):
@@ -28,9 +28,9 @@ class TestDiaHabil(unittest.TestCase):
     def test_ventana_de_aviso(self):
         retiro = date(2026, 10, 19)
         antes = datetime(2026, 10, 16, 8, 30, tzinfo=p.HORA_BA)    # 70 min antes
-        justo = datetime(2026, 10, 16, 8, 40, tzinfo=p.HORA_BA)    # 60 min antes
+        justo = datetime(2026, 10, 16, 8, 44, tzinfo=p.HORA_BA)    # 60 min antes
         casi = datetime(2026, 10, 16, 9, 35, tzinfo=p.HORA_BA)     # 5 min antes
-        tarde = datetime(2026, 10, 16, 9, 41, tzinfo=p.HORA_BA)    # ya cerró
+        tarde = datetime(2026, 10, 16, 9, 45, tzinfo=p.HORA_BA)    # ya cerró
         self.assertFalse(p.en_ventana_de_aviso(retiro, antes))
         self.assertTrue(p.en_ventana_de_aviso(retiro, justo))
         self.assertTrue(p.en_ventana_de_aviso(retiro, casi))
@@ -44,7 +44,7 @@ class TestTexto(unittest.TestCase):
         t = a.texto_aviso(retiro, limite, 3500, "COL-1", "https://x")
         self.assertIn("Te queda cerca de una hora", t)
         self.assertIn("colecta del lunes 19/10", t)
-        self.assertIn("viernes 16/10 a las 09:40", t)
+        self.assertIn("viernes 16/10 a las 09:44", t)
         self.assertIn("COL-1", t)
 
     def test_con_poco_tiempo_dice_los_minutos(self):

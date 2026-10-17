@@ -15,7 +15,7 @@ PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 -- 2) Hora limite para modificar la colecta (dia anterior al retiro), por deposito. Hora de Buenos Aires.
 SET @sql = IF((SELECT COUNT(*) FROM information_schema.COLUMNS
                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'warehouses' AND COLUMN_NAME = 'edit_cutoff_time') = 0,
-    'ALTER TABLE warehouses ADD COLUMN edit_cutoff_time TIME NOT NULL DEFAULT ''09:40:00''',
+    'ALTER TABLE warehouses ADD COLUMN edit_cutoff_time TIME NOT NULL DEFAULT ''09:44:00''',
     'SELECT 1');
 PREPARE s FROM @sql; EXECUTE s; DEALLOCATE PREPARE s;
 

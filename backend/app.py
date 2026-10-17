@@ -1549,7 +1549,7 @@ def ajustes_colecta():
                 return jsonify({"ok": False, "error": "El umbral de exceso tiene que estar entre 1,1 y 10 veces el objetivo."}), 400
             hm = _proy.parsear_hora(data.get("hora_limite"))
             if not hm:
-                return jsonify({"ok": False, "error": "La hora límite tiene que ser algo como 09:40."}), 400
+                return jsonify({"ok": False, "error": "La hora límite tiene que ser algo como 09:44."}), 400
             cur.execute("SELECT 1 FROM user_settings WHERE user_id=%s", (account_id,))
             if not cur.fetchone():
                 return jsonify({"ok": False, "error": "Guardá primero la configuración general y después estos ajustes."}), 409

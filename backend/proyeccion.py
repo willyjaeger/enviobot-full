@@ -13,7 +13,7 @@ HORA_BA = timezone(timedelta(hours=-3))
 # Hasta el día anterior a esta hora se puede modificar la colecta (dato de Guillermo, 2026-10-16).
 # Por ahora fijo; cuando se pase a un valor por depósito hace falta un cambio de base con OK.
 LIMITE_EDICION_HORA = 9
-LIMITE_EDICION_MINUTO = 40
+LIMITE_EDICION_MINUTO = 44
 # El aviso de "subió la venta" solo salta si lo comprometido queda bastante corto.
 TOLERANCIA_AVISO = 0.8
 
@@ -118,7 +118,7 @@ def dia_habil_anterior(fecha):
 
 def limite_edicion(fecha_retiro, hora=None):
     """Momento hasta el que se puede modificar la colecta: el día hábil anterior al retiro, a la
-    hora del depósito (por defecto 9:40) de Buenos Aires. Devuelve un datetime con zona horaria."""
+    hora del depósito (por defecto 9:44) de Buenos Aires. Devuelve un datetime con zona horaria."""
     h, m = parsear_hora(hora) or (LIMITE_EDICION_HORA, LIMITE_EDICION_MINUTO)
     dia = dia_habil_anterior(fecha_retiro)
     return datetime(dia.year, dia.month, dia.day, h, m, tzinfo=HORA_BA)

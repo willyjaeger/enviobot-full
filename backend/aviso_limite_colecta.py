@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Aviso de que se cierra la posibilidad de modificar la colecta.
 
-Una hora antes del límite (día hábil anterior al retiro, 9:40 de Buenos Aires) manda un mensaje
+Una hora antes del límite (día hábil anterior al retiro, 9:44 de Buenos Aires) manda un mensaje
 por WhatsApp y mail a quienes ya reciben las alertas de Full. Cada colecta se avisa UNA vez.
 
 Está pensado para correr cada 10 minutos desde cron (el worker corre cada 4 horas y no alcanza):

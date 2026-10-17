@@ -33,7 +33,7 @@ Corrección: cada ventana se divide por los días con stock, no por todos (`vpd_
 
 ## Límite de edición de la colecta
 
-La colecta se puede modificar hasta el **día hábil anterior al retiro a las 9:40, hora de Buenos Aires** (una colecta del lunes se cierra el viernes; dato de Guillermo con su cuenta, no confirmado que valga para todos; no contempla feriados). La hora es configurable por depósito (`warehouses.edit_cutoff_time`). Pasada la hora el panel dice que ya no se puede y se calla el aviso de ajuste.
+La colecta se puede modificar hasta el **día hábil anterior al retiro a las 9:44, hora de Buenos Aires (el horario que muestra Mercado Libre en su cuenta: "hasta las 09:44")** (una colecta del lunes se cierra el viernes; dato de Guillermo con su cuenta, no confirmado que valga para todos; no contempla feriados). La hora es configurable por depósito (`warehouses.edit_cutoff_time`). Pasada la hora el panel dice que ya no se puede y se calla el aviso de ajuste.
 
 Una hora antes del límite `backend/aviso_limite_colecta.py` avisa por WhatsApp y mail (una vez por colecta y por canal). Necesita un cron cada 10 minutos en el servidor, que se carga aparte y con OK de Guillermo.
 

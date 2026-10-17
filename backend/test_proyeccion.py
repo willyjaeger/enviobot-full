@@ -124,9 +124,9 @@ class TestHoraLimite(unittest.TestCase):
         lim = p.limite_edicion(date(2026, 10, 23), '11:15')
         self.assertEqual((lim.day, lim.hour, lim.minute), (22, 11, 15))
 
-    def test_hora_invalida_vuelve_a_las_9_40(self):
+    def test_hora_invalida_vuelve_a_las_9_44(self):
         lim = p.limite_edicion(date(2026, 10, 23), 'cualquiera')
-        self.assertEqual((lim.hour, lim.minute), (9, 40))
+        self.assertEqual((lim.hour, lim.minute), (9, 44))
 
 
 class TestVpdCorregido(unittest.TestCase):
@@ -150,30 +150,30 @@ class TestVpdCorregido(unittest.TestCase):
 
 
 class TestCuentaRegresiva(unittest.TestCase):
-    def test_limite_es_el_dia_anterior_a_las_9_40_de_buenos_aires(self):
+    def test_limite_es_el_dia_anterior_a_las_9_44_de_buenos_aires(self):
         lim = p.limite_edicion(date(2026, 10, 23))
-        self.assertEqual((lim.year, lim.month, lim.day, lim.hour, lim.minute), (2026, 10, 22, 9, 40))
+        self.assertEqual((lim.year, lim.month, lim.day, lim.hour, lim.minute), (2026, 10, 22, 9, 44))
         self.assertEqual(lim.utcoffset().total_seconds(), -3 * 3600)
 
     def test_faltan_dos_dias_y_tres_horas(self):
-        ahora = datetime(2026, 10, 20, 6, 40, tzinfo=p.HORA_BA)
+        ahora = datetime(2026, 10, 20, 6, 44, tzinfo=p.HORA_BA)
         r = p.cuenta_regresiva(date(2026, 10, 23), ahora)
         self.assertTrue(r['abierta'])
         self.assertEqual(r['segundos_restantes'], (2 * 24 + 3) * 3600)
 
-    def test_despues_de_las_9_40_queda_cerrada(self):
-        ahora = datetime(2026, 10, 22, 9, 41, tzinfo=p.HORA_BA)
+    def test_despues_de_las_9_44_queda_cerrada(self):
+        ahora = datetime(2026, 10, 22, 9, 45, tzinfo=p.HORA_BA)
         r = p.cuenta_regresiva(date(2026, 10, 23), ahora)
         self.assertFalse(r['abierta'])
         self.assertEqual(r['segundos_restantes'], 0)
 
-    def test_justo_a_las_9_40_ya_no_alcanza(self):
-        ahora = datetime(2026, 10, 22, 9, 40, tzinfo=p.HORA_BA)
+    def test_justo_a_las_9_44_ya_no_alcanza(self):
+        ahora = datetime(2026, 10, 22, 9, 44, tzinfo=p.HORA_BA)
         self.assertFalse(p.cuenta_regresiva(date(2026, 10, 23), ahora)['abierta'])
 
 
 class TestBloqueadaPorMl(unittest.TestCase):
-    RETIRO = date(2026, 10, 19)  # lunes: cierra el viernes 16 a las 9:40
+    RETIRO = date(2026, 10, 19)  # lunes: cierra el viernes 16 a las 9:44
 
     def _ahora(self, d, h, mi):
         return datetime(d.year, d.month, d.day, h, mi, tzinfo=p.HORA_BA)
