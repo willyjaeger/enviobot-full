@@ -93,6 +93,62 @@ class TestSobrestock(unittest.TestCase):
         self.assertFalse(p.es_sobrestock(500, 0, 0, 30))
 
 
+class TestFactorEditable(unittest.TestCase):
+    def test_factor_propio_cambia_el_umbral(self):
+        self.assertEqual(p.umbral_sobrestock(30, 2), 60)
+        self.assertFalse(p.es_sobrestock(150, 0, 3, 30, 2))   # 50 días < 60
+        self.assertTrue(p.es_sobrestock(190, 0, 3, 30, 2))    # 63 días > 60
+
+    def test_factor_vacio_o_invalido_usa_el_de_siempre(self):
+        for malo in (None, '', 'abc', 0, 1, -3):
+            self.assertEqual(p.umbral_sobrestock(30, malo), 45, malo)
+
+    def test_factor_viene_como_decimal_de_la_base(self):
+        from decimal import Decimal
+        self.assertEqual(p.umbral_sobrestock(30, Decimal('1.50')), 45)
+
+
+class TestHoraLimite(unittest.TestCase):
+    def test_parsear_formas_de_hora(self):
+        from datetime import time, timedelta
+        self.assertEqual(p.parsear_hora('09:40'), (9, 40))
+        self.assertEqual(p.parsear_hora('9:40:00'), (9, 40))
+        self.assertEqual(p.parsear_hora(timedelta(hours=10, minutes=15)), (10, 15))
+        self.assertEqual(p.parsear_hora(time(8, 5)), (8, 5))
+
+    def test_hora_invalida_devuelve_none(self):
+        for malo in (None, '', 'tarde', '25:00', '10:70'):
+            self.assertIsNone(p.parsear_hora(malo), malo)
+
+    def test_limite_con_hora_propia(self):
+        lim = p.limite_edicion(date(2026, 10, 23), '11:15')
+        self.assertEqual((lim.day, lim.hour, lim.minute), (22, 11, 15))
+
+    def test_hora_invalida_vuelve_a_las_9_40(self):
+        lim = p.limite_edicion(date(2026, 10, 23), 'cualquiera')
+        self.assertEqual((lim.hour, lim.minute), (9, 40))
+
+
+class TestVpdCorregido(unittest.TestCase):
+    def test_sin_dias_sin_stock_da_la_formula_de_siempre(self):
+        # No-regresión: 0,5*(14/7) + 0,35*(30/15) + 0,15*(90/30) = 1,0 + 0,7 + 0,45
+        self.assertEqual(p.vpd_ponderado(14, 30, 90), 2.15)
+        self.assertEqual(p.vpd_ponderado(14, 30, 90, 0, 0, 0), 2.15)
+
+    def test_quebrado_diez_dias_sube_la_velocidad(self):
+        sin = p.vpd_ponderado(0, 0, 60)            # 60 vendidas en 30 días
+        con = p.vpd_ponderado(0, 0, 60, 0, 0, 10)  # pero estuvo 10 días sin stock
+        self.assertEqual(sin, 0.3)
+        self.assertEqual(con, 0.45)
+
+    def test_casi_todo_el_periodo_sin_stock_no_se_corrige(self):
+        # 29 de 30 días quebrado: quedaría 1 día activo, puro ruido; se deja como estaba.
+        self.assertEqual(p.vpd_ponderado(0, 0, 60, 0, 0, 29), p.vpd_ponderado(0, 0, 60))
+
+    def test_dias_sin_stock_negativos_se_ignoran(self):
+        self.assertEqual(p.vpd_ponderado(7, 0, 0, -5, 0, 0), p.vpd_ponderado(7, 0, 0))
+
+
 class TestCuentaRegresiva(unittest.TestCase):
     def test_limite_es_el_dia_anterior_a_las_9_40_de_buenos_aires(self):
         lim = p.limite_edicion(date(2026, 10, 23))

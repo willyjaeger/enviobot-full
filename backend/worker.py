@@ -12,6 +12,9 @@ import pymysql
 import requests
 from dotenv import load_dotenv
 
+import esquema
+import proyeccion
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 load_dotenv()
@@ -289,6 +292,37 @@ def calculate_sales_velocity(access_token, meli_user_id, item_id, variation_id=N
         print(f"Error calculando ventas de {item_id}: {e}")
         return sales_7d, sales_15d, sales_30d
 
+def registrar_y_contar_dias_sin_stock(conn, user_id, item_id, var_id, stock, stock_es_real, hoy=None):
+    """Anota la foto de hoy del stock (si la tabla existe y el dato viene de ML) y devuelve cuántos
+    días de los últimos 7, 15 y 30 el producto estuvo sin stock. Sin la tabla devuelve ceros y la
+    velocidad queda como siempre. Un día cuenta como sin stock si el máximo del día fue 0."""
+    hoy = hoy or datetime.utcnow().date()
+    try:
+        with conn.cursor() as cur:
+            if not esquema.tiene_tabla(cur, "stock_daily"):
+                return 0, 0, 0
+            if stock_es_real:
+                cur.execute("""
+                    INSERT INTO stock_daily (user_id, item_id, variation_id, day, stock_min, stock_max)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        stock_min = LEAST(stock_min, VALUES(stock_min)),
+                        stock_max = GREATEST(stock_max, VALUES(stock_max))
+                """, (user_id, item_id, var_id or "", hoy, stock, stock))
+            cur.execute("""
+                SELECT SUM(stock_max = 0 AND day > %s) AS sin7,
+                       SUM(stock_max = 0 AND day > %s) AS sin15,
+                       SUM(stock_max = 0) AS sin30
+                FROM stock_daily
+                WHERE user_id = %s AND item_id = %s AND variation_id = %s AND day > %s
+            """, (hoy - timedelta(days=7), hoy - timedelta(days=15), user_id, item_id, var_id or "", hoy - timedelta(days=30)))
+            f = cur.fetchone() or {}
+            return int(f.get("sin7") or 0), int(f.get("sin15") or 0), int(f.get("sin30") or 0)
+    except Exception as e:
+        print(f"No se pudo registrar/leer el historial de stock de {item_id}: {e}")
+        return 0, 0, 0
+
+
 def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
     """
     Sincroniza el catálogo en Fulfillment con exactitud física desde el WMS de Mercado Libre.
@@ -330,6 +364,7 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
 
             # Obtener stock físico real desde la API de inventarios de MeLi
             stock_info = fetch_fulfillment_stock(access_token, inv_id, stock_cache)
+            stock_es_real = bool(stock_info)
             if stock_info:
                 stock_real, not_available, _ = stock_info
             else:
@@ -368,7 +403,8 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
 
             # Calcular ventas y ritmo de demanda
             v7, v15, v30 = calculate_sales_velocity(access_token, meli_user_id, item_id, var_id)
-            vpd = round((0.50 * (v7 / 7.0)) + (0.35 * (v15 / 15.0)) + (0.15 * (v30 / 30.0)), 2)
+            sin7, sin15, sin30 = registrar_y_contar_dias_sin_stock(conn, user_id, item_id, var_id, stock_real, stock_es_real)
+            vpd = proyeccion.vpd_ponderado(v7, v15, v30, sin7, sin15, sin30)
 
             total_advance = lt + ss + default_transit
             if vpd > 0:

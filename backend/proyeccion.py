@@ -70,29 +70,55 @@ def aviso_ajuste(stock_hoy, vpd, dias, unidades_colecta, objetivo_dias):
 FACTOR_SOBRESTOCK = 1.5
 
 
-def umbral_sobrestock(objetivo_dias):
-    return objetivo_dias * FACTOR_SOBRESTOCK
+def umbral_sobrestock(objetivo_dias, factor=None):
+    """Días de cobertura a partir de los cuales hay exceso. El factor lo puede cambiar el
+    cliente; si falta o no sirve, se usa FACTOR_SOBRESTOCK."""
+    try:
+        factor = float(factor)
+    except (TypeError, ValueError):
+        factor = FACTOR_SOBRESTOCK
+    if factor <= 1:
+        factor = FACTOR_SOBRESTOCK
+    return objetivo_dias * factor
 
 
-def es_sobrestock(stock_hoy, unidades_entrantes, vpd, objetivo_dias):
+def es_sobrestock(stock_hoy, unidades_entrantes, vpd, objetivo_dias, factor=None):
     """True si lo que hay (más lo que viene) alcanza para bastante más que el objetivo.
     Sin ventas no se marca: un producto nuevo o parado no es lo mismo que un exceso."""
     if vpd <= 0:
         return False
-    return (stock_hoy + unidades_entrantes) / vpd > umbral_sobrestock(objetivo_dias)
+    return (stock_hoy + unidades_entrantes) / vpd > umbral_sobrestock(objetivo_dias, factor)
 
 
-def limite_edicion(fecha_retiro):
-    """Momento hasta el que se puede modificar la colecta: el día anterior al retiro, 9:40 de
-    Buenos Aires. Devuelve un datetime con zona horaria."""
+def parsear_hora(valor):
+    """'09:40', '9:40:00' o un timedelta/time de la base -> (hora, minuto). None si no sirve."""
+    if valor is None:
+        return None
+    if isinstance(valor, timedelta):  # PyMySQL devuelve TIME como timedelta
+        minutos = int(valor.total_seconds() // 60)
+        return (minutos // 60) % 24, minutos % 60
+    if hasattr(valor, 'hour') and hasattr(valor, 'minute'):
+        return valor.hour, valor.minute
+    try:
+        h, m = str(valor).strip().split(':')[:2]
+        h, m = int(h), int(m)
+    except ValueError:
+        return None
+    return (h, m) if 0 <= h <= 23 and 0 <= m <= 59 else None
+
+
+def limite_edicion(fecha_retiro, hora=None):
+    """Momento hasta el que se puede modificar la colecta: el día anterior al retiro, a la hora
+    del depósito (por defecto 9:40) de Buenos Aires. Devuelve un datetime con zona horaria."""
+    h, m = parsear_hora(hora) or (LIMITE_EDICION_HORA, LIMITE_EDICION_MINUTO)
     dia = fecha_retiro - timedelta(days=1)
-    return datetime(dia.year, dia.month, dia.day, LIMITE_EDICION_HORA, LIMITE_EDICION_MINUTO, tzinfo=HORA_BA)
+    return datetime(dia.year, dia.month, dia.day, h, m, tzinfo=HORA_BA)
 
 
-def cuenta_regresiva(fecha_retiro, ahora=None):
+def cuenta_regresiva(fecha_retiro, ahora=None, hora=None):
     """Datos para el cartel de la colecta. 'abierta' es False si ya pasó el límite."""
     ahora = ahora or datetime.now(HORA_BA)
-    limite = limite_edicion(fecha_retiro)
+    limite = limite_edicion(fecha_retiro, hora)
     segundos = int((limite - ahora).total_seconds())
     return {
         "fecha_retiro": fecha_retiro.isoformat(),
@@ -100,3 +126,21 @@ def cuenta_regresiva(fecha_retiro, ahora=None):
         "segundos_restantes": max(0, segundos),
         "abierta": segundos > 0,
     }
+
+
+# ── Velocidad de venta corregida por días sin stock ─────────────────────────────────────
+MIN_DIAS_ACTIVOS = 3  # con menos días con stock que esto, el promedio sería puro ruido: no se corrige
+
+
+def _por_dia(ventas, dias_ventana, dias_sin_stock):
+    activos = dias_ventana - max(0, dias_sin_stock or 0)
+    if activos < MIN_DIAS_ACTIVOS:
+        activos = dias_ventana
+    return ventas / float(activos)
+
+
+def vpd_ponderado(v7, v15, v30, sin7=0, sin15=0, sin30=0):
+    """Ventas por día: 50% de 7 días, 35% de 15 y 15% de 30. Cada ventana se divide por los días
+    en que HABÍA stock, no por todos: si un producto estuvo 10 días quebrado, dividir por 30 lo
+    subestima y se manda de menos. Sin días sin stock da exactamente la fórmula de siempre."""
+    return round((0.50 * _por_dia(v7, 7, sin7)) + (0.35 * _por_dia(v15, 15, sin15)) + (0.15 * _por_dia(v30, 30, sin30)), 2)

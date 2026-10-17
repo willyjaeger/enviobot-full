@@ -359,6 +359,9 @@ function adaptarItemDesdeBackend(raw) {
         sugerido_al_ingreso: raw.sugerido_al_ingreso || 0,
         aviso_ajuste_units: raw.aviso_ajuste_units || null,
         fecha_ingreso: raw.fecha_ingreso || null,
+        prep_item_id: raw.prep_item_id || null,
+        prep_status: raw.prep_status || null,
+        dias_sin_stock_30d: raw.dias_sin_stock_30d || 0,
         sobrestock: !!raw.sobrestock,
         umbral_sobrestock: raw.umbral_sobrestock || null
     };
@@ -390,6 +393,75 @@ function textoLimiteEdicion(limiteIso) {
         hourCycle: 'h23', timeZone: 'America/Argentina/Buenos_Aires'
     }).formatToParts(new Date(limiteIso)).forEach(p => { partes[p.type] = p.value; });
     return `${partes.weekday} ${partes.day}/${partes.month} a las ${partes.hour}:${partes.minute}`;
+}
+
+const ESTADOS_GALPON = [['to_buy', 'A comprar'], ['packing', 'Envasando'], ['boxed', 'Listo en caja']];
+
+function selectorGalpon(it) {
+    const opciones = ESTADOS_GALPON.map(([valor, nombre]) =>
+        `<option value="${valor}"${it.prep_status === valor ? ' selected' : ''}>${nombre}</option>`).join('');
+    return `<select class="filter-select pc-galpon" data-previo="${escapeHtml(it.prep_status)}" onchange="cambiarEstadoGalpon(${Number(it.prep_item_id)}, this)">${opciones}</select>`;
+}
+
+async function cambiarEstadoGalpon(prepItemId, selectEl) {
+    const nuevo = selectEl.value;
+    const previo = selectEl.getAttribute('data-previo');
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/items/${prepItemId}/prep`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prep_status: nuevo })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'No se pudo guardar');
+        selectEl.setAttribute('data-previo', nuevo);
+        const it = itemsData.find(x => x.prep_item_id === prepItemId);
+        if (it) it.prep_status = nuevo;
+    } catch (err) {
+        selectEl.value = previo;  // si falla, queda lo anterior
+        showToast(err.message || 'No se pudo guardar el estado', 'error');
+    }
+}
+
+// ── Ajustes de colecta (Configuración): umbral de exceso y hora límite ──────────
+async function cargarAjustesColecta() {
+    const aviso = document.getElementById('ajColectaAviso');
+    if (!aviso) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/ajustes-colecta`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
+        const data = await res.json();
+        if (!data.ok) return;
+        document.getElementById('ajSobrestockFactor').value = String(data.sobrestock_factor).replace('.', ',');
+        document.getElementById('ajHoraLimite').value = data.hora_limite;
+        const bloqueado = !data.editable;
+        document.getElementById('ajSobrestockFactor').disabled = bloqueado;
+        document.getElementById('ajHoraLimite').disabled = bloqueado;
+        document.getElementById('btnGuardarAjColecta').disabled = bloqueado;
+        aviso.textContent = bloqueado
+            ? 'Estos ajustes se habilitan con la próxima actualización de la base. Mientras tanto rigen los valores que ves.'
+            : 'Cómo se marca el exceso de stock y hasta qué hora se puede modificar una colecta.';
+    } catch (err) {
+        console.warn('No se pudieron cargar los ajustes de colecta:', err);
+    }
+}
+
+async function guardarAjustesColecta() {
+    try {
+        const res = await fetch(`${API_BASE}/full/ajustes-colecta`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sobrestock_factor: document.getElementById('ajSobrestockFactor').value,
+                hora_limite: document.getElementById('ajHoraLimite').value
+            })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'No se pudo guardar');
+        showToast('Ajustes de colecta guardados', 'success');
+        cargarDatos();
+    } catch (err) {
+        showToast(err.message || 'No se pudo guardar', 'error');
+    }
 }
 
 function formatearFechaCorta(iso) {
@@ -430,9 +502,12 @@ function renderizarPanelColecta() {
 
     // Bloque 1: lo que ya está en una colecta en preparación
     const enColecta = itemsData.filter(it => (it.in_preparation_stock || 0) > 0);
+    const hayGalpon = enColecta.some(it => it.prep_item_id && it.prep_status);
     let bloqueColecta = '';
     if (enColecta.length > 0) {
         const filas = enColecta.map(it => {
+            const celdaGalpon = hayGalpon
+                ? `<td>${it.prep_item_id ? selectorGalpon(it) : ''}</td>` : '';
             const cob = it.cobertura_post_colecta;
             const cobTxt = cob === null ? '-' : `${Math.round(cob)} días`;
             const aviso = it.aviso_ajuste_units
@@ -441,6 +516,7 @@ function renderizarPanelColecta() {
             return `<tr>
                 <td>${nombreItemPanel(it)}${aviso}</td>
                 <td class="pc-num">${escapeHtml(it.in_preparation_stock)} u.</td>
+                ${celdaGalpon}
                 <td class="pc-num">${formatearFechaCorta(it.fecha_ingreso)}</td>
                 <td class="pc-num">${cobTxt}</td>
             </tr>`;
@@ -449,7 +525,7 @@ function renderizarPanelColecta() {
             <div>
                 <h3 class="pc-block-title">Colecta en preparación (${enColecta.length})</h3>
                 <table class="pc-table">
-                    <thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th class="pc-num">Ingresa</th><th class="pc-num">Cubre al ingresar</th></tr></thead>
+                    <thead><tr><th>Producto</th><th class="pc-num">Unidades</th>${hayGalpon ? '<th>Galpón</th>' : ''}<th class="pc-num">Ingresa</th><th class="pc-num">Cubre al ingresar</th></tr></thead>
                     <tbody>${filas}</tbody>
                 </table>
             </div>`;
@@ -2745,6 +2821,7 @@ function abrirConfiguracion(initialTab = 'meli') {
     renderizarTablaConfiguracionDepositos();
     cargarSettingsBackend();
     cargarDestinatariosBackend();
+    cargarAjustesColecta();
 }
 
 function cerrarConfiguracion() {

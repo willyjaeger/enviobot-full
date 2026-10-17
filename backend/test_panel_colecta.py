@@ -106,6 +106,18 @@ class TestPanelJS(unittest.TestCase):
         self.assertIn('+ 40 en camino', exceso)
         self.assertNotIn('Normal', out['html'])
 
+    def test_galpon_aparece_solo_si_hay_estado_cargado(self):
+        con = self._correr([_item(in_preparation_stock=50, total_incoming=50, prep_item_id=7, prep_status='packing')])
+        self.assertIn('<th>Galpón</th>', con['html'])
+        self.assertIn('<option value="packing" selected>Envasando</option>', con['html'])
+        self.assertIn('cambiarEstadoGalpon(7, this)', con['html'])
+        sin = self._correr([_item(in_preparation_stock=50, total_incoming=50)])
+        self.assertNotIn('Galpón', sin['html'])
+
+    def test_estado_de_galpon_raro_no_rompe_el_html(self):
+        out = self._correr([_item(in_preparation_stock=5, total_incoming=5, prep_item_id=3, prep_status='"><script>')])
+        self.assertNotIn('<script>', out['html'])
+
     def test_datos_de_afuera_se_escapan(self):
         out = self._correr([_item(title='<img src=x onerror=alert(1)>', sku='"><b>', status='critical',
                                   sugerido_al_ingreso=5)])

@@ -33,6 +33,7 @@ from alerts_engine import procesar_alertas_usuario
 from email_service import enviar_email, enviar_email_prueba, enviar_email_bienvenida_verificacion
 import equipo as _equipo
 import proyeccion as _proy
+import esquema as _esquema
 from inbound_service import render_remito_html
 
 load_dotenv()
@@ -1112,6 +1113,14 @@ def get_full_items():
         default_transit = wh_row["transit_days"] if wh_row and wh_row.get("transit_days") is not None else 5
         target_cov = wh_row["target_stock_days"] if wh_row and wh_row.get("target_stock_days") is not None else settings.get("target_coverage_days", 30)
 
+        # Ajustes que dependen de la migración 001: si todavía no se aplicó, quedan en su valor de siempre.
+        factor_sobrestock = settings.get("sobrestock_factor")  # SELECT * : solo viene si existe la columna
+        hora_limite = None
+        if _esquema.tiene_columna(cur, "warehouses", "edit_cutoff_time"):
+            cur.execute("SELECT edit_cutoff_time FROM warehouses WHERE user_id=%s AND is_active=1 ORDER BY id ASC LIMIT 1", (account_id,))
+            fila_h = cur.fetchone()
+            hora_limite = fila_h.get("edit_cutoff_time") if fila_h else None
+
         query = """
             SELECT 
                 i.id, i.item_id, i.variation_id, i.variation_name, i.inventory_id,
@@ -1272,6 +1281,38 @@ def get_full_items():
         today = datetime.utcnow().date()
         output_items = []
 
+        # Días sin stock por producto (de la foto diaria): corrigen la velocidad de venta.
+        sin_stock_por_item = {}
+        if _esquema.tiene_tabla(cur, "stock_daily"):
+            cur.execute("""
+                SELECT item_id, variation_id,
+                       SUM(stock_max = 0 AND day > %s) AS sin7,
+                       SUM(stock_max = 0 AND day > %s) AS sin15,
+                       SUM(stock_max = 0) AS sin30
+                FROM stock_daily
+                WHERE user_id = %s AND day > %s
+                GROUP BY item_id, variation_id
+            """, (today - timedelta(days=7), today - timedelta(days=15), account_id, today - timedelta(days=30)))
+            for f in cur.fetchall():
+                sin_stock_por_item[(f["item_id"], str(f.get("variation_id") or ""))] = (
+                    int(f["sin7"] or 0), int(f["sin15"] or 0), int(f["sin30"] or 0))
+
+        # Estado del galpón de lo que está en preparación (solo si existe la columna).
+        galpon_por_clave = {}
+        if _esquema.tiene_columna(cur, "inbound_shipment_items", "prep_status"):
+            cur.execute("""
+                SELECT isi.id, isi.item_id, isi.inventory_id, isi.sku, isi.prep_status
+                FROM inbound_shipment_items isi
+                JOIN inbound_shipments s ON s.id = isi.shipment_id
+                WHERE s.user_id = %s AND s.status = 'scheduled'
+                ORDER BY s.pickup_date IS NULL, s.pickup_date ASC, isi.id ASC
+            """, (account_id,))
+            for f in cur.fetchall():
+                dato = {"id": f["id"], "prep_status": f.get("prep_status") or "to_buy"}
+                for clave in ((f.get("inventory_id") or "").strip(), (f.get("sku") or "").strip().upper(), (f.get("item_id") or "").strip()):
+                    if clave and clave not in galpon_por_clave:
+                        galpon_por_clave[clave] = dato
+
         for c_item in consolidated.values():
             s7 = c_item["sales_last_7d"]
             s15 = c_item["sales_last_15d"]
@@ -1301,8 +1342,14 @@ def get_full_items():
             c_item["total_incoming"] = total_incoming
             total_covered_stock = stock + total_incoming
 
-            vpd = round((0.50 * (s7 / 7.0)) + (0.35 * (s15 / 15.0)) + (0.15 * (s30 / 30.0)), 2)
+            sin7 = sin15 = sin30 = 0
+            for ch in c_item.get("channels", []):
+                t = sin_stock_por_item.get((ch["item_id"], str(c_item.get("variation_id") or "")))
+                if t:
+                    sin7, sin15, sin30 = max(sin7, t[0]), max(sin15, t[1]), max(sin30, t[2])
+            vpd = _proy.vpd_ponderado(s7, s15, s30, sin7, sin15, sin30)
             c_item["vpd_weighted"] = vpd
+            c_item["dias_sin_stock_30d"] = sin30
 
             if vpd > 0:
                 days_left = round(stock / vpd, 1)
@@ -1365,8 +1412,12 @@ def get_full_items():
             c_item["sugerido_al_ingreso"] = _proy.sugerido_al_ingreso(stock, vpd, dias_ingreso, total_incoming, target_cov)
             c_item["aviso_ajuste_units"] = _proy.aviso_ajuste(stock, vpd, dias_ingreso, prep_units, target_cov) if prep_units > 0 else None
             c_item["fecha_ingreso"] = (today + timedelta(days=dias_ingreso)).isoformat()
-            c_item["sobrestock"] = _proy.es_sobrestock(stock, total_incoming, vpd, target_cov)
-            c_item["umbral_sobrestock"] = _proy.umbral_sobrestock(target_cov)
+            c_item["sobrestock"] = _proy.es_sobrestock(stock, total_incoming, vpd, target_cov, factor_sobrestock)
+            c_item["umbral_sobrestock"] = _proy.umbral_sobrestock(target_cov, factor_sobrestock)
+            galpon = galpon_por_clave.get(inv_key) or galpon_por_clave.get(sku_key) or galpon_por_clave.get(item_key)
+            if prep_units > 0 and galpon:
+                c_item["prep_item_id"] = galpon["id"]
+                c_item["prep_status"] = galpon["prep_status"]
 
             output_items.append(c_item)
 
@@ -1414,7 +1465,7 @@ def get_full_items():
         prox = cur.fetchone()
         proxima_colecta = None
         if prox and prox.get("pickup_date"):
-            proxima_colecta = _proy.cuenta_regresiva(prox["pickup_date"])
+            proxima_colecta = _proy.cuenta_regresiva(prox["pickup_date"], hora=hora_limite)
             proxima_colecta["codigo"] = prox.get("shipment_code")
 
     plan_info = get_user_plan_info(user_id, conn)
@@ -1428,6 +1479,91 @@ def get_full_items():
         "settings": settings,
         "plan_info": plan_info
     }), 200
+
+PREP_ESTADOS = ("to_buy", "packing", "boxed")
+
+
+@app.route("/api/full/ajustes-colecta", methods=["GET", "PUT"])
+@jwt_required()
+def ajustes_colecta():
+    """Umbral de sobrestock (múltiplo del objetivo) y hora límite para modificar la colecta.
+    Dependen de la migración 001: si falta, GET lo avisa y PUT no hace nada."""
+    user_id = int(get_jwt_identity())
+    if request.method == "PUT":
+        _no = _equipo.chequear_rol("admin")
+        if _no:
+            return _no
+    conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
+    try:
+        with conn.cursor() as cur:
+            hay_factor = _esquema.tiene_columna(cur, "user_settings", "sobrestock_factor")
+            hay_hora = _esquema.tiene_columna(cur, "warehouses", "edit_cutoff_time")
+            if request.method == "GET":
+                factor = float(_proy.FACTOR_SOBRESTOCK)
+                hora = "%02d:%02d" % (_proy.LIMITE_EDICION_HORA, _proy.LIMITE_EDICION_MINUTO)
+                if hay_factor:
+                    cur.execute("SELECT sobrestock_factor FROM user_settings WHERE user_id=%s", (account_id,))
+                    f = cur.fetchone()
+                    if f and f.get("sobrestock_factor") is not None:
+                        factor = float(f["sobrestock_factor"])
+                if hay_hora:
+                    cur.execute("SELECT edit_cutoff_time FROM warehouses WHERE user_id=%s AND is_active=1 ORDER BY id ASC LIMIT 1", (account_id,))
+                    h = cur.fetchone()
+                    hm = _proy.parsear_hora(h.get("edit_cutoff_time")) if h else None
+                    if hm:
+                        hora = "%02d:%02d" % hm
+                return jsonify({"ok": True, "editable": hay_factor and hay_hora, "sobrestock_factor": factor, "hora_limite": hora}), 200
+
+            if not (hay_factor and hay_hora):
+                return jsonify({"ok": False, "error": "Todavía no se aplicó la actualización de la base que habilita estos ajustes."}), 409
+            data = request.get_json() or {}
+            try:
+                factor = round(float(str(data.get("sobrestock_factor")).replace(",", ".")), 2)
+            except (TypeError, ValueError):
+                return jsonify({"ok": False, "error": "El umbral de exceso tiene que ser un número, por ejemplo 1,5."}), 400
+            if not 1.1 <= factor <= 10:
+                return jsonify({"ok": False, "error": "El umbral de exceso tiene que estar entre 1,1 y 10 veces el objetivo."}), 400
+            hm = _proy.parsear_hora(data.get("hora_limite"))
+            if not hm:
+                return jsonify({"ok": False, "error": "La hora límite tiene que ser algo como 09:40."}), 400
+            cur.execute("SELECT 1 FROM user_settings WHERE user_id=%s", (account_id,))
+            if not cur.fetchone():
+                return jsonify({"ok": False, "error": "Guardá primero la configuración general y después estos ajustes."}), 409
+            cur.execute("UPDATE user_settings SET sobrestock_factor=%s WHERE user_id=%s", (factor, account_id))
+            cur.execute("UPDATE warehouses SET edit_cutoff_time=%s WHERE user_id=%s AND is_active=1", ("%02d:%02d:00" % hm, account_id))
+        return jsonify({"ok": True, "sobrestock_factor": factor, "hora_limite": "%02d:%02d" % hm}), 200
+    finally:
+        conn.close()
+
+
+@app.route("/api/full/inbound/items/<int:isi_id>/prep", methods=["PUT"])
+@jwt_required()
+@_equipo.requiere_rol('operator')
+def actualizar_estado_galpon(isi_id):
+    """Marca en qué etapa está un producto de la colecta: a comprar, envasando o listo en caja."""
+    user_id = int(get_jwt_identity())
+    nuevo = (request.get_json() or {}).get("prep_status")
+    if nuevo not in PREP_ESTADOS:
+        return jsonify({"ok": False, "error": "Estado inválido. Usá: a comprar, envasando o listo en caja."}), 400
+    conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
+    try:
+        with conn.cursor() as cur:
+            if not _esquema.tiene_columna(cur, "inbound_shipment_items", "prep_status"):
+                return jsonify({"ok": False, "error": "Todavía no se aplicó la actualización de la base que habilita este estado."}), 409
+            cur.execute("""
+                SELECT isi.id FROM inbound_shipment_items isi
+                JOIN inbound_shipments s ON s.id = isi.shipment_id
+                WHERE isi.id = %s AND s.user_id = %s AND s.status = 'scheduled'
+            """, (isi_id, account_id))
+            if not cur.fetchone():
+                return jsonify({"ok": False, "error": "Ese producto no está en una colecta en preparación."}), 404
+            cur.execute("UPDATE inbound_shipment_items SET prep_status=%s WHERE id=%s", (nuevo, isi_id))
+        return jsonify({"ok": True, "prep_status": nuevo}), 200
+    finally:
+        conn.close()
+
 
 @app.route("/api/full/items/<int:item_id>", methods=["PUT"])
 @jwt_required()

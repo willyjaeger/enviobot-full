@@ -34,6 +34,10 @@ Navegador (frontend/)  --HTTP+JWT-->  Flask + MySQL (backend/)  <--cron cada 4 h
 - **Una publicación puede tener variaciones**, cada una con su `inventory_id` y SKU; el stock real sale de `/inventories/{id}/stock/fulfillment`.
 - Colectas (inbound) es un módulo **pago**, con interruptor por cliente (`has_inbound`).
 
+## Panel de colecta (2026-10-16)
+
+Cuenta regresiva hasta el límite de edición (día anterior al retiro, 9:40), proyección a la fecha de ingreso, bloques "Colecta en preparación", "Para la próxima colecta" y "Con exceso de stock". Lógica en `backend/proyeccion.py`; reglas completas en la skill `.claude/skills/logistica-meli-full/`. **Pendiente de aplicar en producción:** `backend/migration_001_colecta_ajustes.sql` (umbral de sobrestock editable, hora límite por depósito, estado del galpón, historial `stock_daily`). El código ya la espera y se apaga solo si falta (`esquema.py`). Se aplica con el servicio apagado, respaldo y OK de Guillermo. Sin verificar con ML: crear la colecta por API y marcarla recibida con `operations/search`.
+
 ## Brechas contra los criterios comunes (a cerrar, de a una, con OK de Guillermo)
 
 1. **Secretos (a medias, 2026-10-15):** sacados del código y cargados en el servidor; desplegado. La caja de claves REAL que lee la app es `/var/www/enviobot-full/backend/.env` (la de la raíz `/var/www/enviobot-full/.env` no se lee: `load_dotenv()` encuentra primero la de `backend/`). Ambas quedaron en chmod 600. Root del VPS: rotada. **FALTA ROTAR** lo que sigue visible en el historial de GitHub: secreto de ML, contraseñas de los mails y la de la base. **Ojo con la de la base:** el usuario `enviobot` y su clave son COMPARTIDOS con EnvioBot Pedidos (`/opt/enviobot-web/backend/.env`); hay que cambiarla en las dos apps a la vez (ALTER USER + las 2 cajas + reiniciar ambos servicios, con OK de Guillermo y fuera del horario de impresión). `herramientas/rotar_clave_base.py` frena a propósito mientras Pedidos la use.

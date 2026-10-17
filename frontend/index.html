@@ -1163,6 +1163,31 @@
                             </table>
                         </div>
 
+                        <!-- Ajustes de colecta: exceso de stock y hora límite para modificar la colecta -->
+                        <div style="border-top: 1px solid var(--border); padding-top: 16px; margin-bottom: 20px;">
+                            <h4 style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Ajustes de colecta</h4>
+                            <p id="ajColectaAviso" style="font-size: 12.5px; color: var(--text2); margin-bottom: 12px;"></p>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 12px;">
+                                <div class="form-group">
+                                    <label>Exceso de stock a partir de</label>
+                                    <div style="display: inline-flex; align-items: center; gap: 6px;">
+                                        <input type="text" inputmode="decimal" id="ajSobrestockFactor" class="input-days-2digit" value="1,5" style="width: 70px;">
+                                        <span style="color: var(--text2); font-size: 12px; font-weight: 600;">veces el stock objetivo</span>
+                                    </div>
+                                    <small>Con objetivo de 30 días y 1,5, un producto con más de 45 días de cobertura figura con exceso.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>Hora límite para modificar la colecta</label>
+                                    <div style="display: inline-flex; align-items: center; gap: 6px;">
+                                        <input type="time" id="ajHoraLimite" value="09:40" style="width: 110px;">
+                                        <span style="color: var(--text2); font-size: 12px; font-weight: 600;">del día anterior al retiro</span>
+                                    </div>
+                                    <small>Hora de Buenos Aires. Pasada esa hora ya no se puede cambiar lo que mandás.</small>
+                                </div>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" id="btnGuardarAjColecta" onclick="guardarAjustesColecta()">Guardar ajustes de colecta</button>
+                        </div>
+
                         <!-- Parámetros Generales de Preparación y Alarma -->
                         <div style="border-top: 1px solid var(--border); padding-top: 16px;">
                             <h4 style="font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px;">Parámetros de Preparación y Alarma</h4>
