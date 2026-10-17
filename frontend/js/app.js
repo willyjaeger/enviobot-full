@@ -4258,7 +4258,7 @@ async function agregarDestinatarioWA() {
     const depot = document.getElementById('newRecipDepot').value;
 
     if (!name || !phone) {
-        alert("Por favor completá el nombre y el celular (ej: +54 9 11 1234-5678).");
+        showToast("Completá el nombre y el celular (ej: +54 9 11 1234-5678).", "error");
         return;
     }
 
@@ -4277,10 +4277,10 @@ async function agregarDestinatarioWA() {
             });
             const data = await resp.json();
             if (!data.ok) {
-                alert(data.error || "No se pudo agregar el destinatario.");
+                showToast(data.error || "No se pudo agregar el destinatario.", "error");
                 return;
             }
-            alert(`Destinatario ${name} agregado con éxito.\nLe enviamos un WhatsApp a ${phone} con el botón para verificar el número.`);
+            showToast(`${name} agregado. Le enviamos un WhatsApp con el botón para verificar el número.`, "success", 4500);
             await cargarDestinatariosBackend();
             document.getElementById('newRecipName').value = '';
             document.getElementById('newRecipPhone').value = '';
@@ -4304,7 +4304,7 @@ async function agregarDestinatarioWA() {
     document.getElementById('newRecipPhone').value = '';
 
     renderizarDestinatariosWA();
-    alert(`Número de WhatsApp de ${name} agregado con éxito.`);
+    showToast(`Número de ${name} agregado.`, "success");
 }
 
 async function reenviarVerificacionWA(phone, name) {
@@ -4315,9 +4315,9 @@ async function reenviarVerificacionWA(phone, name) {
             body: JSON.stringify({ phone, name })
         });
         const data = await resp.json();
-        alert(data.ok ? `Reenviamos el botón de verificación a ${phone}.` : (data.error || 'No se pudo reenviar.'));
+        showToast(data.ok ? `Reenviamos el botón de verificación a ${phone}.` : (data.error || 'No se pudo reenviar.'), data.ok ? 'success' : 'error');
     } catch (e) {
-        alert('No se pudo reenviar la verificación.');
+        showToast('No se pudo reenviar la verificación.', 'error');
     }
 }
 
@@ -4350,10 +4350,10 @@ async function probarDestinatarioWA(phone, name) {
             });
             const data = await resp.json();
             if (data.ok) {
-                alert(`WhatsApp enviado a ${phone} (${name}).\n\nRespuesta:\n"${data.preview}"`);
+                showToast(`WhatsApp de prueba enviado a ${name} (${phone}).`, "success", 4000);
                 return;
             } else {
-                alert(`Error enviando WhatsApp a ${phone}:\n${data.error || 'Verifique la conexión con Evolution API / Gateway.'}`);
+                showToast(`No se pudo enviar el WhatsApp a ${phone}: ${data.error || 'revisá la conexión del gateway.'}`, 'error', 6000);
                 return;
             }
         } catch (e) {
