@@ -506,10 +506,12 @@ function renderizarPanelColecta() {
     let banner = '';
     if (proximaColecta) {
         const resto = textoCuentaRegresiva(proximaColecta.limite_edicion);
+        const msRestantes = new Date(proximaColecta.limite_edicion).getTime() - Date.now();
+        const claseBanner = !resto ? 'pc-cerrada' : (msRestantes <= 3600000 ? 'pc-urgente' : '');
         const limTxt = textoLimiteEdicion(proximaColecta.limite_edicion);
         const codigo = proximaColecta.codigo ? ` ${escapeHtml(proximaColecta.codigo)}` : '';
         banner = `
-            <div class="pc-banner ${resto ? '' : 'pc-cerrada'}">
+            <div class="pc-banner ${claseBanner}">
                 <span class="pc-banner-icon">${iconoSvg('reloj', 22).replace('margin-right: 4px;', '')}</span>
                 <div class="pc-banner-text">
                     <div>Colecta${codigo} con retiro el ${formatearFechaCorta(proximaColecta.fecha_retiro)}. Podés modificarla hasta el ${escapeHtml(limTxt)}.</div>

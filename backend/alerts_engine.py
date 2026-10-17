@@ -25,6 +25,7 @@ from whatsapp_service import (
     obtener_configuracion_whatsapp
 )
 from email_service import enviar_alerta_stock_email, enviar_email
+from horario_whatsapp import whatsapp_permitido
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -60,25 +61,27 @@ def get_db():
     )
 
 
-def ya_se_envio_alerta_hoy(conn, user_id: int, alert_type: str, item_id: str = None, horas_cooldown: int = 20) -> bool:
+def ya_se_envio_alerta_hoy(conn, user_id: int, alert_type: str, item_id: str = None, horas_cooldown: int = 20, channel: str = None) -> bool:
     """
     Verifica si ya se envió una alerta del mismo tipo a este usuario dentro de la ventana de cooldown (por defecto 20 horas).
     Evita saturar o duplicar notificaciones en ejecuciones sucesivas del cron.
     """
     limite = datetime.utcnow() - timedelta(hours=horas_cooldown)
+    con_canal = " AND channel=%s" if channel else ""
+    extra = (channel,) if channel else ()
     with conn.cursor() as cur:
         if item_id:
             cur.execute("""
-                SELECT id FROM alert_logs 
-                WHERE user_id=%s AND alert_type=%s AND item_id=%s AND sent_at >= %s
+                SELECT id FROM alert_logs
+                WHERE user_id=%s AND alert_type=%s AND item_id=%s AND sent_at >= %s""" + con_canal + """
                 LIMIT 1
-            """, (user_id, alert_type, item_id, limite))
+            """, (user_id, alert_type, item_id, limite) + extra)
         else:
             cur.execute("""
-                SELECT id FROM alert_logs 
-                WHERE user_id=%s AND alert_type=%s AND sent_at >= %s
+                SELECT id FROM alert_logs
+                WHERE user_id=%s AND alert_type=%s AND sent_at >= %s""" + con_canal + """
                 LIMIT 1
-            """, (user_id, alert_type, limite))
+            """, (user_id, alert_type, limite) + extra)
         row = cur.fetchone()
         return bool(row)
 
@@ -238,9 +241,17 @@ def procesar_alertas_usuario(user_id: int) -> dict:
         cooldown_hours = int(cadence.get("cooldown_hours", 20))
         pacing_delay = int(cadence.get("pacing_delay_seconds", 3))
 
-        # Verificar si ya se envió este tipo de alerta dentro del cooldown
-        if ya_se_envio_alerta_hoy(conn, user_id, nivel_alerta, horas_cooldown=cooldown_hours):
-            logger.info(f"[Alerts Engine] Usuario {user_id} ya recibió alerta de nivel '{nivel_alerta}' en las últimas {cooldown_hours}hs. Omitiendo.")
+        # El cooldown es por canal: si el WhatsApp quedó para más tarde (fuera de horario), el mail que
+        # ya salió no debe impedir que el WhatsApp salga cuando corresponda.
+        ya_wa = ya_se_envio_alerta_hoy(conn, user_id, nivel_alerta, horas_cooldown=cooldown_hours, channel="whatsapp")
+        ya_mail = ya_se_envio_alerta_hoy(conn, user_id, nivel_alerta, horas_cooldown=cooldown_hours, channel="email")
+        wa_en_horario = whatsapp_permitido()
+        if not wa_en_horario and not ya_wa:
+            logger.info(f"[Alerts Engine] Usuario {user_id}: fuera del horario de WhatsApp (lun-vie 8:30 a 18:00). Se manda en la próxima corrida dentro del horario.")
+        enviar_wa = wa_en_horario and not ya_wa
+        enviar_mail = not ya_mail
+        if not enviar_wa and not enviar_mail:
+            logger.info(f"[Alerts Engine] Usuario {user_id} ya recibió alerta de nivel '{nivel_alerta}' en las últimas {cooldown_hours}hs o está fuera de horario. Omitiendo.")
             return resultado
 
         # Obtener destinatarios de WhatsApp configurados
@@ -274,7 +285,7 @@ def procesar_alertas_usuario(user_id: int) -> dict:
                         telefonos.append(phone_clean)
 
         # 1. DISPARAR WHATSAPP (Si está habilitado globalmente)
-        if telefonos and wa_cfg.get("enabled", True):
+        if enviar_wa and telefonos and wa_cfg.get("enabled", True):
             logger.info(f"[Alerts Engine] Enviando WhatsApp a {len(telefonos)} destinatarios para usuario {user_id}")
             res_wa = enviar_lote_con_demora(telefonos, texto_wa, delay_segundos=pacing_delay)
             resultado["mensajes_whatsapp_enviados"] = len(res_wa)
@@ -283,7 +294,7 @@ def procesar_alertas_usuario(user_id: int) -> dict:
 
         # 2. DISPARAR EMAIL (Si está habilitado)
         email_dest = settings.get("alert_email") or user.get("email")
-        if settings.get("notify_email") and email_dest:
+        if enviar_mail and settings.get("notify_email") and email_dest:
             items_para_email = criticos if criticos else (colecta_hoy if colecta_hoy else preventivos)
             res_mail = enviar_alerta_stock_email(
                 destinatario=email_dest,

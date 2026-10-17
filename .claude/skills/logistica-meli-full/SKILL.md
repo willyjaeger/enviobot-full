@@ -33,7 +33,13 @@ Corrección: cada ventana se divide por los días con stock, no por todos (`vpd_
 
 ## Límite de edición de la colecta
 
-La colecta se puede modificar hasta el **día anterior al retiro a las 9:40, hora de Buenos Aires** (dato de Guillermo con su cuenta; no confirmado que valga para todos). La hora es configurable por depósito (`warehouses.edit_cutoff_time`). Pasada la hora el panel dice que ya no se puede y se calla el aviso de ajuste.
+La colecta se puede modificar hasta el **día hábil anterior al retiro a las 9:40, hora de Buenos Aires** (una colecta del lunes se cierra el viernes; dato de Guillermo con su cuenta, no confirmado que valga para todos; no contempla feriados). La hora es configurable por depósito (`warehouses.edit_cutoff_time`). Pasada la hora el panel dice que ya no se puede y se calla el aviso de ajuste.
+
+Una hora antes del límite `backend/aviso_limite_colecta.py` avisa por WhatsApp y mail (una vez por colecta y por canal). Necesita un cron cada 10 minutos en el servidor, que se carga aparte y con OK de Guillermo.
+
+## Horario de WhatsApp
+
+Los WhatsApp salen **solo de lunes a viernes de 8:30 a 18:00** (Buenos Aires), en cualquier alerta (`backend/horario_whatsapp.py`). Fuera de horario no se manda ni se anota como enviado: sale en la próxima corrida dentro del horario. El mail no tiene esa restricción. El control de repetición (cooldown) es por canal, para que un mail ya enviado no bloquee el WhatsApp pendiente.
 
 ## Qué NO hacer
 

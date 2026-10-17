@@ -107,11 +107,20 @@ def parsear_hora(valor):
     return (h, m) if 0 <= h <= 23 and 0 <= m <= 59 else None
 
 
+def dia_habil_anterior(fecha):
+    """El día hábil (lunes a viernes) anterior a la fecha. Una colecta del lunes se cierra el
+    viernes. No contempla feriados: si hay uno en el medio, el límite real es antes."""
+    dia = fecha - timedelta(days=1)
+    while dia.weekday() >= 5:  # 5 = sábado, 6 = domingo
+        dia -= timedelta(days=1)
+    return dia
+
+
 def limite_edicion(fecha_retiro, hora=None):
-    """Momento hasta el que se puede modificar la colecta: el día anterior al retiro, a la hora
-    del depósito (por defecto 9:40) de Buenos Aires. Devuelve un datetime con zona horaria."""
+    """Momento hasta el que se puede modificar la colecta: el día hábil anterior al retiro, a la
+    hora del depósito (por defecto 9:40) de Buenos Aires. Devuelve un datetime con zona horaria."""
     h, m = parsear_hora(hora) or (LIMITE_EDICION_HORA, LIMITE_EDICION_MINUTO)
-    dia = fecha_retiro - timedelta(days=1)
+    dia = dia_habil_anterior(fecha_retiro)
     return datetime(dia.year, dia.month, dia.day, h, m, tzinfo=HORA_BA)
 
 
@@ -144,3 +153,12 @@ def vpd_ponderado(v7, v15, v30, sin7=0, sin15=0, sin30=0):
     en que HABÍA stock, no por todos: si un producto estuvo 10 días quebrado, dividir por 30 lo
     subestima y se manda de menos. Sin días sin stock da exactamente la fórmula de siempre."""
     return round((0.50 * _por_dia(v7, 7, sin7)) + (0.35 * _por_dia(v15, 15, sin15)) + (0.15 * _por_dia(v30, 30, sin30)), 2)
+
+
+MINUTOS_AVISO_LIMITE = 60  # se avisa cuando falta una hora o menos para el límite
+
+
+def en_ventana_de_aviso(fecha_retiro, ahora=None, hora=None, minutos_antes=MINUTOS_AVISO_LIMITE):
+    """True si falta `minutos_antes` o menos para el límite y todavía no pasó."""
+    r = cuenta_regresiva(fecha_retiro, ahora, hora)
+    return r["abierta"] and r["segundos_restantes"] <= minutos_antes * 60
