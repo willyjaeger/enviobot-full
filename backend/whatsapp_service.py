@@ -497,48 +497,54 @@ def formatear_alerta_resumen_diario(nombre_usuario: str, deposito_nombre: str, i
     )
 
 
-def formatear_alerta_verificacion_whatsapp(nombre_usuario: str, codigo_verificacion: str, app_url: str = "https://enviobot.com.ar/full") -> str:
+def formatear_alerta_verificacion_whatsapp(nombre_usuario: str, link_verificacion: str) -> str:
     """
-    Mensaje de bienvenida y verificación del número de WhatsApp.
+    Mensaje de verificación del número de WhatsApp: corto, con un único link.
     """
     cfg = obtener_configuracion_whatsapp()
     custom_template = cfg.get("templates", {}).get("verificacion")
     if custom_template:
         return _render_template(custom_template, {
             "nombre": nombre_usuario,
-            "codigo": codigo_verificacion,
-            "link": app_url
+            "link": link_verificacion
         })
 
     return (
-        f"*EnvioBot Full — Verificación y Contacto Oficial*\n"
-        f"Hola {nombre_usuario}, este número fue registrado en tu cuenta de EnvioBot Full para recibir las alertas de reposición y fecha límite de colecta en Mercado Envíos Full.\n\n"
-        f"Tu código de validación es: *{codigo_verificacion}*\n\n"
-        f"Tocá en *Añadir a contactos* en la tarjeta adjunta para guardar a EnvioBot Full en tu agenda. Así los enlaces del panel quedarán siempre activos y recibirás las alertas en tiempo y forma.\n"
-        f"Panel: {app_url}"
+        f"*EnvioBot Full*\n"
+        f"Hola {nombre_usuario}, este número fue registrado para recibir las alertas de stock y de colecta en Mercado Envíos Full.\n\n"
+        f"Tocá acá para verificar tu número:\n{link_verificacion}"
     )
 
 
-def enviar_verificacion_whatsapp(telefono: str, nombre_usuario: str, codigo_verificacion: str, app_url: str = "https://enviobot.com.ar/full") -> dict:
+def enviar_verificacion_whatsapp(telefono: str, nombre_usuario: str, link_verificacion: str) -> dict:
     """
-    Despacha el mensaje de verificación de WhatsApp al número especificado.
-    Si está habilitado (por defecto sí), envía primero la tarjeta de contacto oficial (vCard)
-    para que el usuario guarde a EnvioBot Full con un toque.
+    Envía un único mensaje con el link de verificación. Al tocar el botón de esa
+    página el número queda verificado y se descarga el contacto de EnvioBot Full
+    para la agenda (ya no se manda la tarjeta vCard por el chat).
     """
-    cfg = obtener_configuracion_whatsapp()
-
-    # 1. Enviar primero la tarjeta vCard interactiva si está activo
-    if cfg.get("send_vcard_on_welcome", True):
-        try:
-            vcard_res = enviar_contacto_vcard(telefono)
-            logger.info(f"[WhatsApp] vCard de bienvenida enviada a {telefono}: {vcard_res.get('ok')}")
-            time.sleep(1.5)
-        except Exception as e:
-            logger.warning(f"[WhatsApp] Error enviando vCard previa: {e}")
-
-    # 2. Enviar el mensaje formal de verificación y bienvenida
-    msg = formatear_alerta_verificacion_whatsapp(nombre_usuario, codigo_verificacion, app_url)
+    msg = formatear_alerta_verificacion_whatsapp(nombre_usuario, link_verificacion)
     return enviar_mensaje_whatsapp(telefono, msg)
+
+
+def generar_vcard_contacto() -> str:
+    """Contenido .vcf de EnvioBot Full para guardar en la agenda del teléfono."""
+    cfg = obtener_configuracion_whatsapp()
+    nombre = cfg.get("vcard_name", "EnvioBot Full")
+    org = cfg.get("vcard_org", "EnvioBot")
+    titulo = cfg.get("vcard_title", "Alertas de Stock Full")
+    tel = normalizar_telefono(cfg.get("business_phone", "+54 9 11 2859 4631"))
+    return (
+        "BEGIN:VCARD\r\n"
+        "VERSION:3.0\r\n"
+        f"FN:{nombre}\r\n"
+        f"N:;{nombre};;;\r\n"
+        f"ORG:{org}\r\n"
+        f"TITLE:{titulo}\r\n"
+        f"TEL;TYPE=CELL,VOICE:+{tel}\r\n"
+        "URL:https://enviobot.com.ar\r\n"
+        "NOTE:Alertas de reposición y fecha límite de colecta en Mercado Envíos Full.\r\n"
+        "END:VCARD\r\n"
+    )
 
 
 # Compatibilidad hacia atrás

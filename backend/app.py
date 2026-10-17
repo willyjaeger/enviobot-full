@@ -16,7 +16,7 @@ import threading
 from urllib.parse import urlencode
 from datetime import datetime, timedelta
 
-from flask import Flask, request, jsonify, redirect, send_from_directory
+from flask import Flask, request, jsonify, redirect, send_from_directory, Response
 from flask_cors import CORS
 from flask_jwt_extended import (
     JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
@@ -26,7 +26,7 @@ import requests
 from dotenv import load_dotenv
 
 from whatsapp_service import (
-    enviar_mensaje_whatsapp, enviar_contacto_vcard, enviar_verificacion_whatsapp,
+    enviar_mensaje_whatsapp, enviar_contacto_vcard, enviar_verificacion_whatsapp, generar_vcard_contacto,
     WHATSAPP_SIMULATION_MODE, EVOLUTION_API_URL, WHATSAPP_GATEWAY_URL
 )
 from alerts_engine import procesar_alertas_usuario
@@ -136,6 +136,15 @@ def init_verification_tables():
                         cur.execute(f"ALTER TABLE user_settings ADD COLUMN {b_col} {b_def}")
                 except Exception:
                     pass
+
+            try:
+                # El código pasa a ser el token del link de verificación de WhatsApp
+                cur.execute("SHOW COLUMNS FROM verification_codes LIKE 'code'")
+                col = cur.fetchone()
+                if col and str(col.get("Type", "")).lower() in ("varchar(10)",):
+                    cur.execute("ALTER TABLE verification_codes MODIFY COLUMN code VARCHAR(64) NOT NULL")
+            except Exception:
+                pass
 
             try:
                 cur.execute("SHOW COLUMNS FROM alert_recipients LIKE 'is_verified'")
@@ -1653,6 +1662,114 @@ def trigger_sync():
     return jsonify({"ok": True, "message": "Sincronización iniciada en segundo plano."}), 200
 
 # -------------------------------------------------------------
+# VERIFICACIÓN DE WHATSAPP POR BOTÓN (link público con token)
+# -------------------------------------------------------------
+
+def _enviar_verificacion_wa(user_id, phone, name):
+    """Crea el token y manda por WhatsApp el link con el botón de verificación."""
+    token = secrets.token_urlsafe(24)
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO verification_codes (user_id, channel, destination, code, is_verified)
+            VALUES (%s, 'whatsapp', %s, %s, 0)
+        """, (user_id, phone, token))
+    conn.close()
+    app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full").rstrip("/")
+    return enviar_verificacion_whatsapp(phone, name or "Usuario", f"{app_url}/v/{token}")
+
+def _pagina_verificacion(estado, nombre=""):
+    """HTML de la página del botón. estado: 'pendiente' | 'listo' | 'invalido'."""
+    if estado == "invalido":
+        cuerpo = "<h1>Link vencido</h1><p>Pedile a quien administra la cuenta que te vuelva a enviar la verificación.</p>"
+    else:
+        listo = estado == "listo"
+        saludo = f"Hola {nombre}" if nombre else "Hola"
+        cuerpo = (
+            f"<h1>{'Número verificado' if listo else 'Verificá tu número'}</h1>"
+            f"<p>{saludo}, "
+            + ("ya vas a recibir las alertas de EnvioBot Full." if listo else
+               "tocá el botón para confirmar que este es tu WhatsApp y guardar EnvioBot Full en tu agenda.")
+            + "</p>"
+            f'<button id="b" class="btn">{"Guardar el contacto" if listo else "Verificar mi número"}</button>'
+            '<p id="m" class="m"></p>'
+        )
+    return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>EnvioBot Full</title>
+<style>
+body{{margin:0;font-family:system-ui,sans-serif;background:#0f172a;color:#f1f5f9;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}}
+.c{{max-width:420px;width:100%;text-align:center;background:#1e293b;border-radius:16px;padding:32px 24px}}
+h1{{font-size:24px;margin:0 0 12px}} p{{color:#cbd5e1;line-height:1.5}}
+.btn{{display:block;width:100%;margin-top:24px;padding:20px;font-size:20px;font-weight:700;border:0;border-radius:12px;background:#22c55e;color:#052e16;cursor:pointer}}
+.m{{font-size:14px;min-height:20px}}
+</style></head><body><div class="c">{cuerpo}</div>
+<script>
+var b=document.getElementById('b');
+if(b){{b.onclick=function(){{
+  var t=location.pathname.split('/').pop();
+  b.disabled=true;b.textContent='Verificando...';
+  fetch('/api/full/verify/wa/'+t,{{method:'POST'}}).then(function(r){{return r.json()}}).then(function(d){{
+    if(!d.ok)throw 0;
+    document.querySelector('h1').textContent='Número verificado';
+    b.textContent='Guardar el contacto';b.disabled=false;
+    document.getElementById('m').textContent='Se descargó el contacto: abrilo y tocá Guardar.';
+    b.onclick=function(){{location.href='/api/full/verify/wa/'+t+'/contacto.vcf'}};
+    location.href='/api/full/verify/wa/'+t+'/contacto.vcf';
+  }}).catch(function(){{b.disabled=false;b.textContent='Verificar mi número';document.getElementById('m').textContent='No se pudo verificar. Probá de nuevo.'}});
+}}}}
+</script></body></html>"""
+
+def _token_wa(cur, token):
+    cur.execute("""
+        SELECT id, user_id, destination, is_verified FROM verification_codes
+        WHERE channel='whatsapp' AND code=%s AND created_at > NOW() - INTERVAL 30 DAY
+        ORDER BY id DESC LIMIT 1
+    """, (token,))
+    return cur.fetchone()
+
+@app.route("/v/<token>", methods=["GET"])
+def pagina_verificar_wa(token):
+    conn = get_db()
+    with conn.cursor() as cur:
+        row = _token_wa(cur, token)
+        nombre = ""
+        if row:
+            cur.execute("SELECT name FROM alert_recipients WHERE user_id=%s AND phone=%s ORDER BY id DESC LIMIT 1",
+                        (row["user_id"], row["destination"]))
+            r = cur.fetchone()
+            nombre = (r or {}).get("name", "") or ""
+    conn.close()
+    if not row:
+        return _pagina_verificacion("invalido"), 404
+    from html import escape
+    return _pagina_verificacion("listo" if row["is_verified"] else "pendiente", escape(nombre))
+
+@app.route("/api/full/verify/wa/<token>", methods=["POST"])
+def verificar_wa(token):
+    conn = get_db()
+    with conn.cursor() as cur:
+        row = _token_wa(cur, token)
+        if not row:
+            conn.close()
+            return jsonify({"ok": False, "error": "Link vencido."}), 404
+        cur.execute("UPDATE verification_codes SET is_verified=1, verified_at=NOW() WHERE id=%s", (row["id"],))
+        cur.execute("UPDATE alert_recipients SET is_verified=1 WHERE user_id=%s AND phone=%s",
+                    (row["user_id"], row["destination"]))
+    conn.close()
+    return jsonify({"ok": True}), 200
+
+@app.route("/api/full/verify/wa/<token>/contacto.vcf", methods=["GET"])
+def contacto_vcf_wa(token):
+    conn = get_db()
+    with conn.cursor() as cur:
+        row = _token_wa(cur, token)
+    conn.close()
+    if not row or not row["is_verified"]:
+        return jsonify({"ok": False, "error": "Link vencido."}), 404
+    return Response(generar_vcard_contacto(), mimetype="text/vcard; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="EnvioBot-Full.vcf"'})
+
+# -------------------------------------------------------------
 # RUTAS DE EQUIPO / DESTINATARIOS (MULTIUSUARIO SEGÚN PLAN)
 # -------------------------------------------------------------
 
@@ -1715,28 +1832,19 @@ def add_recipient():
                 "limit_reached": True
             }), 403
 
-        # Generar código de verificación de 6 dígitos
-        code = str(secrets.randbelow(900000) + 100000)
-
         cur.execute("""
             INSERT INTO alert_recipients (user_id, name, phone, role, warehouse_filter, is_verified)
-            VALUES (%s, %s, %s, %s, %s, 1)
+            VALUES (%s, %s, %s, %s, %s, 0)
         """, (user_id, name, phone, role, warehouse_filter))
         new_id = cur.lastrowid
-
-        cur.execute("""
-            INSERT INTO verification_codes (user_id, channel, destination, code, is_verified, verified_at)
-            VALUES (%s, 'whatsapp', %s, %s, 1, NOW())
-        """, (user_id, phone, code))
     conn.close()
 
-    # Enviar mensaje automático de bienvenida y verificación de WhatsApp
-    app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full")
-    wa_res = enviar_verificacion_whatsapp(phone, name, code, app_url)
+    # Mensaje con el botón para verificar el número (y guardar el contacto)
+    wa_res = _enviar_verificacion_wa(user_id, phone, name)
 
     return jsonify({
         "ok": True,
-        "message": f"Destinatario agregado. Se envió un mensaje de bienvenida y verificación a {phone}.",
+        "message": f"Destinatario agregado. Se envió un mensaje a {phone} con el botón para verificar el número.",
         "id": new_id,
         "wa_result": wa_res
     }), 201
@@ -1852,17 +1960,7 @@ def send_whatsapp_verification():
     if not phone:
         return jsonify({"ok": False, "error": "Completá el número de celular."}), 400
 
-    conn = get_db()
-    with conn.cursor() as cur:
-        code = str(secrets.randbelow(900000) + 100000)
-        cur.execute("""
-            INSERT INTO verification_codes (user_id, channel, destination, code, is_verified)
-            VALUES (%s, 'whatsapp', %s, %s, 1)
-        """, (user_id, phone, code))
-    conn.close()
-
-    app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full")
-    res = enviar_verificacion_whatsapp(phone, name, code, app_url)
+    res = _enviar_verificacion_wa(user_id, phone, name)
 
     return jsonify({
         "ok": True,
@@ -2164,11 +2262,6 @@ def user_settings_route():
 
         # Si hay teléfono nuevo y send_welcome:
         if new_phone and send_welcome:
-            phone_code = str(secrets.randbelow(900000) + 100000)
-            cur.execute("""
-                INSERT INTO verification_codes (user_id, channel, destination, code, is_verified, verified_at)
-                VALUES (%s, 'whatsapp', %s, %s, 1, NOW())
-            """, (user_id, new_phone, phone_code))
             phone_sent = True
 
     conn.close()
@@ -2180,9 +2273,9 @@ def user_settings_route():
         except Exception as e:
             print(f"[Error enviando email bienvenida]: {e}")
 
-    if phone_sent and phone_code:
+    if phone_sent:
         try:
-            enviar_verificacion_whatsapp(new_phone, user_name, phone_code, app_url)
+            _enviar_verificacion_wa(user_id, new_phone, user_name)
         except Exception as e:
             print(f"[Error enviando WhatsApp verificación]: {e}")
 

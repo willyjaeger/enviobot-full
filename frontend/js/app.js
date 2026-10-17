@@ -3968,6 +3968,10 @@ function renderizarDestinatariosWA() {
             <td><span class="role-badge ${roleBadgeClass}">${roleLabel}</span></td>
             <td style="color: var(--text2); font-size: 11px;">${whName}</td>
             <td style="text-align: right;">
+                ${isVerified ? '' : `<button class="btn btn-primary btn-sm" style="padding: 3px 8px; font-size: 11px; margin-right: 4px;" 
+                        onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')" title="Reenviar el botón de verificación">
+                    Reenviar verificación
+                </button>`}
                 <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; margin-right: 4px;" 
                         onclick="probarDestinatarioWA('${r.phone}', '${r.name}')" title="Enviar WhatsApp de prueba">
                     Probar
@@ -4017,7 +4021,7 @@ async function agregarDestinatarioWA() {
                 alert(data.error || "No se pudo agregar el destinatario.");
                 return;
             }
-            alert(`Destinatario ${name} agregado con éxito.\nSe envió un mensaje de bienvenida y verificación por WhatsApp a ${phone}.`);
+            alert(`Destinatario ${name} agregado con éxito.\nLe enviamos un WhatsApp a ${phone} con el botón para verificar el número.`);
             await cargarDestinatariosBackend();
             document.getElementById('newRecipName').value = '';
             document.getElementById('newRecipPhone').value = '';
@@ -4042,6 +4046,20 @@ async function agregarDestinatarioWA() {
 
     renderizarDestinatariosWA();
     alert(`Número de WhatsApp de ${name} agregado con éxito.`);
+}
+
+async function reenviarVerificacionWA(phone, name) {
+    try {
+        const resp = await fetch(`${API_BASE}/full/verify/send-whatsapp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+            body: JSON.stringify({ phone, name })
+        });
+        const data = await resp.json();
+        alert(data.ok ? `Reenviamos el botón de verificación a ${phone}.` : (data.error || 'No se pudo reenviar.'));
+    } catch (e) {
+        alert('No se pudo reenviar la verificación.');
+    }
 }
 
 async function eliminarDestinatarioWA(id) {
