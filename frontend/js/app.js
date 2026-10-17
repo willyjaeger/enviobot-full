@@ -34,29 +34,35 @@ function iconoSvg(nombre, tam = 14) {
 }
 
 // Sistema de Notificaciones Toast no bloqueantes (reemplaza alertas emergentes invasivas)
-function showToast(message, type = 'info', duration = 2800) {
+// Logo de EnvioBot Full para los avisos
+const LOGO_AVISO = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"/><polyline points="3.4 7.1 12 12 20.6 7.1"/><line x1="12" y1="21.1" x2="12" y2="12"/></svg>';
+
+function contenedorAvisos() {
     let container = document.getElementById('toastContainer');
     if (!container) {
         container = document.createElement('div');
         container.id = 'toastContainer';
-        container.style.cssText = 'position: fixed; bottom: 22px; right: 22px; z-index: 999999; display: flex; flex-direction: column; gap: 8px; pointer-events: none;';
+        container.style.cssText = 'position: fixed; bottom: 24px; right: 24px; max-width: calc(100vw - 48px); z-index: 999999; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none;';
         document.body.appendChild(container);
     }
+    return container;
+}
+
+// Aviso grande y legible, con el logo de EnvioBot Full. El color del borde dice si salió bien, mal o es un dato.
+function showToast(message, type = 'info', duration = 2800) {
+    const colores = { success: '#22c55e', error: '#ef4444', info: '#f5a623' };
+    const borde = colores[type] || colores.info;
     const toast = document.createElement('div');
     toast.className = `toast-msg toast-${type}`;
-    let borderCol = '#38bdf8';
-    let textCol = '#f8fafc';
-    let bgCol = '#0f172a';
-    if (type === 'success') {
-        borderCol = '#10b981';
-        textCol = '#ecfdf5';
-    } else if (type === 'error') {
-        borderCol = '#ef4444';
-        textCol = '#fef2f2';
-    }
-    toast.style.cssText = `background: ${bgCol}; color: ${textCol}; border: 1.5px solid ${borderCol}; border-radius: 8px; padding: 10px 16px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); pointer-events: auto; opacity: 0; transform: translateY(12px); transition: all 0.22s ease-out; max-width: 380px; line-height: 1.4; white-space: pre-line;`;
-    toast.textContent = message;
-    container.appendChild(toast);
+    toast.style.cssText = `display: flex; align-items: center; gap: 14px; background: #0f172a; color: #ffffff; border: 2px solid ${borde}; border-left: 8px solid ${borde}; border-radius: 12px; padding: 16px 20px; font-size: 17px; font-weight: 700; line-height: 1.4; box-shadow: 0 14px 34px -6px rgba(0,0,0,0.75); pointer-events: auto; opacity: 0; transform: translateY(14px); transition: all 0.22s ease-out; max-width: 460px; white-space: pre-line;`;
+    const logo = document.createElement('span');
+    logo.style.cssText = 'flex: none; display: flex;';
+    logo.innerHTML = LOGO_AVISO;
+    const texto = document.createElement('span');
+    texto.textContent = message;
+    toast.appendChild(logo);
+    toast.appendChild(texto);
+    contenedorAvisos().appendChild(toast);
 
     requestAnimationFrame(() => {
         toast.style.opacity = '1';
@@ -65,9 +71,9 @@ function showToast(message, type = 'info', duration = 2800) {
 
     setTimeout(() => {
         toast.style.opacity = '0';
-        toast.style.transform = 'translateY(12px)';
+        toast.style.transform = 'translateY(14px)';
         setTimeout(() => toast.remove(), 250);
-    }, duration);
+    }, Math.max(duration, 4500));
 }
 
 // Ningún cartel del navegador: los alert() salen como aviso que se cierra solo.
@@ -80,24 +86,21 @@ window.alert = function (mensaje) {
 // Deshacer. Devuelve una promesa: true si pasó el tiempo (hacer la acción), false si tocó Deshacer.
 function confirmarConDeshacer(texto, segundos = 5) {
     return new Promise(resolve => {
-        let container = document.getElementById('toastContainer');
-        if (!container) {
-            container = document.createElement('div');
-            container.id = 'toastContainer';
-            container.style.cssText = 'position: fixed; bottom: 22px; right: 22px; z-index: 999999; display: flex; flex-direction: column; gap: 8px; pointer-events: none;';
-            document.body.appendChild(container);
-        }
         const toast = document.createElement('div');
-        toast.style.cssText = 'background: #0f172a; color: #f8fafc; border: 1.5px solid #f59e0b; border-radius: 8px; padding: 10px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); pointer-events: auto; max-width: 400px; line-height: 1.4; display: flex; gap: 14px; align-items: center;';
+        toast.style.cssText = 'display: flex; align-items: center; gap: 14px; background: #0f172a; color: #ffffff; border: 2px solid #f5a623; border-left: 8px solid #f5a623; border-radius: 12px; padding: 16px 20px; font-size: 17px; font-weight: 700; line-height: 1.4; box-shadow: 0 14px 34px -6px rgba(0,0,0,0.75); pointer-events: auto; max-width: 480px;';
+        const logo = document.createElement('span');
+        logo.style.cssText = 'flex: none; display: flex;';
+        logo.innerHTML = LOGO_AVISO;
         const msg = document.createElement('span');
         msg.textContent = texto;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = 'Deshacer';
-        btn.style.cssText = 'background: #f59e0b; color: #111; border: 0; border-radius: 6px; padding: 6px 12px; font-weight: 800; font-size: 13px; cursor: pointer; white-space: nowrap;';
+        btn.style.cssText = 'flex: none; background: #f5a623; color: #111; border: 0; border-radius: 8px; padding: 10px 18px; font-weight: 800; font-size: 16px; cursor: pointer; white-space: nowrap;';
+        toast.appendChild(logo);
         toast.appendChild(msg);
         toast.appendChild(btn);
-        container.appendChild(toast);
+        contenedorAvisos().appendChild(toast);
         const cerrar = () => toast.remove();
         const timer = setTimeout(() => { cerrar(); resolve(true); }, segundos * 1000);
         btn.onclick = () => { clearTimeout(timer); cerrar(); resolve(false); };
@@ -4586,9 +4589,9 @@ function renderizarDestinatariosWA() {
         const whName = r.warehouse_filter === 'all' ? 'Todos' : (WAREHOUSES[r.warehouse_filter]?.name || r.warehouse_filter);
 
         const isVerified = (r.is_verified === 1 || r.is_verified === true || r.is_verified === '1');
-        const verifBadge = isVerified 
-            ? `<span class="badge badge-ok" style="font-size: 10px; margin-left: 6px;">Verificado</span>`
-            : `<span class="badge badge-warn" style="font-size: 10px; margin-left: 6px;">Pendiente</span>`;
+        const verifBadge = isVerified
+            ? `<span style="display: inline-block; margin-left: 8px; padding: 3px 10px; border-radius: 999px; background: #16a34a; color: #ffffff; font-size: 13px; font-weight: 800;">Verificado</span>`
+            : `<span style="display: inline-block; margin-left: 8px; padding: 3px 10px; border-radius: 999px; background: #f5a623; color: #111111; font-size: 13px; font-weight: 800;">Falta verificar</span>`;
 
         tr.innerHTML = `
             <td>
