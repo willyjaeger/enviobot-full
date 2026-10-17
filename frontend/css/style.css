@@ -1768,3 +1768,4 @@ table.stock-table tr:hover td {
 .pc-cal-leyenda span { display: inline-flex; align-items: center; }
 .pc-destacada { box-shadow: 0 0 0 2px var(--accent); }
 @media (max-width: 640px) { .pc-cal-dia { min-height: 44px; } .pc-cal-ev span { display: none; } }
+.pc-cal-mover { cursor: grab; }

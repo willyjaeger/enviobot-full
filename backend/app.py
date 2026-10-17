@@ -3311,6 +3311,39 @@ def update_inbound_shipment_status(shipment_id):
 
     return jsonify({"ok": True, "message": f"Estado actualizado a '{new_status}'."}), 200
 
+@app.route("/api/full/inbound/shipments/<int:shipment_id>/fecha-retiro", methods=["PUT"])
+@jwt_required()
+@_equipo.requiere_rol('operator')
+def mover_retiro_colecta(shipment_id):
+    """Cambia solo la fecha de retiro (arrastrando en el calendario). El ingreso a Full se corre con ella."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    try:
+        nuevo = datetime.strptime(str(data.get("pickup_date") or ""), "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"ok": False, "error": "La fecha no es válida."}), 400
+    conn = get_db()
+    try:
+        account_id = get_account_user_id(user_id, conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, shipment_code, status, pickup_date, transit_days FROM inbound_shipments WHERE id=%s AND user_id=%s",
+                        (shipment_id, account_id))
+            fila = cur.fetchone()
+            if not fila:
+                return jsonify({"ok": False, "error": "Colecta no encontrada."}), 404
+            if fila["status"] != "scheduled":
+                return jsonify({"ok": False, "error": "Solo se puede mover una colecta que todavía no salió."}), 400
+            error = _proy.validar_nuevo_retiro(fila["shipment_code"], fila["pickup_date"], nuevo)
+            if error:
+                return jsonify({"ok": False, "error": error}), 400
+            ingreso = nuevo + timedelta(days=int(fila.get("transit_days") or 3))
+            cur.execute("UPDATE inbound_shipments SET pickup_date=%s, estimated_arrival_date=%s WHERE id=%s",
+                        (nuevo, ingreso, shipment_id))
+        return jsonify({"ok": True, "pickup_date": str(nuevo), "estimated_arrival_date": str(ingreso)}), 200
+    finally:
+        conn.close()
+
+
 @app.route("/api/full/inbound/shipments/<int:shipment_id>", methods=["DELETE"])
 @jwt_required()
 @_equipo.requiere_rol('operator')

@@ -220,6 +220,40 @@ class TestPanelJS(unittest.TestCase):
         self.assertIn('en camino a Full', html)
         self.assertNotIn('abrirModalEditarEnvio', html)
 
+    def test_solo_el_retiro_de_una_colecta_abierta_se_arrastra(self):
+        html = self._correr([_item()], None, [self._col(3, 2, False), self._col(4, 11, True)])['html']
+        self.assertEqual(html.count('draggable="true"'), 1)
+        self.assertIn('arrastrarRetiro(event, 4)', html)
+        self.assertNotIn('arrastrarRetiro(event, 3)', html)
+
+    def test_los_dias_pasados_no_reciben_colectas(self):
+        html = self._correr([_item()], None, [self._col(4, 11, True)])['html']
+        self.assertIn('ondrop="soltarEnDia(event,', html)
+        celdas = html.split('class="pc-cal-dia')
+        pasadas = [c for c in celdas if c.startswith(' pc-cal-pasado')]
+        self.assertTrue(pasadas)
+        self.assertTrue(all('ondrop' not in c.split('</div>')[0] for c in pasadas))
+
+    def test_clic_en_la_marca_edita_si_esta_abierta_y_si_no_va_a_la_tarjeta(self):
+        harness = r"""
+const vm = require('vm'); const log = [];
+const ctx = { log, document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console,
+              abrirModalEditarEnvio: id => log.push('editar' + id) };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('colectasData = ' + process.argv[2] + '; irAColecta = id => log.push("ir" + id);', ctx);
+vm.runInContext('clicEnMarca(4); clicEnMarca(3);', ctx);
+process.stdout.write(JSON.stringify(log));
+"""
+        datos = json.dumps([{'id': 4, 'abierta': True, 'estado': 'scheduled'}, {'id': 3, 'abierta': False, 'estado': 'scheduled'}])
+        r = subprocess.run([NODE, '-e', harness, self.src_path, datos], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout), ['editar4', 'ir3'])
+
+    def test_el_mensaje_de_mover_avisa_que_hay_que_cambiar_ml(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        self.assertIn('Tenés que cambiar el turno también en Mercado Libre', js)
+
     def test_calendario_escapa_los_codigos(self):
         html = self._correr([_item()], None, [self._col(6, 5, True, codigo='ML-<script>x')])['html']
         self.assertNotIn('<script>', html)

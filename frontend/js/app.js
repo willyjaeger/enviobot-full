@@ -733,7 +733,9 @@ function marcaCalendario(ev) {
     const c = ev.c;
     const estado = claseColorColecta(c);
     const titulo = e.largo + ' · ' + (c.codigo || '');
-    return '<button type="button" class="pc-cal-ev ' + estado + '" onclick="irAColecta(' + Number(c.id) + ')" title="' + escapeHtml(titulo) + '">' +
+    const arrastrable = ev.tipo === 'retiro' && c.estado === 'scheduled' && c.abierta;
+    const arrastre = arrastrable ? ' draggable="true" ondragstart="arrastrarRetiro(event, ' + Number(c.id) + ')"' : '';
+    return '<button type="button" class="pc-cal-ev ' + estado + (arrastrable ? ' pc-cal-mover' : '') + '"' + arrastre + ' onclick="clicEnMarca(' + Number(c.id) + ')" title="' + escapeHtml(titulo + (arrastrable ? ' (arrastralo a otro día para moverla)' : '')) + '">' +
         iconoSvg(e.icono, 12).replace('margin-right: 4px;', 'margin-right: 3px;') +
         '<span>' + escapeHtml(e.texto) + ' ' + escapeHtml(numeroCorto(c.codigo)) + '</span></button>';
 }
@@ -752,7 +754,8 @@ function calendarioColectas(colectas, hoy) {
         if (clave === hoyClave) clases.push('pc-cal-hoy');
         else if (clave < hoyClave) clases.push('pc-cal-pasado');
         const nombre = (d.getDate() === 1 || i === 0) ? d.getDate() + ' ' + MESES_CALENDARIO[d.getMonth()] : String(d.getDate());
-        celdas += '<div class="' + clases.join(' ') + '"><span class="pc-cal-n">' + escapeHtml(nombre) + '</span>' +
+        const recibe = clave >= hoyClave ? ' ondragover="permitirSoltar(event)" ondrop="soltarEnDia(event, \'' + clave + '\')"' : '';
+        celdas += '<div class="' + clases.join(' ') + '"' + recibe + '><span class="pc-cal-n">' + escapeHtml(nombre) + '</span>' +
             (eventos[clave] || []).map(marcaCalendario).join('') + '</div>';
     }
     const cabecera = DIAS_CALENDARIO.map(function (n) { return '<div class="pc-cal-cab">' + n + '</div>'; }).join('');
@@ -762,6 +765,59 @@ function calendarioColectas(colectas, hoy) {
         }).join('') + '</div>';
     return '<div class="pc-cal"><h3 class="pc-block-title">Calendario de colectas</h3>' +
         '<div class="pc-cal-grilla">' + cabecera + celdas + '</div>' + leyenda + '</div>';
+}
+
+// Clic en una marca: si la colecta se puede modificar abre la edición; si no, lleva a su tarjeta.
+function clicEnMarca(id) {
+    const c = (colectasData || []).find(x => Number(x.id) === Number(id));
+    if (c && c.abierta && c.estado === 'scheduled' && typeof abrirModalEditarEnvio === 'function') {
+        abrirModalEditarEnvio(Number(id));
+        return;
+    }
+    irAColecta(id);
+}
+
+function arrastrarRetiro(ev, id) {
+    ev.dataTransfer.setData('text/plain', 'colecta:' + Number(id));
+    ev.dataTransfer.effectAllowed = 'move';
+}
+
+function permitirSoltar(ev) {
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+}
+
+function textoConfirmarMovimiento(c, fecha) {
+    const base = 'Mover la colecta ' + c.codigo + ' al ' + nombreDiaColecta(fecha) + '?';
+    return c.de_ml
+        ? base + '\n\nEsto cambia solo EnvioBot. Tenés que cambiar el turno también en Mercado Libre (si ya pasó su límite te lo cobra).'
+        : base;
+}
+
+async function soltarEnDia(ev, fecha) {
+    ev.preventDefault();
+    const dato = ev.dataTransfer.getData('text/plain') || '';
+    if (dato.indexOf('colecta:') !== 0) return;
+    const id = Number(dato.slice(8));
+    const c = (colectasData || []).find(x => Number(x.id) === id);
+    if (!c || c.fecha_retiro === fecha) return;
+    if (!window.confirm(textoConfirmarMovimiento(c, fecha))) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments/${id}/fecha-retiro`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pickup_date: fecha })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.error || 'No pude mover la colecta.', 'error');
+            return;
+        }
+        showToast('Colecta movida al ' + nombreDiaColecta(fecha) + '.', 'success');
+        cargarDatos();
+    } catch (e) {
+        showToast('Error de conexión: ' + e.message, 'error');
+    }
 }
 
 function irAColecta(id) {

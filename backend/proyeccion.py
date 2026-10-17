@@ -170,6 +170,18 @@ def armar_colecta(fila, productos, hora=None, ahora=None):
     }
 
 
+def validar_nuevo_retiro(codigo, retiro_actual, nuevo, ahora=None, hora=None):
+    """Texto del problema si no se puede mover el retiro de esta colecta a `nuevo`; None si se puede."""
+    ahora = ahora or datetime.now(HORA_BA)
+    if bloqueada_por_ml(codigo, retiro_actual, ahora=ahora, hora=hora):
+        return "Mercado Libre ya cerró esta colecta (el límite para cambiarla pasó), así que no se puede mover."
+    if nuevo < ahora.date():
+        return "La fecha de retiro no puede ser anterior a hoy."
+    if str(codigo or '').startswith('ML-') and not cuenta_regresiva(nuevo, ahora=ahora, hora=hora)["abierta"]:
+        return "Para ese día ya pasó el límite de Mercado Libre: no llegás a cambiar el turno a tiempo."
+    return None
+
+
 # ── Velocidad de venta corregida por días sin stock ─────────────────────────────────────
 MIN_DIAS_ACTIVOS = 3  # con menos días con stock que esto, el promedio sería puro ruido: no se corrige
 

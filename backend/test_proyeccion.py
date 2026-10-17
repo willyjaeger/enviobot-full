@@ -222,5 +222,25 @@ class TestArmarColecta(unittest.TestCase):
         self.assertFalse(p.armar_colecta(dict(self.FILA, shipment_code='COL-FULL-1'), self.PROD)['de_ml'])
 
 
+class TestValidarNuevoRetiro(unittest.TestCase):
+    HOY = datetime(2026, 10, 17, 12, 0, tzinfo=p.HORA_BA)  # sábado
+
+    def test_se_puede_mover_una_abierta_a_otro_dia(self):
+        self.assertIsNone(p.validar_nuevo_retiro('ML-1', date(2026, 10, 28), date(2026, 10, 29), ahora=self.HOY))
+
+    def test_no_se_mueve_una_cerrada_de_ml(self):
+        self.assertIn('ya cerró', p.validar_nuevo_retiro('ML-1', date(2026, 10, 19), date(2026, 10, 29), ahora=self.HOY))
+
+    def test_no_a_un_dia_pasado(self):
+        self.assertIn('anterior a hoy', p.validar_nuevo_retiro('COL-1', date(2026, 10, 28), date(2026, 10, 16), ahora=self.HOY))
+
+    def test_de_ml_no_a_un_dia_que_ya_no_llega_al_limite(self):
+        # retiro el lunes 19: su límite fue el viernes 16 (ya pasó)
+        self.assertIn('límite', p.validar_nuevo_retiro('ML-1', date(2026, 10, 28), date(2026, 10, 19), ahora=self.HOY))
+
+    def test_la_armada_en_enviobot_se_mueve_a_cualquier_dia_futuro(self):
+        self.assertIsNone(p.validar_nuevo_retiro('COL-1', date(2026, 10, 19), date(2026, 10, 19), ahora=self.HOY))
+
+
 if __name__ == '__main__':
     unittest.main()
