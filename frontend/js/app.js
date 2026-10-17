@@ -54,7 +54,7 @@ function showToast(message, type = 'info', duration = 2800) {
         borderCol = '#ef4444';
         textCol = '#fef2f2';
     }
-    toast.style.cssText = `background: ${bgCol}; color: ${textCol}; border: 1.5px solid ${borderCol}; border-radius: 8px; padding: 10px 16px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); pointer-events: auto; opacity: 0; transform: translateY(12px); transition: all 0.22s ease-out; max-width: 380px; line-height: 1.4;`;
+    toast.style.cssText = `background: ${bgCol}; color: ${textCol}; border: 1.5px solid ${borderCol}; border-radius: 8px; padding: 10px 16px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); pointer-events: auto; opacity: 0; transform: translateY(12px); transition: all 0.22s ease-out; max-width: 380px; line-height: 1.4; white-space: pre-line;`;
     toast.textContent = message;
     container.appendChild(toast);
 
@@ -68,6 +68,40 @@ function showToast(message, type = 'info', duration = 2800) {
         toast.style.transform = 'translateY(12px)';
         setTimeout(() => toast.remove(), 250);
     }, duration);
+}
+
+// Ningún cartel del navegador: los alert() salen como aviso que se cierra solo.
+window.alert = function (mensaje) {
+    const texto = String(mensaje == null ? '' : mensaje);
+    showToast(texto, /^(error|no se pudo|no pudimos)/i.test(texto) ? 'error' : 'info', Math.min(9000, 3500 + texto.length * 40));
+};
+
+// En vez de preguntar "¿seguro?" con un cartel: avisa qué va a pasar y deja unos segundos para tocar
+// Deshacer. Devuelve una promesa: true si pasó el tiempo (hacer la acción), false si tocó Deshacer.
+function confirmarConDeshacer(texto, segundos = 5) {
+    return new Promise(resolve => {
+        let container = document.getElementById('toastContainer');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toastContainer';
+            container.style.cssText = 'position: fixed; bottom: 22px; right: 22px; z-index: 999999; display: flex; flex-direction: column; gap: 8px; pointer-events: none;';
+            document.body.appendChild(container);
+        }
+        const toast = document.createElement('div');
+        toast.style.cssText = 'background: #0f172a; color: #f8fafc; border: 1.5px solid #f59e0b; border-radius: 8px; padding: 10px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.6); pointer-events: auto; max-width: 400px; line-height: 1.4; display: flex; gap: 14px; align-items: center;';
+        const msg = document.createElement('span');
+        msg.textContent = texto;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = 'Deshacer';
+        btn.style.cssText = 'background: #f59e0b; color: #111; border: 0; border-radius: 6px; padding: 6px 12px; font-weight: 800; font-size: 13px; cursor: pointer; white-space: nowrap;';
+        toast.appendChild(msg);
+        toast.appendChild(btn);
+        container.appendChild(toast);
+        const cerrar = () => toast.remove();
+        const timer = setTimeout(() => { cerrar(); resolve(true); }, segundos * 1000);
+        btn.onclick = () => { clearTimeout(timer); cerrar(); resolve(false); };
+    });
 }
 
 // Configuración de Depósitos disponibles
@@ -3001,7 +3035,7 @@ async function cambiarEstadoEnvioInbound(shipmentId, status) {
 window.cambiarEstadoEnvioInbound = cambiarEstadoEnvioInbound;
 
 async function eliminarEnvioInbound(shipmentId) {
-    if (!confirm("¿Seguro que deseás eliminar este registro de colecta?")) return;
+    if (!(await confirmarConDeshacer("Se elimina el registro de la colecta."))) return;
     const token = getToken();
     if (!token) return;
     try {
@@ -4044,14 +4078,14 @@ async function equipoGuardarCuentas(id) {
 
 async function equipoQuitar(id) {
     const m = _equipo.miembros.find(x => x.id === id);
-    if (!confirm(`¿Sacar a ${m ? m.nombre : 'esta persona'} de EnvioBot Full? Su usuario no se borra: solo pierde el acceso a Full.`)) return;
+    if (!(await confirmarConDeshacer(`Se saca a ${m ? m.nombre : 'esta persona'} de EnvioBot Full.`))) return;
     const d = await eqFetch(`/full/equipo/miembros/${id}`, 'DELETE');
     if (!d.ok) showToast(d.error || 'No se pudo quitar.', 'error');
     await recargarEquipo();
 }
 
 async function equipoCancelar(id) {
-    if (!confirm('¿Cancelar esta invitación? El link deja de funcionar.')) return;
+    if (!(await confirmarConDeshacer('Se cancela la invitación y su link deja de funcionar.'))) return;
     const d = await eqFetch(`/full/equipo/invitaciones/${id}`, 'DELETE');
     if (!d.ok) showToast(d.error || 'No se pudo cancelar.', 'error');
     await recargarEquipo();
@@ -4327,7 +4361,7 @@ async function invitarMiembroEquipo(e) {
 }
 
 async function eliminarMiembroEquipo(memberId, memberName) {
-    if (!confirm(`¿Estás seguro de que deseás revocar el acceso a ${memberName}?`)) {
+    if (!(await confirmarConDeshacer(`Se revoca el acceso de ${memberName}.`))) {
         return;
     }
     const token = getToken();
@@ -4486,7 +4520,7 @@ async function renderizarConfiguracionMeLi() {
 }
 
 async function desconectarCuentaMeLi(accId, nickname) {
-    if (!confirm(`¿Estás seguro de que deseás desconectar la cuenta "${nickname}" de Mercado Libre?\n\nSe desvinculará la sincronización y se eliminarán sus publicaciones de EnvioBot Full.`)) {
+    if (!(await confirmarConDeshacer(`Se desconecta la cuenta "${nickname}" de Mercado Libre y se quitan sus publicaciones.`, 8))) {
         return;
     }
 
@@ -4748,7 +4782,7 @@ async function reenviarVerificacionWA(phone, name) {
 }
 
 async function eliminarDestinatarioWA(id) {
-    if (confirm("¿Seguro que deseás quitar este número de las alertas de WhatsApp?")) {
+    if (await confirmarConDeshacer("Se quita este número de las alertas de WhatsApp.")) {
         const token = getToken();
         if (token) {
             try {
