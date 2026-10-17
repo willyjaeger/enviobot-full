@@ -1657,6 +1657,17 @@ table.stock-table tr:hover td {
 .pc-hero-titulo { font-size: 16px; font-weight: 700; color: var(--text); }
 .pc-hero-sub { font-size: 12.5px; color: var(--text2); margin-top: 2px; }
 .pc-segmentos { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; }
+.pc-seg { transition: opacity .15s, transform .15s; }
+.pc-segmentos { align-items: center; }
+.pc-segmentos-activa .pc-seg { opacity: .35; }
+.pc-segmentos-activa .pc-seg.pc-seg-activo { opacity: 1; filter: brightness(1.1) saturate(1.2); }
+.pc-segmentos { cursor: default; }
+#pc-tip { display: none; position: fixed; z-index: 9999; max-width: 380px; min-width: 220px; background: var(--card, #fff); color: var(--text); border: 1px solid var(--border, #ddd); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 10px 12px; font-size: 12.5px; pointer-events: none; }
+.pc-tip-titulo { font-weight: 700; margin-bottom: 6px; }
+.pc-tip-fila { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+.pc-tip-nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-tip-dato { white-space: nowrap; flex-shrink: 0; }
+.pc-tip-mas { margin-top: 4px; color: var(--text2); }
 .pc-leyenda { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12.5px; color: var(--text2); }
 .pc-click { cursor: pointer; }
 .pc-click:hover { color: var(--text); text-decoration: underline; }

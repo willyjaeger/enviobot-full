@@ -549,6 +549,63 @@ function seccionPanel(titulo, contenidoHtml) {
     return `<div><h3 class="pc-block-title">${titulo}</h3><div class="pc-lista">${contenidoHtml}</div></div>`;
 }
 
+// Detalle al pasar el mouse por la barra de estado: qué productos son y cuántas unidades mandar.
+let grupoBarraPanel = null;
+const TITULOS_SEGMENTO = {
+    urgentes: 'Urgentes: agregalos a la colecta',
+    pronto: 'Conviene mandar pronto',
+    deMas: 'Tienen de más: no mandes',
+    tranquilos: 'Tranquilos'
+};
+
+function mostrarDetalleSegmento(ev, grupo) {
+    if (!grupoBarraPanel) return;
+    const barra = ev.currentTarget.parentElement;
+    if (barra) barra.classList.add('pc-segmentos-activa');
+    ev.currentTarget.classList.add('pc-seg-activo');
+    let lista = (grupoBarraPanel[grupo] || []).slice();
+    lista.sort((a, b) => (a.days_left || 0) - (b.days_left || 0));
+    const max = 10;
+    const filas = lista.slice(0, max).map(it => {
+        const nombre = escapeHtml(it.title) + (it.variation_name ? ` (${escapeHtml(it.variation_name)})` : '');
+        let dato = '';
+        if (grupo === 'urgentes' || grupo === 'pronto') {
+            dato = it.sugerido_al_ingreso > 0 ? `<b>${escapeHtml(it.sugerido_al_ingreso)} u.</b>` : 'Revisar';
+        } else if (it.current_stock !== undefined) {
+            dato = `${escapeHtml(it.current_stock)} u.`;
+        }
+        return `<div class="pc-tip-fila"><span class="pc-tip-nombre">${nombre}</span><span class="pc-tip-dato">${dato}</span></div>`;
+    }).join('');
+    const resto = lista.length > max ? `<div class="pc-tip-mas">Y ${lista.length - max} más</div>` : '';
+    let tip = document.getElementById('pc-tip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'pc-tip';
+        document.body.appendChild(tip);
+    }
+    tip.innerHTML = `<div class="pc-tip-titulo">${TITULOS_SEGMENTO[grupo] || ''}</div>${filas}${resto}`;
+    tip.style.display = 'block';
+    moverDetalleSegmento(ev);
+}
+
+function moverDetalleSegmento(ev) {
+    const tip = document.getElementById('pc-tip');
+    if (!tip) return;
+    const ancho = tip.offsetWidth, alto = tip.offsetHeight;
+    let x = ev.clientX + 14, y = ev.clientY + 18;
+    if (x + ancho > window.innerWidth - 8) x = Math.max(8, ev.clientX - ancho - 14);
+    if (y + alto > window.innerHeight - 8) y = Math.max(8, ev.clientY - alto - 14);
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+}
+
+function ocultarDetalleSegmento() {
+    const tip = document.getElementById('pc-tip');
+    if (tip) tip.style.display = 'none';
+    document.querySelectorAll('.pc-segmentos-activa').forEach(e => e.classList.remove('pc-segmentos-activa'));
+    document.querySelectorAll('.pc-seg-activo').forEach(e => e.classList.remove('pc-seg-activo'));
+}
+
 function tarjetaEstadoGeneral(g, total) {
     const accion = g.urgentes.length + g.pronto.length;
     let icono, clase, titulo, sub;
@@ -565,13 +622,15 @@ function tarjetaEstadoGeneral(g, total) {
         titulo = `Todo bajo control: tus ${total} productos tienen stock suficiente`;
         sub = g.enColecta.length > 0 ? 'Contando lo que ya viaja en tu colecta.' : 'No hace falta armar ninguna colecta por ahora.';
     }
-    const seg = (n, color) => n > 0 ? `<div style="flex: ${n}; background: var(${color});"></div>` : '';
+    grupoBarraPanel = g;
+    const seg = (n, color, grupo, estado) => n > 0
+        ? `<div class="pc-seg${estado ? ' pc-click' : ''}" data-grupo="${grupo}" style="flex: ${n}; background: var(${color});"${estado ? ` onclick="irAEstado('${estado}')"` : ''} onmouseenter="mostrarDetalleSegmento(event, '${grupo}')" onmousemove="moverDetalleSegmento(event)" onmouseleave="ocultarDetalleSegmento()"></div>` : '';
     const dato = (n, color, texto, estado) => n > 0
         ? `<span class="pc-leyenda-item${estado ? ' pc-click' : ''}"${estado ? ` onclick="irAEstado('${estado}')"` : ''}><span style="color: var(${color});">●</span> ${escapeHtml(texto)}</span>` : '';
     return `<div class="pc-hero ${clase}">
         <div class="pc-hero-top"><span class="pc-hero-icono">${icono.replace('margin-right: 4px;', '')}</span>
             <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub}</div></div></div>
-        <div class="pc-segmentos">${seg(g.tranquilos.length, '--good')}${seg(g.pronto.length, '--warn')}${seg(g.urgentes.length, '--danger')}${seg(g.deMas.length, '--info')}</div>
+        <div class="pc-segmentos">${seg(g.tranquilos.length, '--good', 'tranquilos', 'ok')}${seg(g.pronto.length, '--warn', 'pronto', 'warning')}${seg(g.urgentes.length, '--danger', 'urgentes', 'critical')}${seg(g.deMas.length, '--info', 'deMas', '')}</div>
         <div class="pc-leyenda">
             ${dato(g.tranquilos.length, '--good', `${g.tranquilos.length} tranquilos`, 'ok')}
             ${dato(g.pronto.length, '--warn', `${g.pronto.length} conviene mandar pronto`, 'warning')}
