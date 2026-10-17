@@ -618,13 +618,17 @@ function tarjetaColecta(enColecta) {
     }
     const detalle = enColecta.length
         ? `<details class="pc-detalle"><summary>Ver los ${enColecta.length} productos</summary>${tablaProductosColecta(enColecta)}</details>` : '';
+    const idColecta = proximaColecta && Number(proximaColecta.id) > 0 ? Number(proximaColecta.id) : 0;
+    const botonColecta = (resto && idColecta)
+        ? `<button type="button" class="btn btn-sm" onclick="abrirModalEditarEnvio(${idColecta})">Editar colecta</button>`
+        : '<button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver detalle</button>';
     return `<div class="pc-banner ${clase}">
         <span class="pc-banner-icon">${iconoSvg('camion', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">${titulo}${codigo}</div>
             <div class="pc-banner-sub">${cuanto}${estado}${entra}</div>
         </div>
-        <button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver detalle</button>
+        ${botonColecta}
         ${detalle}
     </div>`;
 }

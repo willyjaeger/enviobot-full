@@ -1489,6 +1489,7 @@ def get_full_items():
         if prox and prox.get("pickup_date"):
             proxima_colecta = _proy.cuenta_regresiva(prox["pickup_date"], hora=hora_limite)
             proxima_colecta["codigo"] = prox.get("shipment_code")
+            proxima_colecta["id"] = prox.get("id")
 
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()

@@ -129,6 +129,15 @@ class TestPanelJS(unittest.TestCase):
         self.assertIn('faltan', out['html'])
         self.assertNotIn('pc-cerrada', out['html'])
 
+    def test_colecta_abierta_ofrece_editarla_y_cerrada_solo_verla(self):
+        it = _item(in_preparation_stock=10, total_incoming=10, cobertura_post_colecta=20)
+        abierta = dict(self._prox(), id=7)
+        self.assertIn('abrirModalEditarEnvio(7)', self._correr([it], abierta)['html'])
+        cerrada = dict(self._prox(abierta=False), id=7)
+        out = self._correr([it], cerrada)['html']
+        self.assertNotIn('abrirModalEditarEnvio', out)
+        self.assertIn('Ver detalle', out)
+
     def test_sin_colecta_armada_no_hay_tarjeta(self):
         out = self._correr([_item(status='critical', sugerido_al_ingreso=5)], None)
         self.assertNotIn('Tu colecta', out['html'])
