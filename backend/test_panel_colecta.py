@@ -142,6 +142,24 @@ class TestPanelJS(unittest.TestCase):
         self.assertIn('Faltan', out['html'])
 
 
+class TestEditarEnvioSinBultos(unittest.TestCase):
+    """Pedido de Guillermo (2026-10-16): en Editar envío no van Unid./Caja ni Bultos."""
+
+    def test_la_tabla_de_edicion_no_tiene_esas_columnas(self):
+        html = _leer('index.html')
+        self.assertIn('editarEnvioTbody', html)
+        self.assertNotIn('Unid. / Caja', html)
+        self.assertNotIn('>Bultos<', html)
+        self.assertNotIn('editarEnvioTotalBoxes', html)
+
+    def test_las_filas_ya_no_pintan_cajas_y_el_vacio_ocupa_las_5_columnas(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        fn = js[js.index('function renderizarItemsEdicion'):js.index('window.renderizarItemsEdicion')]
+        self.assertNotIn('editarItemCajas_', fn)
+        self.assertNotIn('onCambiarUnitsPerBoxEdicion', fn)
+        self.assertIn('colspan="5"', fn)
+
+
 class TestPanelEstatico(unittest.TestCase):
     def test_el_contenedor_esta_en_el_html_antes_de_la_tabla(self):
         html = _leer('index.html')

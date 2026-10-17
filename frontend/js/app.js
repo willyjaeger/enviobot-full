@@ -2493,7 +2493,7 @@ function renderizarItemsEdicion() {
     if (itemsEnEdicion.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" style="text-align: center; padding: 30px; color: var(--text2);">
+                <td colspan="5" style="text-align: center; padding: 30px; color: var(--text2);">
                     No hay productos en este envío. Podés sumar artículos con el buscador de arriba o desde las sugerencias de quiebre.
                 </td>
             </tr>
@@ -2534,14 +2534,6 @@ function renderizarItemsEdicion() {
                            oninput="onCambiarUnidadesEdicion(${idx}, this.value)" 
                            style="width: 80px; text-align: center; padding: 4px 6px; font-size: 13px; font-weight: 700; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
                     ${sugHintHtml}
-                </td>
-                <td style="padding: 8px 10px; text-align: center;">
-                    <input type="number" min="0" max="99999" value="${it.units_per_box || 0}" 
-                           oninput="onCambiarUnitsPerBoxEdicion(${idx}, this.value)" 
-                           style="width: 75px; text-align: center; padding: 4px 6px; font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
-                </td>
-                <td style="padding: 8px 10px; text-align: center; font-weight: 700; color: var(--good); font-size: 13px;" id="editarItemCajas_${idx}">
-                    ${it.box_count} cj.
                 </td>
                 <td style="padding: 8px 10px; text-align: center;">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="quitarItemDeEdicion(${idx})" title="Quitar del envío" style="padding: 2px 7px;">
