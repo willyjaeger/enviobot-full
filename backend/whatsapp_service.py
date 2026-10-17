@@ -565,6 +565,15 @@ def generar_vcard_contacto() -> str:
     org = cfg.get("vcard_org", "EnvioBot")
     titulo = cfg.get("vcard_title", "Alertas de Stock Full")
     tel = normalizar_telefono(cfg.get("business_phone", "+54 9 11 2859 4631"))
+    foto = ""
+    try:
+        import base64
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "contacto_logo.jpg"), "rb") as fh:
+            b64 = base64.b64encode(fh.read()).decode()
+        lineas = ["PHOTO;ENCODING=b;TYPE=JPEG:" + b64[:40]] + [" " + b64[i:i + 72] for i in range(40, len(b64), 72)]
+        foto = "\r\n".join(lineas) + "\r\n"
+    except Exception as e:
+        logger.warning(f"[WhatsApp] vCard sin logo: {e}")
     return (
         "BEGIN:VCARD\r\n"
         "VERSION:3.0\r\n"
@@ -572,6 +581,7 @@ def generar_vcard_contacto() -> str:
         f"N:;{nombre};;;\r\n"
         f"ORG:{org}\r\n"
         f"TITLE:{titulo}\r\n"
+        f"{foto}"
         f"TEL;TYPE=CELL,VOICE:+{tel}\r\n"
         "URL:https://enviobot.com.ar\r\n"
         "NOTE:Alertas de reposición y fecha límite de colecta en Mercado Envíos Full.\r\n"
