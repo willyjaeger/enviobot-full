@@ -593,8 +593,14 @@ let grupoBarraPanel = null;
 const TITULOS_SEGMENTO = {
     urgentes: 'Urgentes: agregalos a la colecta',
     pronto: 'Conviene mandar pronto',
-    deMas: 'Tienen de más: no mandes',
+    deMas: 'Tienen de más: no mandes más por ahora',
     tranquilos: 'Tranquilos'
+};
+
+const EXPLICACION_SEGMENTO = {
+    urgentes: 'Se quedan sin stock antes de que les entre mercadería. Los números son las unidades a mandar.',
+    pronto: 'Todavía hay stock, pero conviene sumarlos a la próxima colecta. Los números son las unidades a mandar.',
+    deMas: 'Entre lo que hay en Full y lo que ya viaja en tus colectas, alcanza para mucho más que tu objetivo. Los días dicen cuánto te dura.'
 };
 
 function mostrarDetalleSegmento(ev, grupo) {
@@ -603,15 +609,19 @@ function mostrarDetalleSegmento(ev, grupo) {
     if (barra) barra.classList.add('pc-segmentos-activa');
     ev.currentTarget.classList.add('pc-seg-activo');
     let lista = (grupoBarraPanel[grupo] || []).slice();
-    lista.sort((a, b) => (a.days_left || 0) - (b.days_left || 0));
+    if (grupo === 'deMas') lista.sort((a, b) => (b.covered_days_left || 0) - (a.covered_days_left || 0));
+    else lista.sort((a, b) => (a.days_left || 0) - (b.days_left || 0));
     const max = 10;
     const filas = lista.slice(0, max).map(it => {
         const nombre = escapeHtml(it.title) + (it.variation_name ? ` (${escapeHtml(it.variation_name)})` : '');
         let dato = '';
         if (grupo === 'urgentes' || grupo === 'pronto') {
             dato = it.sugerido_al_ingreso > 0 ? `<b>${escapeHtml(it.sugerido_al_ingreso)} u.</b>` : 'Revisar';
+        } else if (grupo === 'deMas') {
+            const enCamino = Math.max(0, (it.total_incoming || 0));
+            dato = `<b>${escapeHtml(Math.round(it.covered_days_left || 0))} días</b> <span class="pc-tip-sub">(${escapeHtml(it.current_stock || 0)} en Full + ${escapeHtml(enCamino)} en colectas)</span>`;
         } else if (it.current_stock !== undefined) {
-            dato = `${escapeHtml(it.current_stock)} u.`;
+            dato = `${escapeHtml(it.current_stock)} u. en Full`;
         }
         return `<div class="pc-tip-fila"><span class="pc-tip-nombre">${nombre}</span><span class="pc-tip-dato">${dato}</span></div>`;
     }).join('');
@@ -622,7 +632,8 @@ function mostrarDetalleSegmento(ev, grupo) {
         tip.id = 'pc-tip';
         document.body.appendChild(tip);
     }
-    tip.innerHTML = `<div class="pc-tip-titulo">${TITULOS_SEGMENTO[grupo] || ''}</div>${filas}${resto}`;
+    const explicacion = EXPLICACION_SEGMENTO[grupo] ? `<div class="pc-tip-expl">${EXPLICACION_SEGMENTO[grupo]}</div>` : '';
+    tip.innerHTML = `<div class="pc-tip-titulo">${TITULOS_SEGMENTO[grupo] || ''}</div>${explicacion}${filas}${resto}`;
     tip.style.display = 'block';
     moverDetalleSegmento(ev);
 }

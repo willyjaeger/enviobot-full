@@ -348,6 +348,33 @@ process.stdout.write(JSON.stringify({ r, html, texto }));
         self.assertIn('Falta cargarla en Mercado Libre', html)
         self.assertNotIn('Falta cargarla en Mercado Libre', self._correr([_item()], None, [self._col(4, 11, True)])['html'])
 
+    def test_el_detalle_de_tienen_de_mas_explica_y_muestra_dias_no_stock_en_cero(self):
+        harness = r"""
+const vm = require('vm');
+const tip = { style: {}, innerHTML: '' };
+const barra = { classList: { add() {} } };
+const ctx = { document: { getElementById: id => id === 'pc-tip' ? tip : null, createElement: () => tip, body: { appendChild() {} },
+              querySelectorAll: () => [] }, setInterval: () => 1, Date, Math, String, console,
+              window: { innerWidth: 1000, innerHeight: 800 } };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('grupoBarraPanel = { deMas: ' + process.argv[2] + ' };', ctx);
+const ev = { currentTarget: { parentElement: barra, classList: { add() {} } }, clientX: 10, clientY: 10 };
+ctx.__ev = ev;
+vm.runInContext('mostrarDetalleSegmento(__ev, "deMas")', ctx);
+process.stdout.write(tip.innerHTML);
+"""
+        items = [{'title': 'Poco', 'current_stock': 50, 'total_incoming': 0, 'covered_days_left': 60},
+                 {'title': 'Nueces', 'current_stock': 0, 'total_incoming': 300, 'covered_days_left': 267}]
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(items)], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        html = r.stdout
+        self.assertIn('Tienen de más: no mandes más por ahora', html)
+        self.assertIn('alcanza para mucho más que tu objetivo', html)
+        self.assertIn('267 días', html)
+        self.assertIn('0 en Full + 300 en colectas', html)
+        self.assertLess(html.index('Nueces'), html.index('Poco'))   # primero el que más le sobra
+
     def test_el_mensaje_de_mover_avisa_que_hay_que_cambiar_ml(self):
         js = _leer(os.path.join('js', 'app.js'))
         self.assertIn('Después tenés que hacer el mismo cambio en Mercado Libre', js)

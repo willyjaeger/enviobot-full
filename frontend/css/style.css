@@ -1703,7 +1703,7 @@ table.stock-table tr:hover td {
 .pc-segmentos-activa .pc-seg { opacity: .35; }
 .pc-segmentos-activa .pc-seg.pc-seg-activo { opacity: 1; filter: brightness(1.1) saturate(1.2); }
 .pc-segmentos { cursor: default; }
-#pc-tip { display: none; position: fixed; z-index: 9999; max-width: 380px; min-width: 220px; background: var(--card, #fff); color: var(--text); border: 1px solid var(--border, #ddd); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 10px 12px; font-size: 12.5px; pointer-events: none; }
+#pc-tip { display: none; position: fixed; z-index: 9999; max-width: 480px; min-width: 220px; background: var(--card, #fff); color: var(--text); border: 1px solid var(--border, #ddd); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 10px 12px; font-size: 12.5px; pointer-events: none; }
 .pc-tip-titulo { font-weight: 700; margin-bottom: 6px; }
 .pc-tip-fila { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
 .pc-tip-nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1778,3 +1778,5 @@ table.stock-table tr:hover td {
 .pc-imp-cabecera { font-weight: 700; color: var(--text); margin-bottom: 6px; }
 .pc-imp-bloque { margin-bottom: 8px; }
 .pc-imp-acciones { display: flex; gap: 8px; margin-top: 10px; }
+.pc-tip-expl { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+.pc-tip-sub { color: var(--text2); font-size: 11.5px; }
