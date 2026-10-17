@@ -40,7 +40,7 @@ MIN_DIAS_BASE = 10        # idem para el período de comparación
 UMBRAL_BAJA = 0.40        # cae 40 % o más
 UMBRAL_SUBA = 0.50        # sube 50 % o más
 MIN_UNIDADES = 5          # menos que esto en una semana es ruido, no tendencia
-REPETIR_DIAS = 7          # cuánto tiempo se sigue un aviso en el panel
+REPETIR_DIAS = 60         # cuánto tiempo se sigue un aviso: mientras siga abierto no se repite ni en el panel ni por WhatsApp
 MAX_PRODUCTOS_WA = 8
 ESPERA_MAX_DIAS = 5       # un aviso que no pudo salir en 5 días (fin de semana largo incluido) ya es viejo
 
