@@ -38,6 +38,7 @@ UMBRAL_SUBA = 0.50        # sube 50 % o más
 MIN_UNIDADES = 5          # menos que esto en una semana es ruido, no tendencia
 REPETIR_DIAS = 7          # no se vuelve a avisar del mismo producto y sentido antes de una semana
 MAX_PRODUCTOS_WA = 8
+ESPERA_MAX_DIAS = 5       # un aviso que no pudo salir en 5 días (fin de semana largo incluido) ya es viejo
 
 
 def evaluar(v7, v30, sin7=0, sin30=0, stock=1):
@@ -170,6 +171,20 @@ def texto_panel(registro):
         return None
 
 
+def _desde_registro(clave, registro):
+    """Reconstruye el cambio a partir de lo guardado en el panel (clave 'item:variacion:sentido')."""
+    a = texto_panel(registro)
+    if not a:
+        return None
+    try:
+        d = json.loads(registro)
+        item, var, _ = clave.split(":", 2)
+        return {"sentido": d["s"], "antes": d["a"], "ahora": d["n"], "pct": d.get("p"), "item_id": item,
+                "variation_id": var, "sku": d.get("sku", ""), "titulo": d.get("t", ""), "stock": d.get("st")}
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 def _hash_corto(clave):
     return hashlib.sha1(clave.encode("utf-8")).hexdigest()[:10]
 
@@ -179,8 +194,6 @@ def procesar_usuario(conn, user_id, ahora=None):
     res = {"user_id": user_id, "detectados": 0, "avisos_panel": 0, "mensajes_whatsapp": 0}
     cambios = detectar(conn, user_id)
     res["detectados"] = len(cambios)
-    if not cambios:
-        return res
     horas = REPETIR_DIAS * 24
 
     # 1) Ventana de avisos del panel: se anota apenas se detecta, no depende del horario.
@@ -189,12 +202,20 @@ def procesar_usuario(conn, user_id, ahora=None):
             alerts_engine.registrar_alerta_en_log(conn, user_id, _clave(c), TIPO_ALERTA, _registro_panel(c), channel="panel")
             res["avisos_panel"] += 1
 
-    # 2) WhatsApp: solo a quien está dentro de su horario; lo que no sale hoy sale en la próxima corrida habilitada.
+    # 2) WhatsApp: se manda desde lo GUARDADO en el panel, no de lo recalculado. Si se detectó fuera de
+    # horario, queda esperando y sale en el primer horario habilitado de cada destinatario, aunque para
+    # entonces el ritmo ya se haya normalizado. Pasados ESPERA_MAX_DIAS sin poder mandarse, se descarta por viejo.
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
         settings = cur.fetchone() or {"notify_whatsapp": True}
-    if not settings.get("notify_whatsapp", True) or not obtener_configuracion_whatsapp().get("enabled", True):
+        cur.execute("""
+            SELECT item_id, message FROM alert_logs
+            WHERE user_id=%s AND alert_type=%s AND channel='panel' AND sent_at >= %s
+        """, (user_id, TIPO_ALERTA, datetime.utcnow() - timedelta(days=ESPERA_MAX_DIAS)))
+        guardados = cur.fetchall()
+    if not guardados or not settings.get("notify_whatsapp", True) or not obtener_configuracion_whatsapp().get("enabled", True):
         return res
+    cambios = [c for c in (_desde_registro(g["item_id"], g["message"]) for g in guardados) if c]
     from aviso_limite_colecta import _destinatarios
     destinos = _destinatarios(conn, user_id, settings)
     for tel, horario in destinos.items():

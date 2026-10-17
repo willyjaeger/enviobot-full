@@ -62,6 +62,12 @@ class TestTextos(unittest.TestCase):
         self.assertIn("bajó", a["detalle"])
         self.assertLess(len(c._registro_panel(self.CAMBIO)), 250)
 
+    def test_lo_guardado_se_reconstruye_para_mandar_despues(self):
+        d = c._desde_registro(c._clave(self.CAMBIO), c._registro_panel(self.CAMBIO))
+        self.assertEqual((d["item_id"], d["sentido"], d["sku"]), ("MLA123", "baja", "ABC-1"))
+        self.assertEqual(c._clave(d), c._clave(self.CAMBIO))
+        self.assertIsNone(c._desde_registro("x:y:baja", "roto"))
+
     def test_panel_con_registro_roto_se_ignora(self):
         self.assertIsNone(c.texto_panel("no es json"))
 
