@@ -23,6 +23,7 @@
     --danger:                #ff5252;
     --danger-bg:             rgba(255, 82, 82, 0.14);
     --danger-border:         rgba(255, 82, 82, 0.40);
+    --info:                  #5b8def;
     --btn-secondary-bg:      #3a3e4a;
     --btn-secondary-hover:   #474c5a;
     --logo-bg:               var(--surface);
@@ -39,6 +40,7 @@
     --border:                rgba(15, 17, 23, 0.12);
     --border-hover:          rgba(15, 17, 23, 0.25);
     --accent-text:           #b45309;
+    --info:                  #2f6fe0;
     --text:                  #1a1c22;
     --text2:                 #676b78;
     --btn-secondary-bg:      #dde1e7;
@@ -1622,9 +1624,9 @@ table.stock-table tr:hover td {
 /* ── Panel de colecta: cuenta regresiva, colecta en preparación y radar ───────── */
 .pc-wrap { margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; }
 .pc-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 16px; }
-.pc-banner.pc-cerrada { border-color: var(--danger-border); background: var(--danger-bg); }
+.pc-banner.pc-cerrada { border-color: var(--border); background: var(--surface); }
 .pc-banner-icon { color: var(--accent); display: flex; flex-shrink: 0; }
-.pc-banner.pc-cerrada .pc-banner-icon { color: var(--danger); }
+.pc-banner.pc-cerrada .pc-banner-icon { color: var(--text2); }
 .pc-banner-text { flex: 1; min-width: 220px; font-size: 13px; color: var(--text); }
 .pc-banner-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
 .pc-block-title { font-size: 12px; font-weight: 700; color: var(--text2); letter-spacing: 0.04em; margin: 0 0 6px 2px; text-transform: uppercase; }
@@ -1641,3 +1643,41 @@ table.stock-table tr:hover td {
 .pc-mas a { color: var(--accent); cursor: pointer; text-decoration: underline; }
 .pc-exceso { color: var(--text2); font-weight: 600; }
 .pc-banner.pc-urgente { border-color: var(--warn-border); background: var(--warn-bg); }
+
+/* ── Panel de inicio amigable ──────────────────────────────────────────────────── */
+.status-bar[hidden] { display: none; }
+.pc-toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.pc-btn-grande { display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; font-size: 14px; font-weight: 700; }
+.pc-hero { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.pc-hero-top { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.pc-hero-icono { display: flex; flex-shrink: 0; color: var(--good); }
+.pc-hero-pronto .pc-hero-icono { color: var(--warn); }
+.pc-hero-urgente { border-color: var(--danger-border); }
+.pc-hero-urgente .pc-hero-icono { color: var(--danger); }
+.pc-hero-titulo { font-size: 16px; font-weight: 700; color: var(--text); }
+.pc-hero-sub { font-size: 12.5px; color: var(--text2); margin-top: 2px; }
+.pc-segmentos { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; }
+.pc-leyenda { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12.5px; color: var(--text2); }
+.pc-click { cursor: pointer; }
+.pc-click:hover { color: var(--text); text-decoration: underline; }
+.pc-banner-titulo { font-weight: 700; }
+.pc-sku-inline { font-family: monospace; font-size: 11px; color: var(--text2); margin-left: 6px; }
+.pc-detalle { flex-basis: 100%; margin-top: 4px; }
+.pc-detalle summary { cursor: pointer; font-size: 12.5px; color: var(--accent); }
+.pc-detalle .pc-table { margin-top: 8px; }
+.pc-lista { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 2px 16px; }
+.pc-lista .pc-vacio { border: none; padding: 12px 0; }
+.pc-fila { padding: 11px 0; border-bottom: 1px solid var(--border); }
+.pc-fila:last-of-type { border-bottom: none; }
+.pc-fila-top { display: flex; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; align-items: baseline; }
+.pc-fila-nombre { color: var(--text); font-weight: 600; display: inline-flex; align-items: center; }
+.pc-bar { position: relative; height: 10px; background: var(--surf2); border-radius: 5px; margin: 8px 0 5px; overflow: hidden; }
+.pc-bar-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 5px; }
+.pc-bar-meta { position: absolute; left: 50%; top: 0; width: 2px; height: 100%; background: var(--text); opacity: 0.85; }
+.pc-fill-good { background: var(--good); }
+.pc-fill-warn { background: var(--warn); }
+.pc-fill-danger { background: var(--danger); }
+.pc-fill-info { background: var(--info); }
+.pc-fila-nota { font-size: 12px; color: var(--text2); }
+.pc-info { color: var(--info); font-weight: 600; }
+.pc-lista .pc-mas { padding: 4px 0 10px; }

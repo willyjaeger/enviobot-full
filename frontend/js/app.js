@@ -24,7 +24,9 @@ const ICONOS_SVG = {
     reloj: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     bombilla: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/>',
     radar: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
-    capas: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>'
+    capas: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+    escudo: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
+    camion: '<rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>'
 };
 
 function iconoSvg(nombre, tam = 14) {
@@ -503,8 +505,128 @@ function nombreItemPanel(it) {
     return `${escapeHtml(it.title)}${variacion}<span class="pc-sku">${it.sku ? escapeHtml(it.sku) : ''}</span>`;
 }
 
-function tituloColectaEnPreparacion() {
-    return proximaColecta ? `En la colecta del ${nombreDiaColecta(proximaColecta.fecha_retiro)}` : 'En la colecta en preparación';
+// ── Panel de inicio: estado general, colecta, qué hacer hoy ─────────────────────────────
+// Reparte los productos en grupos que el usuario entiende sin explicación:
+//  - urgentes / conviene mandar pronto: faltan y todavía no están en ninguna colecta
+//  - tienen de más: cobertura por encima del umbral de exceso
+//  - tranquilos: todo lo demás (incluye lo que ya viaja en una colecta)
+function clasificarItemsPanel(items) {
+    const g = { urgentes: [], pronto: [], deMas: [], tranquilos: [], enColecta: [] };
+    items.forEach(it => {
+        const cubierto = (it.total_incoming || 0) > 0;
+        if (it.sobrestock) g.deMas.push(it);
+        else if (!cubierto && (it.status === 'critical' || it.status === 'out_of_stock')) g.urgentes.push(it);
+        else if (!cubierto && it.status === 'warning') g.pronto.push(it);
+        else g.tranquilos.push(it);
+        if ((it.in_preparation_stock || 0) > 0) g.enColecta.push(it);
+    });
+    return g;
+}
+
+function pluralizar(n, singular, plural) {
+    return `${n} ${n === 1 ? singular : plural}`;
+}
+
+// Barra de días de cobertura: la escala llega al doble del objetivo y la raya blanca marca el objetivo.
+function barraCobertura(dias, objetivo, clase) {
+    const escala = Math.max(1, (objetivo || 30) * 2);
+    const pct = Math.max(0, Math.min(100, ((dias || 0) / escala) * 100));
+    return `<div class="pc-bar"><div class="pc-bar-fill ${clase}" style="width: ${pct.toFixed(1)}%"></div><div class="pc-bar-meta"></div></div>`;
+}
+
+function filaConBarra(it, opciones) {
+    return `<div class="pc-fila">
+        <div class="pc-fila-top">
+            <span class="pc-fila-nombre">${opciones.icono}${escapeHtml(it.title)}${it.variation_name ? ` (${escapeHtml(it.variation_name)})` : ''}</span>
+            <span class="${opciones.claseDerecha || 'pc-accion'}">${opciones.derecha}</span>
+        </div>
+        ${barraCobertura(opciones.dias, it.target_stock_days, opciones.claseBarra)}
+        <div class="pc-fila-nota">${opciones.nota}</div>
+    </div>`;
+}
+
+function seccionPanel(titulo, contenidoHtml) {
+    return `<div><h3 class="pc-block-title">${titulo}</h3><div class="pc-lista">${contenidoHtml}</div></div>`;
+}
+
+function tarjetaEstadoGeneral(g, total) {
+    const accion = g.urgentes.length + g.pronto.length;
+    let icono, clase, titulo, sub;
+    if (g.urgentes.length > 0) {
+        icono = iconoSvg('alerta', 28); clase = 'pc-hero-urgente';
+        titulo = `Atención: ${pluralizar(g.urgentes.length, 'producto está', 'productos están')} por quedarse sin stock y todavía no ${g.urgentes.length === 1 ? 'está' : 'están'} en una colecta`;
+        sub = 'Armá una colecta con ellos para no quebrar. Abajo te digo cuántas unidades mandar.';
+    } else if (g.pronto.length > 0) {
+        icono = iconoSvg('reloj', 28); clase = 'pc-hero-pronto';
+        titulo = `Vas bien: ${total - accion} de tus ${total} productos están cubiertos`;
+        sub = `${pluralizar(g.pronto.length, 'producto conviene', 'productos convienen')} mandarlo en tu próxima colecta. Todavía hay tiempo.`;
+    } else {
+        icono = iconoSvg('escudo', 28); clase = 'pc-hero-ok';
+        titulo = `Todo bajo control: tus ${total} productos tienen stock suficiente`;
+        sub = g.enColecta.length > 0 ? 'Contando lo que ya viaja en tu colecta.' : 'No hace falta armar ninguna colecta por ahora.';
+    }
+    const seg = (n, color) => n > 0 ? `<div style="flex: ${n}; background: var(${color});"></div>` : '';
+    const dato = (n, color, texto, estado) => n > 0
+        ? `<span class="pc-leyenda-item${estado ? ' pc-click' : ''}"${estado ? ` onclick="irAEstado('${estado}')"` : ''}><span style="color: var(${color});">●</span> ${escapeHtml(texto)}</span>` : '';
+    return `<div class="pc-hero ${clase}">
+        <div class="pc-hero-top"><span class="pc-hero-icono">${icono.replace('margin-right: 4px;', '')}</span>
+            <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub}</div></div></div>
+        <div class="pc-segmentos">${seg(g.tranquilos.length, '--good')}${seg(g.pronto.length, '--warn')}${seg(g.urgentes.length, '--danger')}${seg(g.deMas.length, '--info')}</div>
+        <div class="pc-leyenda">
+            ${dato(g.tranquilos.length, '--good', `${g.tranquilos.length} tranquilos`, 'ok')}
+            ${dato(g.pronto.length, '--warn', `${g.pronto.length} conviene mandar pronto`, 'warning')}
+            ${dato(g.urgentes.length, '--danger', `${g.urgentes.length} urgentes`, 'critical')}
+            ${dato(g.deMas.length, '--info', `${g.deMas.length} tienen de más`, '')}
+        </div></div>`;
+}
+
+function tablaProductosColecta(enColecta) {
+    const hayGalpon = enColecta.some(it => it.prep_item_id && it.prep_status);
+    const filas = enColecta.map(it => {
+        const celdaGalpon = hayGalpon ? `<td>${it.prep_item_id ? selectorGalpon(it) : ''}</td>` : '';
+        const cob = it.cobertura_post_colecta;
+        return `<tr>
+            <td>${nombreItemPanel(it)}</td>
+            <td class="pc-num">${escapeHtml(it.in_preparation_stock)} u.</td>
+            ${celdaGalpon}
+            <td class="pc-num">${formatearFechaCorta(it.fecha_ingreso)}</td>
+            <td class="pc-num">${cob === null ? '-' : `${Math.round(cob)} días`}</td>
+        </tr>`;
+    }).join('');
+    return `<table class="pc-table">
+        <thead><tr><th>Producto</th><th class="pc-num">Unidades</th>${hayGalpon ? '<th>Galpón</th>' : ''}<th class="pc-num">Ingresa</th><th class="pc-num">Cubre al ingresar</th></tr></thead>
+        <tbody>${filas}</tbody></table>`;
+}
+
+function tarjetaColecta(enColecta) {
+    if (!proximaColecta && enColecta.length === 0) return '';
+    const resto = proximaColecta ? textoCuentaRegresiva(proximaColecta.limite_edicion) : null;
+    const ms = proximaColecta ? new Date(proximaColecta.limite_edicion).getTime() - Date.now() : 0;
+    const clase = proximaColecta ? (!resto ? 'pc-cerrada' : (ms <= 3600000 ? 'pc-urgente' : '')) : '';
+    const unidades = enColecta.reduce((a, it) => a + (it.in_preparation_stock || 0), 0);
+    const ingresos = enColecta.map(it => it.fecha_ingreso).filter(Boolean).sort();
+    const entra = ingresos.length ? ` Entra a Full el ${escapeHtml(nombreDiaColecta(ingresos[ingresos.length - 1]))}.` : '';
+    const titulo = proximaColecta ? `Tu colecta del ${escapeHtml(nombreDiaColecta(proximaColecta.fecha_retiro))}` : 'Tenés una colecta en preparación';
+    const codigo = proximaColecta && proximaColecta.codigo ? ` <span class="pc-sku-inline">${escapeHtml(proximaColecta.codigo)}</span>` : '';
+    const cuanto = enColecta.length ? `${pluralizar(enColecta.length, 'producto', 'productos')}, ${unidades.toLocaleString('es-AR')} unidades. ` : '';
+    let estado = '';
+    if (proximaColecta) {
+        const lim = textoLimiteEdicion(proximaColecta.limite_edicion);
+        estado = resto
+            ? `Podés modificarla hasta el ${escapeHtml(lim)} (faltan ${escapeHtml(resto)}).`
+            : `Ya no se puede cambiar: cerró el ${escapeHtml(lim)}.`;
+    }
+    const detalle = enColecta.length
+        ? `<details class="pc-detalle"><summary>Ver los ${enColecta.length} productos</summary>${tablaProductosColecta(enColecta)}</details>` : '';
+    return `<div class="pc-banner ${clase}">
+        <span class="pc-banner-icon">${iconoSvg('camion', 24).replace('margin-right: 4px;', '')}</span>
+        <div class="pc-banner-text">
+            <div class="pc-banner-titulo">${titulo}${codigo}</div>
+            <div class="pc-banner-sub">${cuanto}${estado}${entra}</div>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver detalle</button>
+        ${detalle}
+    </div>`;
 }
 
 function renderizarPanelColecta() {
@@ -514,120 +636,62 @@ function renderizarPanelColecta() {
         cont.style.display = 'none';
         return;
     }
+    const g = clasificarItemsPanel(itemsData);
+    const abierta = proximaColecta ? !!textoCuentaRegresiva(proximaColecta.limite_edicion) : false;
+    const maxFilas = 8;
 
-    // Banner con el límite para modificar la colecta (día anterior al retiro, 9:40 hora de Buenos Aires)
-    let banner = '';
-    if (proximaColecta) {
-        const resto = textoCuentaRegresiva(proximaColecta.limite_edicion);
-        const msRestantes = new Date(proximaColecta.limite_edicion).getTime() - Date.now();
-        const claseBanner = !resto ? 'pc-cerrada' : (msRestantes <= 3600000 ? 'pc-urgente' : '');
-        const limTxt = textoLimiteEdicion(proximaColecta.limite_edicion);
-        const codigo = proximaColecta.codigo ? ` (${escapeHtml(proximaColecta.codigo)})` : '';
-        banner = `
-            <div class="pc-banner ${claseBanner}">
-                <span class="pc-banner-icon">${iconoSvg('reloj', 22).replace('margin-right: 4px;', '')}</span>
-                <div class="pc-banner-text">
-                    <div>Colecta del ${escapeHtml(nombreDiaColecta(proximaColecta.fecha_retiro))}${codigo}. Podés modificarla hasta el ${escapeHtml(limTxt)}.</div>
-                    <div class="pc-banner-sub">${resto ? `Faltan ${escapeHtml(resto)} para cambiar unidades.` : 'Ya pasó el límite: la colecta no se puede modificar.'}</div>
-                </div>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver colecta</button>
-            </div>`;
+    // Qué hacer hoy: faltan y todavía no están en una colecta (urgentes primero)
+    const hacer = g.urgentes.slice().sort((a, b) => (a.days_left || 0) - (b.days_left || 0))
+        .map(it => ({ it, urgente: true }))
+        .concat(g.pronto.slice().sort((a, b) => (a.days_left || 0) - (b.days_left || 0)).map(it => ({ it, urgente: false })));
+    let htmlHacer;
+    if (hacer.length === 0) {
+        htmlHacer = '<div class="pc-vacio">Hoy no tenés nada pendiente.</div>';
+    } else {
+        htmlHacer = hacer.slice(0, maxFilas).map(({ it, urgente }) => filaConBarra(it, {
+            icono: iconoSvg(urgente ? 'alerta' : 'reloj', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
+            derecha: it.sugerido_al_ingreso > 0 ? `Mandar ${escapeHtml(it.sugerido_al_ingreso)} u. en la próxima colecta` : 'Revisar',
+            dias: it.current_stock > 0 ? it.days_left : 0,
+            claseBarra: urgente ? 'pc-fill-danger' : 'pc-fill-warn',
+            nota: it.current_stock > 0
+                ? `Te alcanza para ${Math.round(it.days_left || 0)} ${Math.round(it.days_left || 0) === 1 ? 'día' : 'días'}. Objetivo: ${escapeHtml(it.target_stock_days)} días.`
+                : `Sin stock hoy. Objetivo: ${escapeHtml(it.target_stock_days)} días.`
+        })).join('');
+        if (hacer.length > maxFilas) {
+            htmlHacer += `<div class="pc-mas">Y ${hacer.length - maxFilas} más. <a onclick="irAEstado('action_required')">Verlos en la lista completa</a></div>`;
+        }
     }
 
-    // Bloque 1: lo que ya está en una colecta en preparación
-    const enColecta = itemsData.filter(it => (it.in_preparation_stock || 0) > 0);
-    const hayGalpon = enColecta.some(it => it.prep_item_id && it.prep_status);
-    let bloqueColecta = '';
-    if (enColecta.length > 0) {
-        const filas = enColecta.map(it => {
-            const celdaGalpon = hayGalpon
-                ? `<td>${it.prep_item_id ? selectorGalpon(it) : ''}</td>` : '';
-            const cob = it.cobertura_post_colecta;
-            const cobTxt = cob === null ? '-' : `${Math.round(cob)} días`;
-            const aviso = it.aviso_ajuste_units
-                ? `<span class="pc-aviso">${iconoSvg('bombilla', 13)}Subió la venta: con ${escapeHtml(it.aviso_ajuste_units)} u. cubrís ${escapeHtml(it.target_stock_days)} días</span>`
-                : '';
-            return `<tr>
-                <td>${nombreItemPanel(it)}${aviso}</td>
-                <td class="pc-num">${escapeHtml(it.in_preparation_stock)} u.</td>
-                ${celdaGalpon}
-                <td class="pc-num">${formatearFechaCorta(it.fecha_ingreso)}</td>
-                <td class="pc-num">${cobTxt}</td>
-            </tr>`;
-        }).join('');
-        bloqueColecta = `
-            <div>
-                <h3 class="pc-block-title">${tituloColectaEnPreparacion()} (${enColecta.length})</h3>
-                <table class="pc-table">
-                    <thead><tr><th>Producto</th><th class="pc-num">Unidades</th>${hayGalpon ? '<th>Galpón</th>' : ''}<th class="pc-num">Ingresa</th><th class="pc-num">Cubre al ingresar</th></tr></thead>
-                    <tbody>${filas}</tbody>
-                </table>
-            </div>`;
-    }
+    // Ya en la colecta, pero conviene ajustar
+    const cortos = g.enColecta.filter(it => it.aviso_ajuste_units);
+    const htmlAjustar = cortos.length === 0 ? '' : seccionPanel(
+        'Ya en tu colecta, pero conviene ajustar',
+        cortos.map(it => filaConBarra(it, {
+            icono: iconoSvg('bombilla', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
+            derecha: `Con ${escapeHtml(it.in_preparation_stock)} u. cubrís ${Math.round(it.cobertura_post_colecta || 0)} días: convendría ${escapeHtml(it.aviso_ajuste_units)}`,
+            dias: it.cobertura_post_colecta,
+            claseBarra: 'pc-fill-good',
+            nota: abierta ? 'Todavía podés ajustarlo.' : 'Esta colecta ya no se puede cambiar: ajustalo en la siguiente.'
+        })).join(''));
 
-    // Bloque 2: radar de lo que todavía no está en ninguna colecta y pide acción
-    const radar = itemsData
-        .filter(it => (it.total_incoming || 0) === 0 && ['warning', 'critical', 'out_of_stock'].includes(it.status))
-        .sort((a, b) => (b.sugerido_al_ingreso || 0) - (a.sugerido_al_ingreso || 0));
-    const maxRadar = 8;
-    let bloqueRadar = '';
-    if (radar.length > 0) {
-        const filas = radar.slice(0, maxRadar).map(it => {
-            const alIngreso = it.stock_al_ingreso === null ? '-' : `${Math.round(it.stock_al_ingreso)} u.`;
-            return `<tr>
-                <td>${nombreItemPanel(it)}</td>
-                <td class="pc-num">${escapeHtml(it.current_stock)} u.</td>
-                <td class="pc-num">${alIngreso}</td>
-                <td class="pc-num pc-accion">${it.sugerido_al_ingreso > 0 ? `Enviar ${escapeHtml(it.sugerido_al_ingreso)} u.` : '-'}</td>
-            </tr>`;
-        }).join('');
-        const mas = radar.length > maxRadar
-            ? `<div class="pc-mas">Y ${radar.length - maxRadar} más. <a onclick="irAEstado('action_required')">Verlos en la tabla</a></div>` : '';
-        bloqueRadar = `
-            <div>
-                <h3 class="pc-block-title">${iconoSvg('radar', 13)}Por planificar (${radar.length})</h3>
-                <div class="pc-mas" style="margin: 0 2px 6px;">Todavía no están en ninguna colecta.</div>
-                <table class="pc-table">
-                    <thead><tr><th>Producto</th><th class="pc-num">Hoy en Full</th><th class="pc-num">Al ingreso</th><th class="pc-num">Sugerido</th></tr></thead>
-                    <tbody>${filas}</tbody>
-                </table>
-                ${mas}
-            </div>`;
-    }
+    // Tienen de más
+    const deMas = g.deMas.slice().sort((a, b) => (b.covered_days_left || 0) - (a.covered_days_left || 0));
+    const htmlDeMas = deMas.length === 0 ? '' : seccionPanel(
+        'Tienen de más (no mandes más por ahora)',
+        deMas.slice(0, 6).map(it => filaConBarra(it, {
+            icono: iconoSvg('capas', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
+            derecha: `Tenés para ${Math.round(it.covered_days_left || 0)} días`,
+            claseDerecha: 'pc-info',
+            dias: it.covered_days_left,
+            claseBarra: 'pc-fill-info',
+            nota: `Objetivo: ${escapeHtml(it.target_stock_days)} días.`
+        })).join('') + (deMas.length > 6 ? `<div class="pc-mas">Y ${deMas.length - 6} más.</div>` : ''));
 
-    // Bloque 3: exceso de stock (más cobertura que el umbral): no conviene mandar más
-    const exceso = itemsData
-        .filter(it => it.sobrestock)
-        .sort((a, b) => (b.covered_days_left || 0) - (a.covered_days_left || 0));
-    let bloqueExceso = '';
-    if (exceso.length > 0) {
-        const filas = exceso.slice(0, maxRadar).map(it => {
-            const enCamino = (it.total_incoming || 0) > 0 ? ` + ${escapeHtml(it.total_incoming)} en camino` : '';
-            const umbral = it.umbral_sobrestock ? ` (objetivo ${escapeHtml(it.target_stock_days)})` : '';
-            return `<tr>
-                <td>${nombreItemPanel(it)}</td>
-                <td class="pc-num">${escapeHtml(it.current_stock)} u.${enCamino}</td>
-                <td class="pc-num pc-exceso">${Math.round(it.covered_days_left || 0)} días${umbral}</td>
-            </tr>`;
-        }).join('');
-        const mas = exceso.length > maxRadar ? `<div class="pc-mas">Y ${exceso.length - maxRadar} más.</div>` : '';
-        bloqueExceso = `
-            <div>
-                <h3 class="pc-block-title">${iconoSvg('capas', 13)}Con exceso de stock (${exceso.length})</h3>
-                <table class="pc-table">
-                    <thead><tr><th>Producto</th><th class="pc-num">Stock</th><th class="pc-num">Cobertura</th></tr></thead>
-                    <tbody>${filas}</tbody>
-                </table>
-                <div class="pc-mas">No conviene mandar más de estos hasta que baje la cobertura.</div>
-                ${mas}
-            </div>`;
-    }
-
-    if (!banner && !bloqueColecta && !bloqueRadar && !bloqueExceso) {
-        cont.style.display = 'none';
-        return;
-    }
-    cont.innerHTML = banner + bloqueColecta + bloqueRadar + bloqueExceso;
+    cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length)
+        + tarjetaColecta(g.enColecta)
+        + seccionPanel('Qué hacer hoy', htmlHacer)
+        + htmlAjustar
+        + htmlDeMas;
     cont.style.display = 'flex';
 
     // La cuenta regresiva se refresca sola cada minuto.
