@@ -3,6 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script>
+        // Teléfonos: vista vertical con tortas. "?escritorio=1" fuerza el panel completo en esta sesión.
+        (function () {
+            try {
+                if (location.search.indexOf('escritorio=1') !== -1) sessionStorage.setItem('enviobot_escritorio', '1');
+                if (window.innerWidth <= 700 && !sessionStorage.getItem('enviobot_escritorio')) location.replace('movil.html');
+            } catch (e) {}
+        })();
+    </script>
     <title>EnvioBot Full · Control de Stock</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#111318">

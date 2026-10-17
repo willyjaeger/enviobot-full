@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>EnvioBot Full</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#111318">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="icon" type="image/png" href="img/icon.png">
+    <link rel="apple-touch-icon" href="img/icon.png">
+    <link rel="stylesheet" href="css/movil.css?v=20261017_1">
+</head>
+<body>
+    <header class="top">
+        <div class="brand">
+            <img src="img/icon.png" alt="" class="brand-logo">
+            <div>
+                <div class="brand-name">EnvioBot Full</div>
+                <div class="brand-sub" id="subtitulo">Cargando...</div>
+            </div>
+        </div>
+        <button class="icon-btn" id="btnRefrescar" aria-label="Actualizar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+    </header>
+
+    <main id="vista"></main>
+
+    <nav class="tabbar" id="tabbar">
+        <button data-tab="resumen" class="activa">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+            <span>Resumen</span>
+        </button>
+        <button data-tab="productos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            <span>Productos</span>
+        </button>
+        <button data-tab="colecta">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            <span>Colecta</span>
+        </button>
+        <button data-tab="mas">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+            <span>Más</span>
+        </button>
+    </nav>
+
+    <div class="sheet-fondo" id="sheetFondo"></div>
+    <section class="sheet" id="sheet" aria-modal="true" role="dialog"></section>
+    <div class="toast" id="toast"></div>
+
+    <script src="js/movil.js?v=20261017_1"></script>
+</body>
+</html>
