@@ -106,6 +106,8 @@ class TestPanelJS(unittest.TestCase):
         out = self._correr([_item(status='critical', sugerido_al_ingreso=5)], prox)
         self.assertIn('pc-cerrada', out['html'])
         self.assertIn('no se puede modificar', out['html'])
+        # el límite se escribe legible y en hora de Buenos Aires
+        self.assertIn('jueves 09/01 a las 09:40', out['html'])
 
     def test_banner_abierto_muestra_cuanto_falta(self):
         prox = {'fecha_retiro': '2099-01-10', 'limite_edicion': '2099-01-09T09:40:00-03:00',

@@ -379,6 +379,16 @@ function textoCuentaRegresiva(limiteIso) {
     return partes.join(' y ');
 }
 
+// "jueves 22/10 a las 09:40", siempre en hora de Buenos Aires.
+function textoLimiteEdicion(limiteIso) {
+    const partes = {};
+    new Intl.DateTimeFormat('es-AR', {
+        weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+        hourCycle: 'h23', timeZone: 'America/Argentina/Buenos_Aires'
+    }).formatToParts(new Date(limiteIso)).forEach(p => { partes[p.type] = p.value; });
+    return `${partes.weekday} ${partes.day}/${partes.month} a las ${partes.hour}:${partes.minute}`;
+}
+
 function formatearFechaCorta(iso) {
     if (!iso) return '-';
     const [a, m, d] = String(iso).slice(0, 10).split('-');
@@ -402,8 +412,7 @@ function renderizarPanelColecta() {
     let banner = '';
     if (proximaColecta) {
         const resto = textoCuentaRegresiva(proximaColecta.limite_edicion);
-        const lim = new Date(proximaColecta.limite_edicion);
-        const limTxt = lim.toLocaleString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' });
+        const limTxt = textoLimiteEdicion(proximaColecta.limite_edicion);
         const codigo = proximaColecta.codigo ? ` ${escapeHtml(proximaColecta.codigo)}` : '';
         banner = `
             <div class="pc-banner ${resto ? '' : 'pc-cerrada'}">
