@@ -122,6 +122,7 @@ def procesar_alertas_usuario(user_id: int) -> dict:
     Evalúa todos los pronósticos de un usuario y dispara las alertas correspondientes
     si hay productos en fecha límite o en riesgo crítico de quiebre.
     """
+    conn = get_db()
     resultado = {
         "user_id": user_id,
         "items_criticos": 0,
@@ -130,11 +131,6 @@ def procesar_alertas_usuario(user_id: int) -> dict:
         "mensajes_whatsapp_enviados": 0,
         "email_enviado": False
     }
-    if not pausa_avisos.puede_enviar(pausa_avisos.ALERTA_STOCK):
-        logger.info(f"[Alerts Engine] Usuario {user_id}: avisos pausados (ENVIOBOT_AVISOS). No se evalúa ni se envía nada.")
-        resultado["pausado"] = True
-        return resultado
-    conn = get_db()
 
     try:
         # Cambio notorio en el ritmo de venta (avisos del panel + WhatsApp en horario). Si falla, no frena las alertas de stock.
@@ -268,7 +264,11 @@ def procesar_alertas_usuario(user_id: int) -> dict:
         # Si a alguien le toca fuera de su horario, espera a la próxima corrida dentro de él;
         # el mail que ya salió no lo frena.
         ya_mail = ya_se_envio_alerta_hoy(conn, user_id, nivel_alerta, horas_cooldown=cooldown_hours, channel="email")
-        enviar_mail = not ya_mail
+        # Pausa general de avisos (pausa_avisos.py): se evalúa todo, pero no sale ni WhatsApp ni mail de stock.
+        stock_permitido = pausa_avisos.puede_enviar(pausa_avisos.ALERTA_STOCK)
+        if not stock_permitido:
+            resultado["pausado"] = True
+        enviar_mail = (not ya_mail) and stock_permitido
 
         # Destinatarios de WhatsApp con su horario (el suyo, o el del dueño si no cambió nada)
         horario_dueno = horario_de(settings)
@@ -309,7 +309,10 @@ def procesar_alertas_usuario(user_id: int) -> dict:
         telefonos = [t for t in pendientes if en_horario(destinos[t], ahora_ba)]
         if pendientes and not telefonos:
             logger.info(f"[Alerts Engine] Usuario {user_id}: los {len(pendientes)} destinatarios pendientes están fuera de su horario de WhatsApp. Se manda en la próxima corrida dentro del horario.")
-        enviar_wa = bool(telefonos) and wa_cfg.get("enabled", True)
+        enviar_wa = bool(telefonos) and wa_cfg.get("enabled", True) and stock_permitido
+        if not stock_permitido:
+            logger.info(f"[Alerts Engine] Usuario {user_id}: avisos pausados (ENVIOBOT_AVISOS). Nada de stock se envía.")
+            return resultado
         if not enviar_wa and not enviar_mail:
             logger.info(f"[Alerts Engine] Usuario {user_id}: nada para enviar de nivel '{nivel_alerta}' (ya enviado en las últimas {cooldown_hours}hs o fuera de horario). Omitiendo.")
             return resultado

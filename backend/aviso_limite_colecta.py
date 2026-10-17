@@ -17,6 +17,7 @@ import alerts_engine
 import esquema
 import proyeccion
 from email_service import enviar_email
+import pausa_avisos
 from horario_whatsapp import horario_de, whatsapp_permitido
 from whatsapp_service import enviar_lote_con_demora, normalizar_telefono, obtener_configuracion_whatsapp
 
@@ -63,6 +64,8 @@ def _destinatarios(conn, user_id, settings):
 
 def procesar_usuario(conn, user_id, ahora=None):
     """Avisa de las colectas de este usuario que están a una hora o menos del límite."""
+    if not pausa_avisos.puede_enviar(pausa_avisos.AVISO_LIMITE_COLECTA):
+        return {"user_id": user_id, "avisos": 0, "pausado": True}
     ahora = ahora or datetime.now(proyeccion.HORA_BA)
     res = {"user_id": user_id, "avisos": 0}
     with conn.cursor() as cur:
@@ -120,6 +123,9 @@ def procesar_usuario(conn, user_id, ahora=None):
 
 
 def ejecutar_global(ahora=None):
+    if not pausa_avisos.puede_enviar(pausa_avisos.AVISO_LIMITE_COLECTA):
+        logger.info("[Aviso límite] Avisos pausados (ENVIOBOT_AVISOS): no se envía nada.")
+        return 0
     conn = alerts_engine.get_db()
     try:
         with conn.cursor() as cur:

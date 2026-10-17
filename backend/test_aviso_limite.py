@@ -5,6 +5,7 @@ import os
 import sys
 import unittest
 from datetime import date, datetime
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import esquema  # noqa: E402
@@ -94,6 +95,9 @@ class _Conn:
 class TestProcesar(unittest.TestCase):
     def setUp(self):
         esquema.olvidar()
+        _env = mock.patch.dict(os.environ, {"ENVIOBOT_AVISOS": "activos"})
+        _env.start()
+        self.addCleanup(_env.stop)
         self.wa, self.mails, self.logs, self.ya = [], [], [], set()
         a.enviar_lote_con_demora = lambda tels, txt, **k: self.wa.append((tels, txt)) or []
         a.enviar_email = lambda dest, asunto, txt, *x, **k: self.mails.append((dest, txt)) or {"ok": True}
@@ -116,6 +120,16 @@ class TestProcesar(unittest.TestCase):
         self.assertEqual(len(self.wa), 1)
         self.assertEqual(self.mails[0][0], "avisos@x.com")
         self.assertIn("lunes 19/10", self.wa[0][1])
+
+    def test_con_los_avisos_pausados_no_sale_nada(self):
+        with mock.patch.dict(os.environ, {"ENVIOBOT_AVISOS": "pausados"}):
+            ahora = datetime(2026, 10, 16, 8, 45, tzinfo=p.HORA_BA)
+            r = a.procesar_usuario(self._conn(), 1, ahora)
+        self.assertEqual(r["avisos"], 0)
+        self.assertTrue(r["pausado"])
+        self.assertEqual(self.wa, [])
+        self.assertEqual(self.mails, [])
+        self.assertEqual(self.logs, [])
 
     def test_lejos_del_limite_no_avisa(self):
         ahora = datetime(2026, 10, 16, 7, 0, tzinfo=p.HORA_BA)
