@@ -35,14 +35,14 @@ function iconoSvg(nombre, tam = 14) {
 
 // Sistema de Notificaciones Toast no bloqueantes (reemplaza alertas emergentes invasivas)
 // Logo de EnvioBot Full para los avisos
-const LOGO_AVISO = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"/><polyline points="3.4 7.1 12 12 20.6 7.1"/><line x1="12" y1="21.1" x2="12" y2="12"/></svg>';
+const LOGO_AVISO = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"/><polyline points="3.4 7.1 12 12 20.6 7.1"/><line x1="12" y1="21.1" x2="12" y2="12"/></svg>';
 
 function contenedorAvisos() {
     let container = document.getElementById('toastContainer');
     if (!container) {
         container = document.createElement('div');
         container.id = 'toastContainer';
-        container.style.cssText = 'position: fixed; bottom: 24px; right: 24px; max-width: calc(100vw - 48px); z-index: 999999; display: flex; flex-direction: column; align-items: flex-end; gap: 12px; pointer-events: none;';
+        container.style.cssText = 'position: fixed; bottom: 18px; right: 18px; max-width: calc(100vw - 36px); z-index: 999999; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none;';
         document.body.appendChild(container);
     }
     return container;
@@ -54,7 +54,7 @@ function showToast(message, type = 'info', duration = 2800) {
     const borde = colores[type] || colores.info;
     const toast = document.createElement('div');
     toast.className = `toast-msg toast-${type}`;
-    toast.style.cssText = `display: flex; align-items: center; gap: 14px; background: #0f172a; color: #ffffff; border: 2px solid ${borde}; border-left: 8px solid ${borde}; border-radius: 12px; padding: 16px 20px; font-size: 17px; font-weight: 700; line-height: 1.4; box-shadow: 0 14px 34px -6px rgba(0,0,0,0.75); pointer-events: auto; opacity: 0; transform: translateY(14px); transition: all 0.22s ease-out; max-width: 460px; white-space: pre-line;`;
+    toast.style.cssText = `display: flex; align-items: center; gap: 10px; background: #0f172a; color: #f1f5f9; border: 1px solid ${borde}; border-left: 4px solid ${borde}; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 600; line-height: 1.4; box-shadow: 0 8px 20px -6px rgba(0,0,0,0.6); pointer-events: auto; opacity: 0; transform: translateY(10px); transition: all 0.22s ease-out; max-width: 340px; white-space: pre-line;`;
     const logo = document.createElement('span');
     logo.style.cssText = 'flex: none; display: flex;';
     logo.innerHTML = LOGO_AVISO;
@@ -71,9 +71,9 @@ function showToast(message, type = 'info', duration = 2800) {
 
     setTimeout(() => {
         toast.style.opacity = '0';
-        toast.style.transform = 'translateY(14px)';
+        toast.style.transform = 'translateY(10px)';
         setTimeout(() => toast.remove(), 250);
-    }, Math.max(duration, 4500));
+    }, Math.max(duration, 3000));
 }
 
 // Ningún cartel del navegador: los alert() salen como aviso que se cierra solo.
@@ -87,7 +87,7 @@ window.alert = function (mensaje) {
 function confirmarConDeshacer(texto, segundos = 5) {
     return new Promise(resolve => {
         const toast = document.createElement('div');
-        toast.style.cssText = 'display: flex; align-items: center; gap: 14px; background: #0f172a; color: #ffffff; border: 2px solid #f5a623; border-left: 8px solid #f5a623; border-radius: 12px; padding: 16px 20px; font-size: 17px; font-weight: 700; line-height: 1.4; box-shadow: 0 14px 34px -6px rgba(0,0,0,0.75); pointer-events: auto; max-width: 480px;';
+        toast.style.cssText = 'display: flex; align-items: center; gap: 10px; background: #0f172a; color: #f1f5f9; border: 1px solid #f5a623; border-left: 4px solid #f5a623; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 600; line-height: 1.4; box-shadow: 0 8px 20px -6px rgba(0,0,0,0.6); pointer-events: auto; max-width: 380px;';
         const logo = document.createElement('span');
         logo.style.cssText = 'flex: none; display: flex;';
         logo.innerHTML = LOGO_AVISO;
@@ -96,7 +96,7 @@ function confirmarConDeshacer(texto, segundos = 5) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.textContent = 'Deshacer';
-        btn.style.cssText = 'flex: none; background: #f5a623; color: #111; border: 0; border-radius: 8px; padding: 10px 18px; font-weight: 800; font-size: 16px; cursor: pointer; white-space: nowrap;';
+        btn.style.cssText = 'flex: none; background: #f5a623; color: #111; border: 0; border-radius: 6px; padding: 5px 12px; font-weight: 700; font-size: 12px; cursor: pointer; white-space: nowrap;';
         toast.appendChild(logo);
         toast.appendChild(msg);
         toast.appendChild(btn);
@@ -4603,40 +4603,37 @@ function renderizarDestinatariosWA() {
         const whName = r.warehouse_filter === 'all' ? 'Todos' : (WAREHOUSES[r.warehouse_filter]?.name || r.warehouse_filter);
 
         const isVerified = (r.is_verified === 1 || r.is_verified === true || r.is_verified === '1');
+        // Ícono chico de contorno: tilde verde si está verificado, alerta ámbar si falta
         const verifBadge = isVerified
-            ? `<span style="display: inline-block; margin-top: 4px; padding: 2px 10px; border-radius: 999px; background: #16a34a; color: #ffffff; font-size: 12px; font-weight: 800; white-space: nowrap;">Verificado</span>`
-            : `<span style="display: inline-block; margin-top: 4px; padding: 2px 10px; border-radius: 999px; background: #f5a623; color: #111111; font-size: 12px; font-weight: 800; white-space: nowrap;">Falta verificar</span>`;
+            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -3px; margin-left: 6px;"><title>Número verificado</title><circle cx="12" cy="12" r="9"/><polyline points="8 12.5 11 15.5 16 9.5"/></svg>`
+            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#f5a623" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -3px; margin-left: 6px;"><title>Falta verificar el número</title><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
 
-        // Una sola acción principal por persona; lo demás, como enlaces chicos.
         const sinPermiso = 'Solo el Dueño / Gerencia puede cambiarlo';
-        const bloqueo = puedeEditarDestinatarios ? '' : ` disabled title="${sinPermiso}" style="opacity: .4; cursor: not-allowed;"`;
-        let principal = '';
-        if (!isVerified) {
-            principal = `<button class="btn btn-primary btn-sm" style="padding: 7px 14px; font-size: 13px; font-weight: 700;"${bloqueo} onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')">Reenviar verificación</button>`;
-        } else if (invitarAppHabilitado && r.app_access === 'activo') {
-            principal = '<span style="font-size: 13px; color: var(--text2); font-weight: 700;">Ya usa la app</span>';
-        } else if (invitarAppHabilitado) {
-            principal = `<button class="btn btn-secondary btn-sm" style="padding: 7px 14px; font-size: 13px; font-weight: 700;"${bloqueo} onclick="invitarAppWA(${r.id}, '${r.name}')">${r.app_access === 'invitado' ? 'Reenviar invitación' : 'Invitar a la app'}</button>`;
-        }
-        const enlaceBase = 'background: none; border: 0; padding: 7px 8px; font-size: 13px; cursor: pointer; color: var(--accent-text);';
-        const enlaceBloq = puedeEditarDestinatarios ? '' : ` disabled title="${sinPermiso}"`;
-        const enlaceEstilo = (extra) => puedeEditarDestinatarios ? `${enlaceBase}${extra || ''}` : `${enlaceBase} opacity: .4; cursor: not-allowed;${extra || ''}`;
+        const bloq = puedeEditarDestinatarios ? '' : ` disabled title="${sinPermiso}"`;
+        const estiloBtn = (extra) => `padding: 5px 12px; font-size: 12px;${puedeEditarDestinatarios ? '' : ' opacity: .4; cursor: not-allowed;'}${extra || ''}`;
 
         tr.innerHTML = `
-            <td style="white-space: nowrap; min-width: 130px;">
-                <div style="font-weight: 700; font-size: 14px;">${r.name}</div>
-                ${verifBadge}
+            <td style="white-space: nowrap;">
+                <strong>${r.name}</strong>${verifBadge}
             </td>
             <td style="font-family: monospace; color: var(--text); white-space: nowrap;">${r.phone}</td>
             <td><span class="role-badge ${roleBadgeClass}">${roleLabel}</span></td>
-            <td style="color: var(--text2); font-size: 12px;">${whName}</td>
-            <td style="font-size: 12px; color: var(--text2);">${resumenHorarioWA(r.schedule || horarioDuenoWA)}${r.schedule_custom ? '' : ' <span style="opacity:.7">(del dueño)</span>'}</td>
-            <td style="text-align: right; white-space: nowrap;">
-                <div style="display: inline-flex; gap: 6px; align-items: center;">
-                    ${principal}
-                    <button type="button" style="${enlaceEstilo()}"${enlaceBloq} onclick="editarHorarioWA(${r.id})">Horario</button>
-                    <button type="button" style="${enlaceEstilo()}"${enlaceBloq} onclick="probarDestinatarioWA('${r.phone}', '${r.name}')">Probar</button>
-                    <button type="button" style="${enlaceEstilo(' color: #ff6b6b;')}"${enlaceBloq} onclick="eliminarDestinatarioWA(${r.id})">Quitar</button>
+            <td style="color: var(--text2); font-size: 11px;">${whName}</td>
+            <td style="font-size: 11px; color: var(--text2);">${resumenHorarioWA(r.schedule || horarioDuenoWA)}${r.schedule_custom ? '' : ' <span style="opacity:.7">(del dueño)</span>'}</td>
+            <td style="text-align: right;">
+                <div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; min-width: 260px;">
+                    <button class="btn btn-secondary btn-sm" style="${estiloBtn()}"${bloq}
+                            onclick="editarHorarioWA(${r.id})" title="${puedeEditarDestinatarios ? 'Elegir los días y horas en que recibe avisos' : sinPermiso}">Horario</button>
+                    ${invitarAppHabilitado ? (r.app_access === 'activo'
+                        ? '<span style="font-size: 12px; color: var(--text2);">Ya usa la app</span>'
+                        : `<button class="btn btn-secondary btn-sm" style="${estiloBtn()}"${bloq}
+                            onclick="invitarAppWA(${r.id}, '${r.name}')" title="Le mandamos un link para ver el stock desde el celular">${r.app_access === 'invitado' ? 'Reenviar invitación' : 'Invitar a la app'}</button>`) : ''}
+                    ${isVerified ? '' : `<button class="btn btn-primary btn-sm" style="${estiloBtn()}"${bloq}
+                            onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')" title="Reenviar el botón de verificación">Reenviar verificación</button>`}
+                    <button class="btn btn-secondary btn-sm" style="${estiloBtn()}"${bloq}
+                            onclick="probarDestinatarioWA('${r.phone}', '${r.name}')" title="Enviar WhatsApp de prueba">Probar</button>
+                    <button class="btn btn-secondary btn-sm" style="${estiloBtn(' color: #ff6b6b;')}"${bloq}
+                            onclick="eliminarDestinatarioWA(${r.id})" title="Eliminar número">Quitar</button>
                 </div>
             </td>
         `;
