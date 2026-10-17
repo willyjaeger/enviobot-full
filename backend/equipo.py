@@ -22,6 +22,7 @@ equipo siguen como estaban.
 """
 import hashlib
 import json
+import re
 import secrets
 from datetime import datetime, timedelta
 from functools import wraps
@@ -158,13 +159,15 @@ def guardar_cuentas(cur, user_id, cuentas):
                     (user_id, c['platform'], c['external_id']))
 
 
-def crear_invitacion(cur, account_id, invitado_por, nombre, email, celular, rol, cuentas, ahora=None):
+def crear_invitacion(cur, account_id, invitado_por, nombre, email, celular, rol, cuentas, ahora=None, simple=False):
     """Crea la invitación (solo se guarda la huella del código). Devuelve (code, id, vence)."""
     ahora = ahora or datetime.now()
     vence = ahora + timedelta(days=VENCE_DIAS)
     code = secrets.token_urlsafe(9)
     canal = 'whatsapp' if celular else ('email' if email else 'link')
     grants = {'roles': {APP: rol}, 'cuentas': cuentas, 'code': code}
+    if simple:
+        grants['simple'] = True  # la página de la invitación no pide nada: un solo botón
     cur.execute(
         '''INSERT INTO invitations (account_id, invited_by, full_name, email, phone, channel, token_hash, grants_json, expires_at)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)''',
@@ -415,6 +418,80 @@ def reenviar_invitacion_whatsapp(inv_id):
         conn.close()
 
 
+def usuario_de_telefono(telefono):
+    """Usuario interno (email que nunca se usa para escribir) de quien entra a la app solo con su celular."""
+    digitos = re.sub(r'\D', '', telefono or '')
+    return f'{digitos}@acceso.enviobot.com.ar' if digitos else ''
+
+
+def acceso_app(cur, yo, telefonos):
+    """(habilitado, {telefono: 'activo' | 'invitado'}) para mostrar el botón de cada destinatario.
+    Con "equipo" apagado, o ante cualquier falla, no hay botón."""
+    try:
+        if not (_tablas_listas(cur) and equipo_activo(cur, yo)):
+            return False, {}
+        estado = {}
+        for t in telefonos:
+            email = usuario_de_telefono(t)
+            if not email:
+                continue
+            cur.execute('SELECT id FROM users WHERE email = %s LIMIT 1', (email,))
+            if cur.fetchone():
+                estado[t] = 'activo'
+                continue
+            cur.execute('SELECT id FROM invitations WHERE email = %s AND used_at IS NULL AND cancelled_at IS NULL '
+                        'AND expires_at > NOW() LIMIT 1', (email,))
+            if cur.fetchone():
+                estado[t] = 'invitado'
+        return True, estado
+    except Exception as e:
+        print(f'⚠ acceso_app falló, no se muestra el botón: {e}')
+        return False, {}
+
+
+@bp.route('/api/full/recipients/<int:recipient_id>/invitar-app', methods=['POST'])
+@jwt_required()
+def invitar_destinatario(recipient_id):
+    """Manda a un destinatario de WhatsApp un link para usar la app web (solo ver). Al abrirlo
+    toca un solo botón: la contraseña se genera sola y el teléfono se la guarda."""
+    conn, cur, yo, root, account_id = _pedido()
+    if conn is None:
+        return yo
+    try:
+        no = _exigir_admin(cur, yo)
+        if no:
+            return no
+        cur.execute('SELECT name, phone FROM alert_recipients WHERE id = %s AND user_id = %s', (recipient_id, yo))
+        r = cur.fetchone()
+        if not r or not r.get('phone'):
+            return jsonify({'ok': False, 'error': 'No encontramos ese número.'}), 404
+        email = usuario_de_telefono(r['phone'])
+        cur.execute('SELECT id FROM users WHERE email = %s LIMIT 1', (email,))
+        if cur.fetchone():
+            return jsonify({'ok': False, 'error': f"{r['name']} ya usa la app."}), 409
+        # Una sola invitación abierta por persona: la anterior deja de valer
+        cur.execute('UPDATE invitations SET cancelled_at = NOW() WHERE account_id = %s AND email = %s '
+                    'AND used_at IS NULL AND cancelled_at IS NULL', (account_id, email))
+        cuentas = _normalizar_cuentas(cuentas_del_negocio(cur, account_id), cuentas_del_negocio(cur, account_id))
+        code, inv_id, vence = crear_invitacion(cur, account_id, yo, r['name'], email, r['phone'], 'viewer', cuentas, simple=True)
+        conn.commit()
+        cur.execute('SELECT name FROM accounts WHERE id = %s', (account_id,))
+        negocio = (cur.fetchone() or {}).get('name') or 'su negocio'
+        link = f"{_deps['server_url']}/invitacion.html?inv={code}"
+        primero = (r['name'] or '').split(' ')[0]
+        texto = (f"Hola {primero}! {negocio} te invita a ver el stock y las colectas desde el celular. "
+                 f"Tocá este link y después el botón verde: {link}")
+        res = _deps['enviar_whatsapp'](r['phone'], texto)
+        ok = bool(res and res.get('ok') and not res.get('simulated'))
+        return jsonify({'ok': ok, 'error': None if ok else 'No se pudo enviar el WhatsApp. Probá de nuevo en un rato.'})
+    except Exception as e:
+        conn.rollback()
+        print(f'✗ Error en equipo/invitar-app: {e}')
+        return jsonify({'ok': False, 'error': 'No se pudo crear la invitación.'}), 500
+    finally:
+        conn.close()
+
+
 @bp.route('/api/full/equipo/invitaciones/<int:inv_id>', methods=['DELETE'])
 @jwt_required()
 def cancelar_invitacion(inv_id):
@@ -523,7 +600,7 @@ def ver_invitacion(code):
             return jsonify({'ok': False, 'error': 'La invitación no es válida o ya venció. Pedile una nueva a quien te invitó.'}), 404
         cur.execute('SELECT name FROM accounts WHERE id = %s', (inv['account_id'],))
         return jsonify({'ok': True, 'negocio': (cur.fetchone() or {}).get('name'), 'nombre': inv['full_name'],
-                        'email': inv['email'], 'pide_email': not inv['email'],
+                        'email': inv['email'], 'pide_email': not inv['email'], 'simple': bool(inv['grants'].get('simple')),
                         'rol': ROL_ETIQUETA.get((inv['grants'].get('roles') or {}).get(APP), '')})
     finally:
         conn.close()

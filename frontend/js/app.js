@@ -3292,6 +3292,7 @@ async function cargarSettingsBackend() {
 }
 
 let horarioDuenoWA = { dias: '0,1,2,3,4', desde: '08:30', hasta: '18:00' };
+let invitarAppHabilitado = false;
 
 async function cargarDestinatariosBackend() {
     const token = getToken();
@@ -3305,6 +3306,7 @@ async function cargarDestinatariosBackend() {
             recipientsData = data.recipients;
             if (data.plan_tier) currentPlanTier = data.plan_tier;
             if (data.owner_schedule) horarioDuenoWA = data.owner_schedule;
+            invitarAppHabilitado = !!data.app_invite_enabled;
             renderizarDestinatariosWA();
         }
     } catch (e) {
@@ -4161,6 +4163,10 @@ function renderizarDestinatariosWA() {
                 <div style="display: inline-flex; gap: 8px; align-items: center; padding-left: 12px;">
                     <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px;"
                             onclick="editarHorarioWA(${r.id})" title="Elegir los días y horas en que recibe avisos">Horario</button>
+                    ${!invitarAppHabilitado ? '' : (r.app_access === 'activo'
+                        ? '<span style="font-size: 12px; color: var(--text2);">Ya usa la app</span>'
+                        : `<button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px;"
+                            onclick="invitarAppWA(${r.id}, '${r.name}')" title="Le mandamos un link para ver el stock desde el celular">${r.app_access === 'invitado' ? 'Reenviar invitación' : 'Invitar a la app'}</button>`)}
                     ${isVerified ? '' : `<button class="btn btn-primary btn-sm" style="padding: 5px 12px; font-size: 12px;"
                             onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')" title="Reenviar el botón de verificación">Reenviar verificación</button>`}
                     <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px;"
@@ -4305,6 +4311,20 @@ async function agregarDestinatarioWA() {
 
     renderizarDestinatariosWA();
     showToast(`Número de ${name} agregado.`, "success");
+}
+
+async function invitarAppWA(id, name) {
+    try {
+        const resp = await fetch(`${API_BASE}/full/recipients/${id}/invitar-app`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+        const data = await resp.json();
+        showToast(data.ok ? `Le mandamos la invitación a ${name} por WhatsApp.` : (data.error || 'No se pudo enviar la invitación.'), data.ok ? 'success' : 'error', 4000);
+        if (data.ok) await cargarDestinatariosBackend();
+    } catch (e) {
+        showToast('No se pudo enviar la invitación.', 'error');
+    }
 }
 
 async function reenviarVerificacionWA(phone, name) {

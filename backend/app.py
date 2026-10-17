@@ -1888,7 +1888,10 @@ def get_recipients():
         recipients = cur.fetchall()
         cur.execute("SELECT wa_days, wa_from, wa_to FROM user_settings WHERE user_id=%s", (user_id,))
         fila_dueno = cur.fetchone() or {}
+        app_habilitada, acceso = _equipo.acceso_app(cur, user_id, [r["phone"] for r in recipients if r.get("phone")])
     conn.close()
+    for r in recipients:
+        r["app_access"] = acceso.get(r.get("phone"), "none")
 
     horario_dueno = _horario.horario_de(fila_dueno)
     for r in recipients:
@@ -1903,6 +1906,7 @@ def get_recipients():
         "current_count": len(recipients),
         "can_add_more": len(recipients) < max_allowed,
         "owner_schedule": _horario.a_texto(horario_dueno),
+        "app_invite_enabled": app_habilitada,
         "recipients": recipients
     }), 200
 

@@ -6,6 +6,7 @@
     <title>Invitación — EnvioBot Full</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5a623' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z'/%3E%3Cpolyline points='3.4 7.1 12 12 20.6 7.1'/%3E%3Cline x1='12' y1='21.1' x2='12' y2='12'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
     <style>
         .auth-wrapper {
             min-height: 85vh;
@@ -41,6 +42,20 @@
             </div>
 
             <div id="error" role="alert" style="display: none; padding: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; line-height: 1.5; margin-bottom: 12px;"></div>
+
+            <!-- Invitación simple (la que se manda desde Destinatarios): un solo botón. -->
+            <form id="simpleForm" onsubmit="entrarSimple(event)" style="display: none; text-align: center;">
+                <!-- El teléfono guarda estos dos datos en su gestor de contraseñas; la persona no los escribe -->
+                <input type="text" id="sUsuario" autocomplete="username" tabindex="-1" aria-hidden="true" style="position: absolute; opacity: 0; height: 1px; width: 1px;">
+                <input type="password" id="sPassword" autocomplete="new-password" tabindex="-1" aria-hidden="true" style="position: absolute; opacity: 0; height: 1px; width: 1px;">
+                <button type="submit" id="sBoton" class="btn btn-block" style="padding: 22px; font-size: 22px; font-weight: 800; background: #22c55e; color: #052e16; border: 0; border-radius: 14px;">Entrar</button>
+            </form>
+
+            <div id="listo" style="display: none; text-align: center;">
+                <button type="button" id="instalar" class="btn btn-block" style="display: none; padding: 18px; font-size: 18px; font-weight: 800; margin-bottom: 12px;">Guardar en mi teléfono</button>
+                <p id="textoIos" style="display: none; font-size: 15px; line-height: 1.6; margin: 0 0 14px;">Para tenerla en tu teléfono: tocá el botón <b>Compartir</b> de abajo y después <b>Añadir a pantalla de inicio</b>.</p>
+                <a href="index.html" class="btn btn-block" style="display: block; padding: 22px; font-size: 22px; font-weight: 800; background: #22c55e; color: #052e16; border-radius: 14px; text-decoration: none;">Abrir EnvioBot Full</a>
+            </div>
 
             <form id="altaForm" onsubmit="aceptar(event)" style="display: none;">
                 <div class="form-group">
@@ -82,6 +97,7 @@
                 const r = await fetch(`${API}/full/equipo/invitacion/${encodeURIComponent(code)}`);
                 const d = await r.json();
                 if (!d.ok) { document.getElementById('subtitulo').textContent = ''; mostrarError(d.error || 'La invitación no es válida.'); return; }
+                if (d.simple) { mostrarSimple(d); return; }
                 document.getElementById('titulo').textContent = 'Te invitaron a EnvioBot Full';
                 document.getElementById('subtitulo').textContent = `Vas a entrar con ${d.negocio}` + (d.rol ? ` como ${d.rol}.` : '.');
                 if (d.nombre) document.getElementById('nombre').value = d.nombre;
@@ -118,6 +134,81 @@
                 boton.disabled = false;
             }
         }
+
+        // ── Invitación simple: un solo botón ────────────────────────────────
+        let datosSimple = null;
+        let avisoInstalar = null;
+
+        function contrasenaSegura() {
+            const letras = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            const azar = new Uint32Array(20);
+            crypto.getRandomValues(azar);
+            return Array.from(azar, n => letras[n % letras.length]).join('');
+        }
+
+        function mostrarSimple(d) {
+            datosSimple = d;
+            const primero = (d.nombre || '').split(' ')[0];
+            document.getElementById('titulo').textContent = primero ? `Hola ${primero}` : 'Hola';
+            document.getElementById('subtitulo').textContent = 'Tocá el botón verde para entrar.';
+            document.getElementById('sUsuario').value = d.email || '';
+            document.getElementById('sPassword').value = contrasenaSegura();
+            document.getElementById('simpleForm').style.display = 'block';
+        }
+
+        async function entrarSimple(ev) {
+            ev.preventDefault();
+            const boton = document.getElementById('sBoton');
+            boton.disabled = true;
+            boton.textContent = 'Entrando...';
+            document.getElementById('error').style.display = 'none';
+            const usuario = document.getElementById('sUsuario').value;
+            const clave = document.getElementById('sPassword').value;
+            try {
+                const r = await fetch(`${API}/full/equipo/aceptar`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code, full_name: datosSimple.nombre || '', email: usuario, password: clave })
+                });
+                const d = await r.json();
+                if (!d.ok) { mostrarError(d.error || 'No se pudo entrar. Pedí otro link.'); boton.disabled = false; boton.textContent = 'Entrar'; return; }
+                localStorage.setItem('enviobot_full_token', d.token);
+                localStorage.setItem('token', d.token);
+                // Que el teléfono guarde el usuario y la contraseña (Chrome en Android; el resto lo ofrece solo).
+                try {
+                    if (window.PasswordCredential && navigator.credentials && navigator.credentials.store) {
+                        await navigator.credentials.store(new PasswordCredential({ id: usuario, password: clave, name: datosSimple.nombre || usuario }));
+                    }
+                } catch (e) { /* no pasa nada: igual quedó adentro */ }
+                mostrarListo();
+            } catch (err) {
+                mostrarError('No pudimos conectarnos. Probá de nuevo.');
+                boton.disabled = false;
+                boton.textContent = 'Entrar';
+            }
+        }
+
+        function mostrarListo() {
+            document.getElementById('simpleForm').style.display = 'none';
+            document.getElementById('titulo').textContent = 'Listo, ya entraste';
+            document.getElementById('subtitulo').textContent = 'Guardá la app en tu teléfono para tenerla siempre a mano.';
+            const esIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+            if (esIos) document.getElementById('textoIos').style.display = 'block';
+            else if (avisoInstalar) document.getElementById('instalar').style.display = 'block';
+            document.getElementById('listo').style.display = 'block';
+        }
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            avisoInstalar = e;
+            if (document.getElementById('listo').style.display === 'block') document.getElementById('instalar').style.display = 'block';
+        });
+        document.getElementById('instalar').onclick = async () => {
+            if (!avisoInstalar) return;
+            avisoInstalar.prompt();
+            await avisoInstalar.userChoice;
+            document.getElementById('instalar').style.display = 'none';
+        };
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 
         cargar();
     </script>
