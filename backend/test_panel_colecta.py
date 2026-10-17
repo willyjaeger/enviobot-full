@@ -77,7 +77,7 @@ class TestPanelJS(unittest.TestCase):
     def test_colecta_en_preparacion_muestra_cobertura_y_aviso(self):
         out = self._correr([_item(in_preparation_stock=100, total_incoming=100, cobertura_post_colecta=23.4,
                                   aviso_ajuste_units=129, fecha_ingreso='2026-10-23')])
-        self.assertIn('Colecta en preparación (1)', out['html'])
+        self.assertIn('En la colecta en preparación (1)', out['html'])
         self.assertIn('23 días', out['html'])
         self.assertIn('con 129 u. cubrís 30 días', out['html'])
         self.assertIn('23/10', out['html'])
@@ -89,7 +89,7 @@ class TestPanelJS(unittest.TestCase):
             _item(title='Todo bien', status='ok'),
         ])
         self.assertIn('Enviar 65 u.', out['html'])
-        radar = out['html'].split('Para la próxima colecta')[1]
+        radar = out['html'].split('Por planificar')[1]
         self.assertIn('Sin colecta', radar)
         self.assertNotIn('Ya en colecta', radar)
         self.assertNotIn('Todo bien', out['html'])
@@ -118,6 +118,17 @@ class TestPanelJS(unittest.TestCase):
     def test_estado_de_galpon_raro_no_rompe_el_html(self):
         out = self._correr([_item(in_preparation_stock=5, total_incoming=5, prep_item_id=3, prep_status='"><script>')])
         self.assertNotIn('<script>', out['html'])
+
+    def test_los_titulos_dicen_de_que_colecta_hablan(self):
+        prox = {'fecha_retiro': '2026-10-19', 'limite_edicion': '2099-01-09T09:40:00-03:00',
+                'segundos_restantes': 999999, 'abierta': True, 'codigo': 'COL-7'}
+        out = self._correr([_item(in_preparation_stock=10, total_incoming=10, cobertura_post_colecta=20),
+                            _item(title='Falta', status='critical', sugerido_al_ingreso=5)], prox)
+        self.assertIn('Colecta del lunes 19/10 (COL-7)', out['html'])
+        self.assertIn('En la colecta del lunes 19/10 (1)', out['html'])
+        self.assertIn('Por planificar (1)', out['html'])
+        self.assertIn('Todavía no están en ninguna colecta', out['html'])
+        self.assertNotIn('próxima colecta', out['html'])
 
     def test_datos_de_afuera_se_escapan(self):
         out = self._correr([_item(title='<img src=x onerror=alert(1)>', sku='"><b>', status='critical',

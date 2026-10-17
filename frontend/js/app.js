@@ -483,6 +483,15 @@ async function guardarAjustesColecta() {
     }
 }
 
+// "lunes 19/10" a partir de "2026-10-19" (sin depender de la zona horaria del navegador).
+function nombreDiaColecta(iso) {
+    if (!iso) return '';
+    const [a, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+    const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    const dia = dias[new Date(Date.UTC(a, m - 1, d)).getUTCDay()];
+    return `${dia} ${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
+}
+
 function formatearFechaCorta(iso) {
     if (!iso) return '-';
     const [a, m, d] = String(iso).slice(0, 10).split('-');
@@ -492,6 +501,10 @@ function formatearFechaCorta(iso) {
 function nombreItemPanel(it) {
     const variacion = it.variation_name ? ` (${escapeHtml(it.variation_name)})` : '';
     return `${escapeHtml(it.title)}${variacion}<span class="pc-sku">${it.sku ? escapeHtml(it.sku) : ''}</span>`;
+}
+
+function tituloColectaEnPreparacion() {
+    return proximaColecta ? `En la colecta del ${nombreDiaColecta(proximaColecta.fecha_retiro)}` : 'En la colecta en preparación';
 }
 
 function renderizarPanelColecta() {
@@ -509,12 +522,12 @@ function renderizarPanelColecta() {
         const msRestantes = new Date(proximaColecta.limite_edicion).getTime() - Date.now();
         const claseBanner = !resto ? 'pc-cerrada' : (msRestantes <= 3600000 ? 'pc-urgente' : '');
         const limTxt = textoLimiteEdicion(proximaColecta.limite_edicion);
-        const codigo = proximaColecta.codigo ? ` ${escapeHtml(proximaColecta.codigo)}` : '';
+        const codigo = proximaColecta.codigo ? ` (${escapeHtml(proximaColecta.codigo)})` : '';
         banner = `
             <div class="pc-banner ${claseBanner}">
                 <span class="pc-banner-icon">${iconoSvg('reloj', 22).replace('margin-right: 4px;', '')}</span>
                 <div class="pc-banner-text">
-                    <div>Colecta${codigo} con retiro el ${formatearFechaCorta(proximaColecta.fecha_retiro)}. Podés modificarla hasta el ${escapeHtml(limTxt)}.</div>
+                    <div>Colecta del ${escapeHtml(nombreDiaColecta(proximaColecta.fecha_retiro))}${codigo}. Podés modificarla hasta el ${escapeHtml(limTxt)}.</div>
                     <div class="pc-banner-sub">${resto ? `Faltan ${escapeHtml(resto)} para cambiar unidades.` : 'Ya pasó el límite: la colecta no se puede modificar.'}</div>
                 </div>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver colecta</button>
@@ -544,7 +557,7 @@ function renderizarPanelColecta() {
         }).join('');
         bloqueColecta = `
             <div>
-                <h3 class="pc-block-title">Colecta en preparación (${enColecta.length})</h3>
+                <h3 class="pc-block-title">${tituloColectaEnPreparacion()} (${enColecta.length})</h3>
                 <table class="pc-table">
                     <thead><tr><th>Producto</th><th class="pc-num">Unidades</th>${hayGalpon ? '<th>Galpón</th>' : ''}<th class="pc-num">Ingresa</th><th class="pc-num">Cubre al ingresar</th></tr></thead>
                     <tbody>${filas}</tbody>
@@ -572,7 +585,8 @@ function renderizarPanelColecta() {
             ? `<div class="pc-mas">Y ${radar.length - maxRadar} más. <a onclick="irAEstado('action_required')">Verlos en la tabla</a></div>` : '';
         bloqueRadar = `
             <div>
-                <h3 class="pc-block-title">${iconoSvg('radar', 13)}Para la próxima colecta (${radar.length})</h3>
+                <h3 class="pc-block-title">${iconoSvg('radar', 13)}Por planificar (${radar.length})</h3>
+                <div class="pc-mas" style="margin: 0 2px 6px;">Todavía no están en ninguna colecta.</div>
                 <table class="pc-table">
                     <thead><tr><th>Producto</th><th class="pc-num">Hoy en Full</th><th class="pc-num">Al ingreso</th><th class="pc-num">Sugerido</th></tr></thead>
                     <tbody>${filas}</tbody>
