@@ -517,7 +517,45 @@ def enviar_verificacion_whatsapp(telefono: str, nombre_usuario: str, link_verifi
     para la agenda (ya no se manda la tarjeta vCard por el chat).
     """
     msg = formatear_alerta_verificacion_whatsapp(nombre_usuario, link_verificacion)
+    imagen = link_verificacion.split("/v/")[0] + "/img/verificar-whatsapp.png"
+    res = enviar_imagen_whatsapp(telefono, imagen, msg)
+    if res.get("ok"):
+        return res
+    logger.warning(f"[WhatsApp] No se pudo mandar la imagen ({res.get('error')}); va solo el texto.")
     return enviar_mensaje_whatsapp(telefono, msg)
+
+
+def enviar_imagen_whatsapp(telefono: str, url_imagen: str, texto: str) -> dict:
+    """Envía una imagen (por URL pública) con el texto de pie. Solo Evolution/gateway local."""
+    cfg = obtener_configuracion_whatsapp()
+    if not cfg["enabled"]:
+        return {"ok": False, "error": "WhatsApp está desactivado globalmente en admin.enviobot.com.ar"}
+    clean_phone = normalizar_telefono(telefono)
+    if not clean_phone:
+        return {"ok": False, "error": "Número de teléfono inválido o vacío."}
+    if cfg["simulation_mode"] or cfg["provider"] == "simulation":
+        logger.info(f"[SIMULACIÓN WHATSAPP] Imagen {url_imagen} a {clean_phone}:\n{texto}")
+        return {"ok": True, "simulated": True, "to": clean_phone}
+    if cfg["provider"] not in ("gateway_local", "evolution"):
+        return {"ok": False, "error": "El proveedor no soporta imágenes."}
+
+    api_url = cfg["api_url"] or "http://127.0.0.1:8085"
+    instance = cfg["instance_name"] or "enviobot_full"
+    headers = {"Content-Type": "application/json"}
+    if cfg["api_key"]:
+        headers["apikey"] = cfg["api_key"]
+    payload = {
+        "number": clean_phone,
+        "options": {"delay": 1200, "presence": "composing"},
+        "mediaMessage": {"mediatype": "image", "caption": texto, "media": url_imagen}
+    }
+    try:
+        r = requests.post(f"{api_url}/message/sendMedia/{instance}", headers=headers, json=payload, timeout=20)
+        if r.status_code in (200, 201):
+            return {"ok": True, "provider": cfg["provider"], "response": r.json()}
+        return {"ok": False, "status_code": r.status_code, "error": r.text}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def generar_vcard_contacto() -> str:
