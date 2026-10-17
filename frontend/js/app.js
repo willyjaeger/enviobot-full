@@ -697,6 +697,11 @@ function claveDiaLocal(d) {
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// Cada colecta tiene su color (4 en rotación). El estado se lee en la tarjeta, no en el color: así ninguna resalta.
+function claseColorColecta(c) {
+    return 'pc-c' + (Math.abs(Number(c && c.id) || 0) % 4);
+}
+
 function numeroCorto(codigo) {
     const n = String(codigo || '').replace(/^ML-/, '').replace(/^COL-FULL-/, '');
     return n.length > 4 ? n.slice(-4) : n;
@@ -726,7 +731,7 @@ const ETIQUETAS_EVENTO = {
 function marcaCalendario(ev) {
     const e = ETIQUETAS_EVENTO[ev.tipo];
     const c = ev.c;
-    const estado = c.estado !== 'scheduled' ? 'pc-ev-camino' : (c.abierta ? 'pc-ev-abierta' : 'pc-ev-cerrada');
+    const estado = claseColorColecta(c);
     const titulo = e.largo + ' · ' + (c.codigo || '');
     return '<button type="button" class="pc-cal-ev ' + estado + '" onclick="irAColecta(' + Number(c.id) + ')" title="' + escapeHtml(titulo) + '">' +
         iconoSvg(e.icono, 12).replace('margin-right: 4px;', 'margin-right: 3px;') +
@@ -786,7 +791,7 @@ function tarjetaDeColecta(c) {
     const boton = (resto && Number(c.id) > 0)
         ? `<button type="button" class="btn btn-sm" onclick="abrirModalEditarEnvio(${Number(c.id)})">Editar colecta</button>`
         : '<button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver detalle</button>';
-    return `<div class="pc-banner ${clase}" id="colecta-${Number(c.id)}">
+    return `<div class="pc-banner ${clase} ${claseColorColecta(c)}" id="colecta-${Number(c.id)}">
         <span class="pc-banner-icon">${iconoSvg('camion', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">Colecta del ${escapeHtml(nombreDiaColecta(c.fecha_retiro))} <span class="pc-sku-inline">${escapeHtml(c.codigo)}</span></div>
