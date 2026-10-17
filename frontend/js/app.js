@@ -734,7 +734,7 @@ function marcaCalendario(ev) {
     const estado = claseColorColecta(c);
     const titulo = e.largo + ' · ' + (c.codigo || '');
     const arrastrable = ev.tipo === 'retiro' && c.estado === 'scheduled' && c.abierta;
-    const arrastre = arrastrable ? ' draggable="true" ondragstart="arrastrarRetiro(event, ' + Number(c.id) + ')"' : '';
+    const arrastre = arrastrable ? ' draggable="true" ondragstart="arrastrarRetiro(event, ' + Number(c.id) + ')" ondragend="finArrastre()"' : '';
     return '<button type="button" class="pc-cal-ev ' + estado + (arrastrable ? ' pc-cal-mover' : '') + '"' + arrastre + ' onclick="clicEnMarca(' + Number(c.id) + ')" title="' + escapeHtml(titulo + (arrastrable ? ' (arrastralo a otro día para moverla)' : '')) + '">' +
         iconoSvg(e.icono, 12).replace('margin-right: 4px;', 'margin-right: 3px;') +
         '<span>' + escapeHtml(e.texto) + ' ' + escapeHtml(numeroCorto(c.codigo)) + '</span></button>';
@@ -754,7 +754,7 @@ function calendarioColectas(colectas, hoy) {
         if (clave === hoyClave) clases.push('pc-cal-hoy');
         else if (clave < hoyClave) clases.push('pc-cal-pasado');
         const nombre = (d.getDate() === 1 || i === 0) ? d.getDate() + ' ' + MESES_CALENDARIO[d.getMonth()] : String(d.getDate());
-        const recibe = clave >= hoyClave ? ' ondragover="permitirSoltar(event)" ondrop="soltarEnDia(event, \'' + clave + '\')"' : '';
+        const recibe = clave >= hoyClave ? ' ondragover="permitirSoltar(event, \'' + clave + '\')" ondrop="soltarEnDia(event, \'' + clave + '\')"' : '';
         celdas += '<div class="' + clases.join(' ') + '"' + recibe + '><span class="pc-cal-n">' + escapeHtml(nombre) + '</span>' +
             (eventos[clave] || []).map(marcaCalendario).join('') + '</div>';
     }
@@ -764,7 +764,110 @@ function calendarioColectas(colectas, hoy) {
             return '<span>' + iconoSvg(ETIQUETAS_EVENTO[t].icono, 13).replace('margin-right: 4px;', 'margin-right: 4px;') + escapeHtml(ETIQUETAS_EVENTO[t].largo) + '</span>';
         }).join('') + '</div>';
     return '<div class="pc-cal"><h3 class="pc-block-title">Calendario de colectas</h3>' +
+        '<div id="pc-cal-impacto" class="pc-imp" style="display:none"></div>' +
         '<div class="pc-cal-grilla">' + cabecera + celdas + '</div>' + leyenda + '</div>';
+}
+
+// ── Mover una colecta en el calendario: cuánto cambia lo que hace falta mandar ─────
+let colectaArrastrada = null;
+
+function parsearFechaLocal(iso) {
+    const p = String(iso || '').split('-');
+    return new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+}
+
+function diasEntreFechas(a, b) {
+    return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+// Misma cuenta que proyeccion.sugerido_al_ingreso: lo que hay que mandar para llegar al objetivo desde el día en que entra.
+function impactoDeMover(c, nuevaFecha, hoy) {
+    hoy = hoy || new Date();
+    const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    const transito = diasEntreFechas(parsearFechaLocal(c.fecha_retiro), parsearFechaLocal(c.fecha_ingreso));
+    const nuevoIngreso = parsearFechaLocal(nuevaFecha);
+    nuevoIngreso.setDate(nuevoIngreso.getDate() + transito);
+    const diasAntes = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(c.fecha_ingreso)));
+    const diasDespues = Math.max(0, diasEntreFechas(hoy0, nuevoIngreso));
+    const filas = [];
+    (c.productos || []).forEach(function (p) {
+        const it = buscarItemPorSku(p.sku);
+        const vpd = it ? Number(it.vpd) : 0;
+        if (!it || !(vpd > 0)) return;
+        const stock = Number(it.current_stock) || 0;
+        const objetivo = Number(it.target_stock_days) || 0;
+        const unidades = Number(p.unidades) || 0;
+        const otros = Math.max(0, (Number(it.total_incoming) || 0) - unidades);
+        const necesario = function (d) { return Math.max(0, Math.round(objetivo * vpd - Math.max(0, stock - vpd * d) - otros)); };
+        filas.push({
+            titulo: p.titulo,
+            unidades: unidades,
+            antes: necesario(diasAntes),
+            despues: necesario(diasDespues),
+            cobertura: Math.round((Math.max(0, stock - vpd * diasDespues) + otros + unidades) / vpd),
+            sinStock: stock - vpd * diasDespues <= 0
+        });
+    });
+    return {
+        nuevoIngreso: claveDiaLocal(nuevoIngreso),
+        diasAntes: diasAntes,
+        diasDespues: diasDespues,
+        filas: filas,
+        totalDelta: filas.reduce(function (a, f) { return a + (f.despues - f.antes); }, 0)
+    };
+}
+
+function textoDiferenciaDias(r) {
+    const d = r.diasDespues - r.diasAntes;
+    return d === 0 ? 'el mismo día que hoy' : (d > 0 ? d + (d === 1 ? ' día más tarde' : ' días más tarde') : (-d) + (d === -1 ? ' día antes' : ' días antes'));
+}
+
+function signado(n) {
+    return (n > 0 ? '+' : '') + n;
+}
+
+function htmlImpactoMovimiento(c, fecha) {
+    const r = impactoDeMover(c, fecha);
+    const cabecera = '<div class="pc-imp-titulo">Si la movés al ' + escapeHtml(nombreDiaColecta(fecha)) + '</div>' +
+        '<div class="pc-fila-nota">Entraría a Full el ' + escapeHtml(nombreDiaColecta(r.nuevoIngreso)) + ' (' + escapeHtml(textoDiferenciaDias(r)) + ').</div>';
+    if (!r.filas.length) return cabecera + '<div class="pc-fila-nota">No tengo ventas de estos productos para calcular el cambio.</div>';
+    const cambian = r.filas.filter(function (f) { return f.despues !== f.antes || f.sinStock; });
+    const filas = cambian.slice(0, 8).map(function (f) {
+        const clase = f.despues > f.antes ? 'pc-cmp-aviso' : 'pc-info';
+        return '<div class="pc-imp-fila"><span>' + escapeHtml(f.titulo) + '</span><span class="' + clase + '">' +
+            (f.despues !== f.antes ? 'necesitás ' + escapeHtml(f.despues) + ' u. (' + escapeHtml(signado(f.despues - f.antes)) + ')' : 'sin cambios') +
+            (f.sinStock ? ' · sin stock antes de entrar' : '') + '</span></div>';
+    }).join('');
+    const resumen = cambian.length === 0
+        ? 'No cambia lo que necesitás mandar.'
+        : 'En total: ' + signado(r.totalDelta) + ' u. respecto de hoy.' + (cambian.length > 8 ? ' Y ' + (cambian.length - 8) + ' productos más.' : '');
+    return cabecera + filas + '<div class="pc-imp-total">' + escapeHtml(resumen) + '</div>';
+}
+
+function textoImpactoMovimiento(c, fecha) {
+    const r = impactoDeMover(c, fecha);
+    const cambian = r.filas.filter(function (f) { return f.despues !== f.antes; });
+    if (!r.filas.length) return 'Entraría a Full el ' + nombreDiaColecta(r.nuevoIngreso) + '.';
+    const lineas = cambian.slice(0, 6).map(function (f) { return '- ' + f.titulo + ': necesitás ' + f.despues + ' u. (' + signado(f.despues - f.antes) + ')'; });
+    return 'Entraría a Full el ' + nombreDiaColecta(r.nuevoIngreso) + ' (' + textoDiferenciaDias(r) + ').' +
+        (cambian.length ? '\n' + lineas.join('\n') + '\nEn total: ' + signado(r.totalDelta) + ' u. respecto de hoy.' : '\nNo cambia lo que necesitás mandar.');
+}
+
+function vistaPreviaMovimiento(clave) {
+    const el = document.getElementById('pc-cal-impacto');
+    const c = (colectasData || []).find(x => Number(x.id) === Number(colectaArrastrada));
+    if (!el || !c) return;
+    if (el.dataset.dia === clave) return;
+    el.dataset.dia = clave;
+    if (clave === c.fecha_retiro) { el.style.display = 'none'; return; }
+    el.innerHTML = htmlImpactoMovimiento(c, clave);
+    el.style.display = 'block';
+}
+
+function finArrastre() {
+    colectaArrastrada = null;
+    const el = document.getElementById('pc-cal-impacto');
+    if (el) { el.style.display = 'none'; el.dataset.dia = ''; }
 }
 
 // Clic en una marca: si la colecta se puede modificar abre la edición; si no, lleva a su tarjeta.
@@ -779,19 +882,21 @@ function clicEnMarca(id) {
 
 function arrastrarRetiro(ev, id) {
     ev.dataTransfer.setData('text/plain', 'colecta:' + Number(id));
+    colectaArrastrada = Number(id);
     ev.dataTransfer.effectAllowed = 'move';
 }
 
-function permitirSoltar(ev) {
+function permitirSoltar(ev, clave) {
     ev.preventDefault();
+    if (clave) vistaPreviaMovimiento(clave);
     ev.dataTransfer.dropEffect = 'move';
 }
 
 function textoConfirmarMovimiento(c, fecha) {
-    const base = 'Mover la colecta ' + c.codigo + ' al ' + nombreDiaColecta(fecha) + '?';
+    const base = 'Mover la colecta ' + c.codigo + ' al ' + nombreDiaColecta(fecha) + '?\n\n' + textoImpactoMovimiento(c, fecha);
     return c.de_ml
         ? base + '\n\nEsto cambia solo EnvioBot. Tenés que cambiar el turno también en Mercado Libre (si ya pasó su límite te lo cobra).'
-        : base;
+        : base + '\n\nDespués hay que llevar el cambio a Mercado Libre.';
 }
 
 async function soltarEnDia(ev, fecha) {
@@ -813,7 +918,8 @@ async function soltarEnDia(ev, fecha) {
             showToast(data.error || 'No pude mover la colecta.', 'error');
             return;
         }
-        showToast('Colecta movida al ' + nombreDiaColecta(fecha) + '.', 'success');
+        finArrastre();
+        showToast('Colecta movida al ' + nombreDiaColecta(fecha) + '. Acordate de cambiar el turno también en Mercado Libre.', 'success', 6000);
         cargarDatos();
     } catch (e) {
         showToast('Error de conexión: ' + e.message, 'error');
@@ -851,7 +957,7 @@ function tarjetaDeColecta(c) {
         <span class="pc-banner-icon">${iconoSvg('camion', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">Colecta del ${escapeHtml(nombreDiaColecta(c.fecha_retiro))} <span class="pc-sku-inline">${escapeHtml(c.codigo)}</span></div>
-            <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado} Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))}.</div>
+            <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado} Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))}.${c.de_ml ? '' : ' Falta cargarla en Mercado Libre.'}</div>
             ${pasosColecta(c.codigo)}
         </div>
         ${boton}

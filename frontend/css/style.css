@@ -1769,3 +1769,7 @@ table.stock-table tr:hover td {
 .pc-destacada { box-shadow: 0 0 0 2px var(--accent); }
 @media (max-width: 640px) { .pc-cal-dia { min-height: 44px; } .pc-cal-ev span { display: none; } }
 .pc-cal-mover { cursor: grab; }
+.pc-imp { background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; font-size: 12.5px; }
+.pc-imp-titulo { font-weight: 700; color: var(--text); }
+.pc-imp-fila { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+.pc-imp-total { margin-top: 6px; font-weight: 600; color: var(--text); }

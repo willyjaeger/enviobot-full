@@ -250,6 +250,61 @@ process.stdout.write(JSON.stringify(log));
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout), ['editar4', 'ir3'])
 
+    def _impacto(self, item, c, nueva):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('itemsData = ' + process.argv[2] + '; colectasData = [' + process.argv[3] + '];', ctx);
+const r = vm.runInContext('impactoDeMover(colectasData[0], ' + JSON.stringify(process.argv[4]) + ', new Date(2026, 9, 17))', ctx);
+const html = vm.runInContext('htmlImpactoMovimiento(colectasData[0], ' + JSON.stringify(process.argv[4]) + ')', ctx);
+const texto = vm.runInContext('textoImpactoMovimiento(colectasData[0], ' + JSON.stringify(process.argv[4]) + ')', ctx);
+process.stdout.write(JSON.stringify({ r, html, texto }));
+"""
+        p = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps([item]), json.dumps(c), nueva],
+                           capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    COL = {'id': 4, 'codigo': 'ML-79759779', 'estado': 'scheduled', 'fecha_retiro': '2026-10-28', 'fecha_ingreso': '2026-10-31',
+           'productos': [{'titulo': 'Dátil', 'sku': '12072', 'unidades': 100}]}
+
+    def test_mover_un_dia_mas_tarde_aumenta_lo_que_hace_falta(self):
+        item = {'sku': '12072', 'vpd': 10, 'current_stock': 300, 'target_stock_days': 30, 'total_incoming': 100}
+        out = self._impacto(item, self.COL, '2026-10-29')
+        f = out['r']['filas'][0]
+        self.assertEqual((f['antes'], f['despues']), (140, 150))
+        self.assertEqual(out['r']['totalDelta'], 10)
+        self.assertEqual(out['r']['nuevoIngreso'], '2026-11-01')
+        self.assertEqual(f['cobertura'], 25)
+        self.assertIn('necesitás 150 u. (+10)', out['html'])
+        self.assertIn('1 día más tarde', out['texto'])
+
+    def test_mover_antes_baja_lo_que_hace_falta(self):
+        item = {'sku': '12072', 'vpd': 10, 'current_stock': 300, 'target_stock_days': 30, 'total_incoming': 100}
+        out = self._impacto(item, self.COL, '2026-10-27')
+        self.assertEqual(out['r']['totalDelta'], -10)
+        self.assertIn('(-10)', out['html'])
+
+    def test_si_el_producto_se_queda_sin_stock_antes_de_entrar_lo_dice(self):
+        item = {'sku': '12072', 'vpd': 10, 'current_stock': 100, 'target_stock_days': 30, 'total_incoming': 100}
+        out = self._impacto(item, self.COL, '2026-10-29')
+        self.assertTrue(out['r']['filas'][0]['sinStock'])
+        self.assertIn('sin stock antes de entrar', out['html'])
+
+    def test_sin_ventas_no_inventa_numeros(self):
+        item = {'sku': '12072', 'vpd': 0, 'current_stock': 100, 'target_stock_days': 30, 'total_incoming': 100}
+        out = self._impacto(item, self.COL, '2026-10-29')
+        self.assertEqual(out['r']['filas'], [])
+        self.assertIn('No tengo ventas', out['html'])
+
+    def test_el_calendario_trae_la_caja_del_impacto_y_las_armadas_en_enviobot_avisan_que_falta_ml(self):
+        html = self._correr([_item()], None, [self._col(4, 11, True, de_ml=False, codigo='COL-FULL-1')])['html']
+        self.assertIn('id="pc-cal-impacto"', html)
+        self.assertIn('Falta cargarla en Mercado Libre', html)
+        self.assertNotIn('Falta cargarla en Mercado Libre', self._correr([_item()], None, [self._col(4, 11, True)])['html'])
+
     def test_el_mensaje_de_mover_avisa_que_hay_que_cambiar_ml(self):
         js = _leer(os.path.join('js', 'app.js'))
         self.assertIn('Tenés que cambiar el turno también en Mercado Libre', js)
