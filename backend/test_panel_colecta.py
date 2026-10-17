@@ -3,6 +3,7 @@ Ejecuta el JS real del panel con un DOM de mentira (hace falta Node; si no hay, 
 Uso:  python backend/test_panel_colecta.py
 """
 import json
+import sys
 import os
 import re
 import shutil
@@ -140,6 +141,79 @@ class TestPanelJS(unittest.TestCase):
         out = self._correr([_item(status='critical', sugerido_al_ingreso=5)], prox)
         self.assertNotIn('pc-cerrada', out['html'])
         self.assertIn('Faltan', out['html'])
+
+
+HARNESS_SUGERIDO = r"""
+const vm = require('vm');
+const src = process.argv[2], caso = JSON.parse(process.argv[3]);
+const ctx = { itemsData: caso.items, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(src + '\nthis.__f = sugeridoEdicion;', ctx);
+process.stdout.write(JSON.stringify(caso.consultas.map(c => ctx.__f(c))));
+"""
+
+
+@unittest.skipUnless(NODE, 'Node no está instalado')
+class TestSugeridoEnEdicion(unittest.TestCase):
+    """El Sugerido de Editar envío aparece solo si la colecta quedó corta contra el objetivo."""
+
+    @classmethod
+    def setUpClass(cls):
+        js = _leer(os.path.join('js', 'app.js'))
+        cls.src = _corte(js, 'const TOLERANCIA_AVISO_AJUSTE', 'const ESTADOS_GALPON')
+        cls.tmp = tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8')
+        cls.tmp.write(HARNESS_SUGERIDO)
+        cls.tmp.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        os.unlink(cls.tmp.name)
+
+    def _sug(self, vivos, consultas):
+        r = subprocess.run([NODE, self.tmp.name, self.src, json.dumps({'items': vivos, 'consultas': consultas})],
+                           capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def _vivo(self, **kw):
+        base = dict(sku='A', item_id='MLA1', inventory_id=None, vpd=10, stock_al_ingreso=0, target_stock_days=15)
+        base.update(kw)
+        return base
+
+    def test_colecta_corta_sugiere_para_llegar_al_objetivo(self):
+        # 100 u. a 10/día cubren 10 días de 15 (menos del 80 %): conviene 150.
+        self.assertEqual(self._sug([self._vivo()], [{'sku': 'A', 'units_to_send': 100}]), [150])
+
+    def test_colecta_suficiente_no_sugiere(self):
+        # 130 u. cubren 13 días: dentro de la tolerancia (12 o más).
+        self.assertEqual(self._sug([self._vivo()], [{'sku': 'A', 'units_to_send': 130}]), [None])
+        self.assertEqual(self._sug([self._vivo()], [{'sku': 'A', 'units_to_send': 400}]), [None])
+
+    def test_descuenta_lo_que_queda_en_full_al_ingreso(self):
+        # Quedan 40 al ingreso: 100 u. cubren 14 días, bien.
+        self.assertEqual(self._sug([self._vivo(stock_al_ingreso=40)], [{'sku': 'A', 'units_to_send': 100}]), [None])
+
+    def test_sin_datos_vivos_o_sin_ventas_no_sugiere(self):
+        self.assertEqual(self._sug([self._vivo()], [{'sku': 'OTRO', 'units_to_send': 1}]), [None])
+        self.assertEqual(self._sug([self._vivo(vpd=0)], [{'sku': 'A', 'units_to_send': 1}]), [None])
+        self.assertEqual(self._sug([self._vivo(stock_al_ingreso=None)], [{'sku': 'A', 'units_to_send': 1}]), [None])
+
+    def test_busca_por_inventory_id_y_por_publicacion(self):
+        vivo = self._vivo(sku='', inventory_id='INV9', item_id='MLA9')
+        self.assertEqual(self._sug([vivo], [{'inventory_id': 'INV9', 'units_to_send': 50}]), [150])
+        self.assertEqual(self._sug([vivo], [{'item_id': 'MLA9', 'units_to_send': 50}]), [150])
+
+    def test_la_tolerancia_es_la_misma_que_en_el_backend(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import proyeccion
+        self.assertEqual(proyeccion.TOLERANCIA_AVISO, 0.8)
+        self.assertIn('const TOLERANCIA_AVISO_AJUSTE = 0.8;', self.src)
+
+    def test_la_pantalla_de_edicion_ya_no_usa_el_sugerido_guardado(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        fn = js[js.index('function renderizarItemsEdicion'):js.index('window.renderizarItemsEdicion')]
+        self.assertIn('sugeridoEdicion(it)', fn)
+        self.assertNotIn('it.suggested_units', fn)
 
 
 class TestEditarEnvioSinBultos(unittest.TestCase):

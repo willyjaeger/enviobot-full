@@ -395,6 +395,25 @@ function textoLimiteEdicion(limiteIso) {
     return `${partes.weekday} ${partes.day}/${partes.month} a las ${partes.hour}:${partes.minute}`;
 }
 
+// Misma regla que proyeccion.aviso_ajuste: se sugiere solo si lo cargado cubre menos del 80 % del objetivo.
+const TOLERANCIA_AVISO_AJUSTE = 0.8;
+
+// Unidades que conviene mandar de un producto de la colecta que se está editando, o null si lo
+// cargado está bien. Se calcula con los datos de hoy del panel (objetivo del depósito, stock al
+// ingreso), no con un número guardado al crear la colecta.
+function sugeridoEdicion(it) {
+    const vivo = (itemsData || []).find(x =>
+        (it.inventory_id && x.inventory_id === it.inventory_id) ||
+        (it.sku && x.sku === it.sku) ||
+        (it.item_id && x.item_id === it.item_id));
+    if (!vivo || !(vivo.vpd > 0) || vivo.stock_al_ingreso === null || vivo.stock_al_ingreso === undefined) return null;
+    const objetivo = vivo.target_stock_days || 30;
+    const unidades = it.units_to_send || 0;
+    if ((vivo.stock_al_ingreso + unidades) / vivo.vpd >= objetivo * TOLERANCIA_AVISO_AJUSTE) return null;
+    const ideal = Math.max(0, Math.round(objetivo * vivo.vpd - vivo.stock_al_ingreso));
+    return ideal > unidades ? ideal : null;
+}
+
 const ESTADOS_GALPON = [['to_buy', 'A comprar'], ['packing', 'Envasando'], ['boxed', 'Listo en caja']];
 
 function selectorGalpon(it) {
@@ -2507,11 +2526,12 @@ function renderizarItemsEdicion() {
         const varHtml = it.variation_name ? `<span style="font-size: 11px; color: var(--text2); display: block;">${it.variation_name}</span>` : '';
 
         let sugHintHtml = '';
-        if (it.suggested_units && it.suggested_units > 0 && it.suggested_units !== it.units_to_send) {
+        const sugerido = sugeridoEdicion(it);
+        if (sugerido) {
             sugHintHtml = `
                 <div style="font-size: 10.5px; color: var(--accent); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                    <span>Sugerido: <strong>${it.suggested_units}</strong></span>
-                    <button type="button" class="btn btn-secondary btn-xs" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px;" onclick="onAjustarSugeridoEdicion(${idx}, ${it.suggested_units})" title="Ajustar cantidad a unidades sugeridas">
+                    <span title="Para cubrir tu stock objetivo con lo que se vende hasta que entre la colecta">Sugerido: <strong>${sugerido}</strong></span>
+                    <button type="button" class="btn btn-secondary btn-xs" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px;" onclick="onAjustarSugeridoEdicion(${idx}, ${sugerido})" title="Ajustar cantidad a unidades sugeridas">
                         Ajustar
                     </button>
                 </div>
