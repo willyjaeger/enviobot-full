@@ -4756,6 +4756,19 @@ async function agregarDestinatarioWA() {
     showToast(`Número de ${name} agregado.`, "success");
 }
 
+async function enviarAccesoCelular() {
+    try {
+        const resp = await fetch(`${API_BASE}/full/app/enviar-acceso`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+        const data = await resp.json();
+        showToast(data.ok ? `Te mandamos el link por WhatsApp al ${data.phone}. Abrilo desde el celular.` : (data.error || 'No se pudo enviar el link.'), data.ok ? 'success' : 'error', 5000);
+    } catch (e) {
+        showToast('No se pudo enviar el link.', 'error');
+    }
+}
+
 async function invitarAppWA(id, name) {
     try {
         const resp = await fetch(`${API_BASE}/full/recipients/${id}/invitar-app`, {
