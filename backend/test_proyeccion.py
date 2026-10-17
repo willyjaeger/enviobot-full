@@ -172,5 +172,24 @@ class TestCuentaRegresiva(unittest.TestCase):
         self.assertFalse(p.cuenta_regresiva(date(2026, 10, 23), ahora)['abierta'])
 
 
+class TestBloqueadaPorMl(unittest.TestCase):
+    RETIRO = date(2026, 10, 19)  # lunes: cierra el viernes 16 a las 9:40
+
+    def _ahora(self, d, h, mi):
+        return datetime(d.year, d.month, d.day, h, mi, tzinfo=p.HORA_BA)
+
+    def test_de_ml_pasado_el_limite_queda_bloqueada(self):
+        self.assertTrue(p.bloqueada_por_ml('ML-78889570', self.RETIRO, ahora=self._ahora(date(2026, 10, 17), 10, 0)))
+
+    def test_de_ml_antes_del_limite_se_puede_editar(self):
+        self.assertFalse(p.bloqueada_por_ml('ML-78889570', self.RETIRO, ahora=self._ahora(date(2026, 10, 16), 9, 0)))
+
+    def test_las_armadas_en_enviobot_nunca_se_bloquean(self):
+        self.assertFalse(p.bloqueada_por_ml('COL-FULL-20261012-002', self.RETIRO, ahora=self._ahora(date(2026, 10, 18), 10, 0)))
+
+    def test_sin_fecha_no_bloquea(self):
+        self.assertFalse(p.bloqueada_por_ml('ML-1', None))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -137,6 +137,14 @@ def cuenta_regresiva(fecha_retiro, ahora=None, hora=None):
     }
 
 
+def bloqueada_por_ml(codigo, fecha_retiro, ahora=None, hora=None):
+    """Una colecta cargada desde Mercado Libre (código ML-<número>) ya está bloqueada allá pasado el límite:
+    EnvioBot tampoco deja cambiarla, para no mostrar cantidades distintas de las que ML va a recibir."""
+    if not str(codigo or '').startswith('ML-') or not fecha_retiro:
+        return False
+    return not cuenta_regresiva(fecha_retiro, ahora=ahora, hora=hora)["abierta"]
+
+
 # ── Velocidad de venta corregida por días sin stock ─────────────────────────────────────
 MIN_DIAS_ACTIVOS = 3  # con menos días con stock que esto, el promedio sería puro ruido: no se corrige
 

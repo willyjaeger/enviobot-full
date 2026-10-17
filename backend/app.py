@@ -3010,6 +3010,13 @@ def update_inbound_shipment(shipment_id):
             "error": f"No se puede modificar un envío en estado '{shipment['status']}'. Solo se pueden editar envíos programados o en preparación."
         }), 400
 
+    if _proy.bloqueada_por_ml(shipment.get("shipment_code"), shipment.get("pickup_date")):
+        conn.close()
+        return jsonify({
+            "ok": False,
+            "error": "Mercado Libre ya cerró esta colecta (el límite para cambiarla pasó), así que acá tampoco se puede modificar."
+        }), 400
+
     data = request.get_json() or {}
     items = data.get("items", [])
     if not items:
