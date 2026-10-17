@@ -501,14 +501,8 @@ def formatear_alerta_verificacion_whatsapp(nombre_usuario: str, link_verificacio
     """
     Mensaje de verificación del número de WhatsApp: corto, con un único link.
     """
-    cfg = obtener_configuracion_whatsapp()
-    custom_template = cfg.get("templates", {}).get("verificacion")
-    if custom_template:
-        return _render_template(custom_template, {
-            "nombre": nombre_usuario,
-            "link": link_verificacion
-        })
-
+    # No se usa la plantilla "verificacion" del admin: es la vieja (código + vCard adjunta)
+    # y hablaría de cosas que ya no se mandan.
     return (
         f"*EnvioBot Full*\n"
         f"Hola {nombre_usuario}, este número fue registrado para recibir las alertas de stock y de colecta en Mercado Envíos Full.\n\n"
