@@ -2223,7 +2223,6 @@ def listar_avisos():
     for f in filas:
         a = cambio_tasa.texto_panel(f["message"])
         if a:
-            a["item_id"] = f["item_id"].split(":")[0]
             a["fecha"] = f["sent_at"].isoformat() + "Z" if f.get("sent_at") else None
             avisos.append(a)
     return jsonify({"ok": True, "avisos": avisos}), 200

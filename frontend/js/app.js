@@ -3275,31 +3275,41 @@ async function cargarAvisos(soloContador = false) {
         const avisos = data.avisos || [];
         const nuevos = avisos.filter(a => a.fecha && Date.parse(a.fecha) > _avisosVistosHasta).length;
         const badge = document.getElementById('topbarAvisosBadge');
+        const boton = document.getElementById('btnAvisosTop');
         if (badge) { badge.textContent = nuevos; badge.style.display = nuevos ? 'inline-block' : 'none'; }
+        if (boton) boton.classList.toggle('sin-leer', nuevos > 0);
         if (soloContador) return;
 
         const cont = document.getElementById('avisosContainer');
         if (!cont) return;
         cont.innerHTML = avisos.length ? avisos.map(a => {
             const baja = a.sentido === 'baja';
-            const color = baja ? 'var(--red, #e5484d)' : 'var(--green, #30a46c)';
-            const cuando = a.fecha ? new Date(a.fecha).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+            const color = a.revertido ? 'var(--text2)' : (baja ? 'var(--red, #e5484d)' : 'var(--green, #30a46c)');
+            const titulo = a.revertido ? 'Se revirtió: el ritmo de venta volvió a la normalidad'
+                : (baja ? 'Bajó el ritmo de venta' : 'Subió el ritmo de venta');
+            const fecha = a.fecha ? new Date(a.fecha) : null;
+            const cuando = fecha ? fecha.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
             const nuevo = a.fecha && Date.parse(a.fecha) > _avisosVistosHasta;
-            return `<div style="border: 1px solid var(--border); border-left: 4px solid ${color}; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; background: var(--surf2);">
-                <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
-                    <strong style="color: ${color};">${baja ? 'Bajó el ritmo de venta' : 'Subió el ritmo de venta'}${nuevo ? ' · nuevo' : ''}</strong>
-                    <span style="font-size: 12px; color: var(--text2);">${escapeHtml(cuando)}</span>
+            return `<details class="aviso-cartel" style="border: 1px solid var(--border); border-left: 4px solid ${color}; border-radius: 8px; margin-bottom: 10px; background: var(--surf2);">
+                <summary>
+                    <span style="min-width: 0;">
+                        <strong style="color: ${color};">${nuevo ? '● ' : ''}${escapeHtml(titulo)}</strong>
+                        <span style="display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(a.producto)}</span>
+                    </span>
+                    <span style="font-size: 12px; color: var(--text2); white-space: nowrap;">${escapeHtml(cuando)}</span>
+                </summary>
+                <div class="aviso-cuerpo">
+                    <div style="font-size: 12px; color: var(--text2);">${escapeHtml(cuando)} · Publicación ${escapeHtml(a.item_id)}${a.sku ? ' · SKU ' + escapeHtml(a.sku) : ''}${a.stock != null ? ' · Stock en Full: ' + escapeHtml(String(a.stock)) : ''}</div>
+                    <div style="margin-top: 6px;">${escapeHtml(a.detalle)}</div>
+                    ${a.revertido ? '' : '<div style="font-size: 12px; color: var(--text2); margin-top: 6px;">Te recomendamos verificar qué sucede y si tenés stock suficiente para la próxima colecta.</div>'}
                 </div>
-                <div style="margin-top: 4px; font-weight: 600;">${escapeHtml(a.producto)}</div>
-                <div style="font-size: 12px; color: var(--text2);">Publicación ${escapeHtml(a.item_id)}${a.sku ? ' · SKU ' + escapeHtml(a.sku) : ''}${a.stock != null ? ' · Stock en Full: ' + escapeHtml(String(a.stock)) : ''}</div>
-                <div style="margin-top: 6px;">${escapeHtml(a.detalle)}</div>
-                <div style="font-size: 12px; color: var(--text2); margin-top: 4px;">Verificá qué sucede y si tenés stock suficiente para la próxima colecta.</div>
-            </div>`;
+            </details>`;
         }).join('') : `<div style="text-align: center; padding: 40px; color: var(--text2);">No hay avisos. Cuando el ritmo de venta de un producto con stock cambie de forma notoria, vas a verlo acá.</div>`;
 
         _avisosVistosHasta = Date.now();
         try { localStorage.setItem('avisosVistosHasta', String(_avisosVistosHasta)); } catch (e) { /* sin almacenamiento */ }
         if (badge) badge.style.display = 'none';
+        if (boton) boton.classList.remove('sin-leer');
     } catch (e) {
         const cont = document.getElementById('avisosContainer');
         if (cont && !soloContador) cont.textContent = 'No se pudieron cargar los avisos.';
@@ -6644,6 +6654,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         cargarHistorialColectas(true);
         cargarMonitorEventosLogisticos();
         cargarAvisos(true);
+        setInterval(() => { const m = document.getElementById('modalAvisos'); cargarAvisos(!(m && m.style.display === 'flex')); }, 5 * 60 * 1000);
     }
 
     // 7. Verificar visibilidad del botón de instalación de aplicación en escritorio

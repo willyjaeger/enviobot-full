@@ -5,15 +5,19 @@ Compara las ventas por día de la última semana contra las de los 23 días ante
 los días en que el producto estuvo sin stock). Si bajó o subió de forma notoria avisa:
   - en el panel (ventana "Avisos"), siempre, apenas se detecta;
   - por WhatsApp, solo dentro del horario de cada destinatario: si se detecta fuera de horario no se
-    manda ni se anota como enviado, y la próxima corrida dentro del horario lo manda.
+    manda ni se anota como enviado. Cuando llega el horario se VUELVE A CONTROLAR antes de mandar:
+    si la situación sigue (o cambió) se manda con los números de ese momento; si volvió a lo normal no
+    se manda nada y en el panel queda anotado que se revirtió.
 
 Usa solo tablas que ya existen (forecasts, full_items, stock_daily si está, alert_logs): no hay migración.
-El historial de aviso se guarda en alert_logs con alert_type 'cambio_tasa' (channel 'panel' o 'whatsapp').
+El historial se guarda en alert_logs con alert_type 'cambio_tasa' (channel 'panel' o 'whatsapp').
+Un aviso del panel tiene clave '<producto>:<sentido>'; su reversión, '<producto>:rev-<sentido>'.
 
-Lo llama el motor de alertas después de cada sincronización. Para que el WhatsApp salga ni bien se
-abre el horario conviene además correrlo cada 10 minutos desde cron (no llama a MercadoLibre, solo lee
-lo que ya sincronizó el worker); cargar esa línea en el servidor es un cambio aparte, con OK de Guillermo:
-    */10 * * * * <venv>/bin/python <app>/backend/cambio_tasa.py >> /var/log/enviobot_full.log 2>&1
+Lo llama el motor de alertas después de cada sincronización (cada 4 horas). Para que el WhatsApp
+pendiente salga en cuanto se abre el horario conviene además correrlo cada 30 minutos desde cron (no
+llama a MercadoLibre, solo vuelve a leer lo que ya sincronizó el worker); cargar esa línea en el
+servidor es un cambio aparte, con OK de Guillermo:
+    */30 * * * * <venv>/bin/python <app>/backend/cambio_tasa.py >> /var/log/enviobot_full.log 2>&1
 """
 import hashlib
 import json
@@ -36,23 +40,30 @@ MIN_DIAS_BASE = 10        # idem para el período de comparación
 UMBRAL_BAJA = 0.40        # cae 40 % o más
 UMBRAL_SUBA = 0.50        # sube 50 % o más
 MIN_UNIDADES = 5          # menos que esto en una semana es ruido, no tendencia
-REPETIR_DIAS = 7          # no se vuelve a avisar del mismo producto y sentido antes de una semana
+REPETIR_DIAS = 7          # cuánto tiempo se sigue un aviso en el panel
 MAX_PRODUCTOS_WA = 8
 ESPERA_MAX_DIAS = 5       # un aviso que no pudo salir en 5 días (fin de semana largo incluido) ya es viejo
 
 
-def evaluar(v7, v30, sin7=0, sin30=0, stock=1):
-    """Devuelve None si el ritmo es normal, o un dict con sentido ('baja'/'suba'), ritmo de antes
-    ('antes'), ritmo actual ('ahora', unidades por día) y variación en % ('pct', None si antes era 0)."""
+def ritmos(v7, v30, sin7=0, sin30=0, stock=1):
+    """(antes, ahora) en unidades por día, o None si no hay datos suficientes para medir
+    (sin stock, o demasiados días sin stock en la semana o en el período de comparación)."""
     if (stock or 0) <= 0:
         return None  # sin stock la venta cae por falta de producto, no por la demanda
     dias_recientes = DIAS_RECIENTE - sin7
     dias_base = DIAS_BASE - max(0, sin30 - sin7)
     if dias_recientes < MIN_DIAS_RECIENTE or dias_base < MIN_DIAS_BASE:
         return None
-    ahora = v7 / float(dias_recientes)
-    antes = max(0, v30 - v7) / float(dias_base)
+    return max(0, v30 - v7) / float(dias_base), v7 / float(dias_recientes)
 
+
+def evaluar(v7, v30, sin7=0, sin30=0, stock=1):
+    """Devuelve None si el ritmo es normal, o un dict con sentido ('baja'/'suba'), ritmo de antes
+    ('antes'), ritmo actual ('ahora', unidades por día) y variación en % ('pct', None si antes era 0)."""
+    r = ritmos(v7, v30, sin7, sin30, stock)
+    if not r:
+        return None
+    antes, ahora = r
     if antes <= 0:
         if v7 >= MIN_UNIDADES:
             return {"sentido": "suba", "antes": 0.0, "ahora": round(ahora, 1), "pct": None}
@@ -72,9 +83,15 @@ def _clave_producto(f):
         or f"{f['item_id']}_{f.get('variation_id') or ''}"
 
 
+def _gk(clave_producto):
+    return hashlib.sha1(clave_producto.encode("utf-8")).hexdigest()[:12]
+
+
 def detectar(conn, user_id, hoy=None):
-    """Lista de cambios notorios del usuario. Agrupa por producto físico (inventory_id o SKU) porque
-    la misma mercadería puede estar en varias publicaciones y el stock es uno solo."""
+    """(cambios, medibles). `cambios`: cambios notorios del usuario. `medibles`: {producto: ritmo actual}
+    de los productos que se pudieron medir (sirve para saber si uno ya volvió a lo normal).
+    Agrupa por producto físico (inventory_id o SKU) porque la misma mercadería puede estar en varias
+    publicaciones y el stock es uno solo."""
     hoy = hoy or datetime.utcnow().date()
     with conn.cursor() as cur:
         cur.execute("""
@@ -108,24 +125,33 @@ def detectar(conn, user_id, hoy=None):
             g["sin"] = sin.get((f["item_id"], f.get("variation_id") or ""), (0, 0))
         g["stock"] = max(g["stock"], int(f.get("current_stock_full") or 0))  # mismo inventario, mismo stock
 
-    cambios = []
-    for g in grupos.values():
+    cambios, medibles = [], {}
+    for clave_prod, g in grupos.items():
+        r = ritmos(g["v7"], g["v30"], g["sin"][0], g["sin"][1], g["stock"])
+        if not r:
+            continue
+        gk = _gk(clave_prod)
+        medibles[gk] = round(r[1], 1)
         ev = evaluar(g["v7"], g["v30"], g["sin"][0], g["sin"][1], g["stock"])
         if not ev:
             continue
         p = g["principal"]
         ev.update({
-            "item_id": p["item_id"], "variation_id": p.get("variation_id") or "",
+            "gk": gk, "item_id": p["item_id"], "variation_id": p.get("variation_id") or "",
             "sku": (p.get("sku") or "").strip(), "titulo": (p.get("title") or "").strip(), "stock": g["stock"],
         })
         cambios.append(ev)
     # primero las bajas (lo que más hay que mirar) y, dentro de cada sentido, las más fuertes
     cambios.sort(key=lambda c: (c["sentido"] != "baja", -abs(c["pct"] if c["pct"] is not None else 999)))
-    return cambios
+    return cambios, medibles
 
 
 def _clave(c):
-    return f"{c['item_id']}:{c['variation_id']}:{c['sentido']}"[:48]
+    return f"{c['gk']}:{c['sentido']}"
+
+
+def _clave_rev(gk, sentido):
+    return f"{gk}:rev-{sentido}"
 
 
 def _etiqueta(c):
@@ -151,85 +177,125 @@ def texto_whatsapp(cambios, app_url=""):
     return "\n".join(lineas)
 
 
-def _registro_panel(c):
+def _registro_panel(c, revertido=False):
     """Lo que se guarda para la ventana de Avisos (alert_logs.message es corto, por eso va compacto)."""
-    return json.dumps({"s": c["sentido"], "a": c["antes"], "n": c["ahora"], "p": c["pct"], "sku": c["sku"],
-                       "st": c["stock"], "t": c["titulo"][:70]}, ensure_ascii=False, separators=(",", ":"))
+    d = {"s": c["sentido"], "a": c["antes"], "n": c["ahora"], "p": c["pct"], "sku": c["sku"],
+         "st": c["stock"], "t": c["titulo"][:70], "i": c["item_id"]}
+    if revertido:
+        d["r"] = 1
+    return json.dumps(d, ensure_ascii=False, separators=(",", ":"))
 
 
 def texto_panel(registro):
-    """Frase para mostrar en el panel a partir de lo guardado. Devuelve (titulo, detalle) o None."""
+    """Lo que muestra la ventana de Avisos a partir de lo guardado. None si el registro no sirve."""
     try:
         d = json.loads(registro)
-        verbo = "bajó" if d["s"] == "baja" else "subió"
-        pct = f" ({d['p']:+d} %)" if d.get("p") is not None else ""
-        return {
-            "sentido": d["s"], "producto": d.get("t", ""), "sku": d.get("sku", ""), "stock": d.get("st"),
-            "detalle": f"El ritmo de venta {verbo} de {_ritmo(d['a'])} a {_ritmo(d['n'])} unidades por día{pct}.",
-        }
+        base = {"sentido": d["s"], "producto": d.get("t", ""), "sku": d.get("sku", ""), "stock": d.get("st"),
+                "item_id": d.get("i", ""), "revertido": bool(d.get("r"))}
+        if d.get("r"):
+            base["detalle"] = (f"La situación se revirtió: el ritmo de venta volvió a la normalidad "
+                               f"({_ritmo(d['n'])} unidades por día; antes del aviso era {_ritmo(d['a'])}). No hace falta hacer nada.")
+        else:
+            verbo = "bajó" if d["s"] == "baja" else "subió"
+            pct = f" ({d['p']:+d} %)" if d.get("p") is not None else ""
+            base["detalle"] = f"El ritmo de venta {verbo} de {_ritmo(d['a'])} a {_ritmo(d['n'])} unidades por día{pct}."
+        return base
     except (ValueError, KeyError, TypeError):
         return None
 
 
 def _desde_registro(clave, registro):
-    """Reconstruye el cambio a partir de lo guardado en el panel (clave 'item:variacion:sentido')."""
-    a = texto_panel(registro)
-    if not a:
-        return None
+    """Reconstruye el cambio a partir de lo guardado en el panel (clave 'producto:sentido')."""
     try:
         d = json.loads(registro)
-        item, var, _ = clave.split(":", 2)
-        return {"sentido": d["s"], "antes": d["a"], "ahora": d["n"], "pct": d.get("p"), "item_id": item,
-                "variation_id": var, "sku": d.get("sku", ""), "titulo": d.get("t", ""), "stock": d.get("st")}
+        return {"sentido": d["s"], "antes": d["a"], "ahora": d["n"], "pct": d.get("p"), "item_id": d.get("i", ""),
+                "variation_id": "", "gk": clave.split(":", 1)[0], "sku": d.get("sku", ""),
+                "titulo": d.get("t", ""), "stock": d.get("st")}
     except (ValueError, KeyError, TypeError):
         return None
 
 
-def _hash_corto(clave):
-    return hashlib.sha1(clave.encode("utf-8")).hexdigest()[:10]
+def _hash_corto(texto):
+    return hashlib.sha1(texto.encode("utf-8")).hexdigest()[:10]
+
+
+def _filas_panel(conn, user_id):
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, item_id, message, sent_at FROM alert_logs
+            WHERE user_id=%s AND alert_type=%s AND channel='panel' AND sent_at >= %s
+            ORDER BY id ASC
+        """, (user_id, TIPO_ALERTA, datetime.utcnow() - timedelta(days=REPETIR_DIAS)))
+        return cur.fetchall()
+
+
+def _activos(filas):
+    """{clave 'producto:sentido': fila} de los avisos que siguen abiertos: el último de cada clave
+    que no tiene después un aviso de reversión."""
+    abiertos = {}
+    for f in filas:
+        gk, _, resto = f["item_id"].partition(":")
+        if resto.startswith("rev-"):
+            abiertos.pop(f"{gk}:{resto[4:]}", None)
+        else:
+            abiertos[f["item_id"]] = f
+    return abiertos
 
 
 def procesar_usuario(conn, user_id, ahora=None):
     ahora = ahora or datetime.now(proyeccion.HORA_BA)
-    res = {"user_id": user_id, "detectados": 0, "avisos_panel": 0, "mensajes_whatsapp": 0}
-    cambios = detectar(conn, user_id)
+    res = {"user_id": user_id, "detectados": 0, "avisos_panel": 0, "revertidos": 0, "mensajes_whatsapp": 0}
+    cambios, medibles = detectar(conn, user_id)
     res["detectados"] = len(cambios)
-    horas = REPETIR_DIAS * 24
+    actuales = {_clave(c): c for c in cambios}
+    activos = _activos(_filas_panel(conn, user_id))
+    if not cambios and not activos:
+        return res
 
-    # 1) Ventana de avisos del panel: se anota apenas se detecta, no depende del horario.
-    for c in cambios:
-        if not alerts_engine.ya_se_envio_alerta_hoy(conn, user_id, TIPO_ALERTA, _clave(c), horas_cooldown=horas, channel="panel"):
-            alerts_engine.registrar_alerta_en_log(conn, user_id, _clave(c), TIPO_ALERTA, _registro_panel(c), channel="panel")
+    # 1) Ventana de avisos: lo nuevo se anota apenas se detecta (no depende del horario)...
+    for clave, c in actuales.items():
+        if clave not in activos:
+            alerts_engine.registrar_alerta_en_log(conn, user_id, clave, TIPO_ALERTA, _registro_panel(c), channel="panel")
             res["avisos_panel"] += 1
+    # ...y lo que ya no se cumple se anota como revertido (una sola vez).
+    for clave, fila in activos.items():
+        gk, sentido = clave.split(":", 1)
+        if clave in actuales or gk not in medibles:
+            continue  # sigue igual, o no se puede medir (sin stock): no se dice nada
+        previo = _desde_registro(clave, fila["message"])
+        if previo:
+            previo["ahora"] = medibles[gk]
+            alerts_engine.registrar_alerta_en_log(conn, user_id, _clave_rev(gk, sentido), TIPO_ALERTA,
+                                                  _registro_panel(previo, revertido=True), channel="panel")
+            res["revertidos"] += 1
 
-    # 2) WhatsApp: se manda desde lo GUARDADO en el panel, no de lo recalculado. Si se detectó fuera de
-    # horario, queda esperando y sale en el primer horario habilitado de cada destinatario, aunque para
-    # entonces el ritmo ya se haya normalizado. Pasados ESPERA_MAX_DIAS sin poder mandarse, se descarta por viejo.
+    # 2) WhatsApp. Se manda recién cuando el destinatario está en horario, y para entonces ya se volvió a
+    # controlar (arriba): solo van los avisos que SIGUEN abiertos, con los números de este momento.
+    # Un aviso que no pudo salir en ESPERA_MAX_DIAS (fin de semana largo incluido) ya es viejo.
+    activos = _activos(_filas_panel(conn, user_id))
+    limite = datetime.utcnow() - timedelta(days=ESPERA_MAX_DIAS)
+    vigentes = [(c, activos[k]) for k, c in actuales.items() if k in activos and activos[k]["sent_at"] >= limite]
+    if not vigentes:
+        return res
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
         settings = cur.fetchone() or {"notify_whatsapp": True}
-        cur.execute("""
-            SELECT item_id, message FROM alert_logs
-            WHERE user_id=%s AND alert_type=%s AND channel='panel' AND sent_at >= %s
-        """, (user_id, TIPO_ALERTA, datetime.utcnow() - timedelta(days=ESPERA_MAX_DIAS)))
-        guardados = cur.fetchall()
-    if not guardados or not settings.get("notify_whatsapp", True) or not obtener_configuracion_whatsapp().get("enabled", True):
+    if not settings.get("notify_whatsapp", True) or not obtener_configuracion_whatsapp().get("enabled", True):
         return res
-    cambios = [c for c in (_desde_registro(g["item_id"], g["message"]) for g in guardados) if c]
     from aviso_limite_colecta import _destinatarios
-    destinos = _destinatarios(conn, user_id, settings)
-    for tel, horario in destinos.items():
+    horas = REPETIR_DIAS * 24
+    for tel, horario in _destinatarios(conn, user_id, settings).items():
         if not whatsapp_permitido(ahora, horario):
             continue
-        pendientes = [c for c in cambios if not alerts_engine.ya_se_envio_alerta_hoy(
-            conn, user_id, TIPO_ALERTA, f"wa:{normalizar_telefono(tel)}:{_hash_corto(_clave(c))}", horas_cooldown=horas, channel="whatsapp")]
+        marcas = {_clave(c): f"wa:{normalizar_telefono(tel)}:{_hash_corto(_clave(c) + ':' + str(fila['id']))}" for c, fila in vigentes}
+        pendientes = [c for c, _ in vigentes if not alerts_engine.ya_se_envio_alerta_hoy(
+            conn, user_id, TIPO_ALERTA, marcas[_clave(c)], horas_cooldown=horas, channel="whatsapp")]
         if not pendientes:
             continue
         texto = texto_whatsapp(pendientes, alerts_engine.APP_URL)
         enviar_lote_con_demora([tel], texto)
         for c in pendientes:
-            alerts_engine.registrar_alerta_en_log(
-                conn, user_id, f"wa:{normalizar_telefono(tel)}:{_hash_corto(_clave(c))}", TIPO_ALERTA, texto, channel="whatsapp")
+            alerts_engine.registrar_alerta_en_log(conn, user_id, marcas[_clave(c)], TIPO_ALERTA, texto, channel="whatsapp")
         res["mensajes_whatsapp"] += 1
         logger.info(f"[Cambio de ritmo] user_id={user_id}: aviso de {len(pendientes)} producto(s) enviado")
     return res

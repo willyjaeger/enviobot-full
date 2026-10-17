@@ -48,7 +48,7 @@ class TestEvaluar(unittest.TestCase):
 
 
 class TestTextos(unittest.TestCase):
-    CAMBIO = {"sentido": "baja", "antes": 2.0, "ahora": 0.7, "pct": -65, "item_id": "MLA123", "variation_id": "",
+    CAMBIO = {"gk": "abc123", "sentido": "baja", "antes": 2.0, "ahora": 0.7, "pct": -65, "item_id": "MLA123", "variation_id": "",
               "sku": "ABC-1", "titulo": "Funda de silicona", "stock": 40}
 
     def test_whatsapp_incluye_producto_publicacion_y_sku(self):
@@ -67,6 +67,21 @@ class TestTextos(unittest.TestCase):
         self.assertEqual((d["item_id"], d["sentido"], d["sku"]), ("MLA123", "baja", "ABC-1"))
         self.assertEqual(c._clave(d), c._clave(self.CAMBIO))
         self.assertIsNone(c._desde_registro("x:y:baja", "roto"))
+
+    def test_reversion_se_muestra_como_tal(self):
+        rev = dict(self.CAMBIO, ahora=1.9)
+        a = c.texto_panel(c._registro_panel(rev, revertido=True))
+        self.assertTrue(a["revertido"])
+        self.assertIn("se revirtió", a["detalle"])
+        self.assertEqual(a["item_id"], "MLA123")
+
+    def test_aviso_abierto_hasta_que_se_revierte(self):
+        f = lambda i, k: {"id": i, "item_id": k, "message": "{}", "sent_at": None}
+        filas = [f(1, "g1:baja"), f(2, "g2:suba"), f(3, "g1:rev-baja")]
+        self.assertEqual(set(c._activos(filas)), {"g2:suba"})
+        # si vuelve a bajar después de revertirse, es un aviso nuevo
+        filas.append(f(4, "g1:baja"))
+        self.assertEqual(c._activos(filas)["g1:baja"]["id"], 4)
 
     def test_panel_con_registro_roto_se_ignora(self):
         self.assertIsNone(c.texto_panel("no es json"))
