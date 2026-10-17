@@ -277,6 +277,7 @@ async function cargarDatos() {
             if (data.items && data.items.length > 0) {
                 itemsData = data.items.map(it => adaptarItemDesdeBackend(it));
                 proximaColecta = data.proxima_colecta || null;
+                colectasData = data.colectas || [];
                 recalcularTodo();
                 renderizarPanelColecta();
                 return;
@@ -371,6 +372,7 @@ function adaptarItemDesdeBackend(raw) {
 
 // ── Panel de colecta: cuenta regresiva + colecta en preparación + radar ─────────
 let proximaColecta = null;
+let colectasData = [];
 let panelColectaTimer = null;
 
 function textoCuentaRegresiva(limiteIso) {
@@ -687,6 +689,119 @@ function tablaProductosColecta(enColecta) {
         <tbody>${filas}</tbody></table>`;
 }
 
+// ── Calendario de colectas: retiro, límite para modificar e ingreso a Full ─────────
+const DIAS_CALENDARIO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+const MESES_CALENDARIO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+function claveDiaLocal(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function numeroCorto(codigo) {
+    const n = String(codigo || '').replace(/^ML-/, '').replace(/^COL-FULL-/, '');
+    return n.length > 4 ? n.slice(-4) : n;
+}
+
+// Cada colecta aporta hasta tres marcas: el límite (día hábil anterior al retiro), el retiro y el ingreso a Full.
+function eventosCalendario(colectas) {
+    const por = {};
+    const poner = function (dia, tipo, c) {
+        if (!dia) return;
+        (por[dia] = por[dia] || []).push({ tipo: tipo, c: c });
+    };
+    (colectas || []).forEach(function (c) {
+        if (c.estado === 'scheduled') poner(String(c.limite_edicion || '').slice(0, 10), 'limite', c);
+        poner(c.fecha_retiro, 'retiro', c);
+        poner(c.fecha_ingreso, 'ingreso', c);
+    });
+    return por;
+}
+
+const ETIQUETAS_EVENTO = {
+    limite: { icono: 'candado', texto: 'Límite', largo: 'Último momento para modificar la colecta' },
+    retiro: { icono: 'camion', texto: 'Retiro', largo: 'Retiran la colecta' },
+    ingreso: { icono: 'paquete', texto: 'Ingresa', largo: 'Entra a Full' }
+};
+
+function marcaCalendario(ev) {
+    const e = ETIQUETAS_EVENTO[ev.tipo];
+    const c = ev.c;
+    const estado = c.estado !== 'scheduled' ? 'pc-ev-camino' : (c.abierta ? 'pc-ev-abierta' : 'pc-ev-cerrada');
+    const titulo = e.largo + ' · ' + (c.codigo || '');
+    return '<button type="button" class="pc-cal-ev ' + estado + '" onclick="irAColecta(' + Number(c.id) + ')" title="' + escapeHtml(titulo) + '">' +
+        iconoSvg(e.icono, 12).replace('margin-right: 4px;', 'margin-right: 3px;') +
+        '<span>' + escapeHtml(e.texto) + ' ' + escapeHtml(numeroCorto(c.codigo)) + '</span></button>';
+}
+
+function calendarioColectas(colectas, hoy) {
+    hoy = hoy || new Date();
+    const eventos = eventosCalendario(colectas);
+    const inicio = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    inicio.setDate(inicio.getDate() - ((inicio.getDay() + 6) % 7));  // lunes de esta semana
+    const hoyClave = claveDiaLocal(hoy);
+    let celdas = '';
+    for (let i = 0; i < 42; i++) {
+        const d = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + i);
+        const clave = claveDiaLocal(d);
+        const clases = ['pc-cal-dia'];
+        if (clave === hoyClave) clases.push('pc-cal-hoy');
+        else if (clave < hoyClave) clases.push('pc-cal-pasado');
+        const nombre = (d.getDate() === 1 || i === 0) ? d.getDate() + ' ' + MESES_CALENDARIO[d.getMonth()] : String(d.getDate());
+        celdas += '<div class="' + clases.join(' ') + '"><span class="pc-cal-n">' + escapeHtml(nombre) + '</span>' +
+            (eventos[clave] || []).map(marcaCalendario).join('') + '</div>';
+    }
+    const cabecera = DIAS_CALENDARIO.map(function (n) { return '<div class="pc-cal-cab">' + n + '</div>'; }).join('');
+    const leyenda = '<div class="pc-cal-leyenda">' +
+        ['limite', 'retiro', 'ingreso'].map(function (t) {
+            return '<span>' + iconoSvg(ETIQUETAS_EVENTO[t].icono, 13).replace('margin-right: 4px;', 'margin-right: 4px;') + escapeHtml(ETIQUETAS_EVENTO[t].largo) + '</span>';
+        }).join('') + '</div>';
+    return '<div class="pc-cal"><h3 class="pc-block-title">Calendario de colectas</h3>' +
+        '<div class="pc-cal-grilla">' + cabecera + celdas + '</div>' + leyenda + '</div>';
+}
+
+function irAColecta(id) {
+    const el = document.getElementById('colecta-' + id);
+    if (!el) return;
+    const det = el.querySelector('details');
+    if (det) det.open = true;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('pc-destacada');
+    setTimeout(function () { el.classList.remove('pc-destacada'); }, 1800);
+}
+
+// Una tarjeta por colecta vigente.
+function tarjetaDeColecta(c) {
+    const programada = c.estado === 'scheduled';
+    const resto = programada ? textoCuentaRegresiva(c.limite_edicion) : null;
+    const ms = programada ? new Date(c.limite_edicion).getTime() - Date.now() : 0;
+    const clase = !programada ? '' : (!resto ? 'pc-cerrada' : (ms <= 3600000 ? 'pc-urgente' : ''));
+    const lim = textoLimiteEdicion(c.limite_edicion);
+    const estado = !programada ? 'Ya salió: está en camino a Full.'
+        : (resto ? `Podés modificarla hasta el ${escapeHtml(lim)} (faltan ${escapeHtml(resto)}).`
+                 : `Ya no se puede cambiar: cerró el ${escapeHtml(lim)}.`);
+    const prods = c.productos || [];
+    const filas = prods.map(p => `<tr><td>${escapeHtml(p.titulo)}</td><td class="pc-sku-inline">${escapeHtml(p.sku)}</td><td class="pc-num">${escapeHtml(p.unidades)} u.</td></tr>`).join('');
+    const detalle = prods.length
+        ? `<details class="pc-detalle"><summary>Ver los ${prods.length} productos</summary><table class="pc-table"><tbody>${filas}</tbody></table></details>` : '';
+    const boton = (resto && Number(c.id) > 0)
+        ? `<button type="button" class="btn btn-sm" onclick="abrirModalEditarEnvio(${Number(c.id)})">Editar colecta</button>`
+        : '<button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver detalle</button>';
+    return `<div class="pc-banner ${clase}" id="colecta-${Number(c.id)}">
+        <span class="pc-banner-icon">${iconoSvg('camion', 24).replace('margin-right: 4px;', '')}</span>
+        <div class="pc-banner-text">
+            <div class="pc-banner-titulo">Colecta del ${escapeHtml(nombreDiaColecta(c.fecha_retiro))} <span class="pc-sku-inline">${escapeHtml(c.codigo)}</span></div>
+            <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado} Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))}.</div>
+            ${pasosColecta(c.codigo)}
+        </div>
+        ${boton}
+        ${detalle}
+    </div>`;
+}
+
+function colectaAbiertaVigente() {
+    return (colectasData || []).find(c => c.abierta) || null;
+}
+
 function tarjetaColecta(enColecta) {
     if (!proximaColecta && enColecta.length === 0) return '';
     const resto = proximaColecta ? textoCuentaRegresiva(proximaColecta.limite_edicion) : null;
@@ -732,6 +847,8 @@ function renderizarPanelColecta() {
     }
     const g = clasificarItemsPanel(itemsData);
     const abierta = proximaColecta ? !!textoCuentaRegresiva(proximaColecta.limite_edicion) : false;
+    const colAbierta = colectaAbiertaVigente();
+    const hayColectas = (colectasData || []).length > 0;
     const maxFilas = 8;
 
     // Qué hacer hoy: faltan y todavía no están en una colecta (urgentes primero)
@@ -744,7 +861,9 @@ function renderizarPanelColecta() {
     } else {
         htmlHacer = hacer.slice(0, maxFilas).map(({ it, urgente }) => filaConBarra(it, {
             icono: iconoSvg(urgente ? 'alerta' : 'reloj', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
-            derecha: it.sugerido_al_ingreso > 0 ? `Mandar ${escapeHtml(it.sugerido_al_ingreso)} u. en la próxima colecta` : 'Revisar',
+            derecha: it.sugerido_al_ingreso > 0
+                ? (colAbierta ? `Agregar ${escapeHtml(it.sugerido_al_ingreso)} u. a la colecta del ${escapeHtml(formatearFechaCorta(colAbierta.fecha_retiro))}` : `Mandar ${escapeHtml(it.sugerido_al_ingreso)} u. en la próxima colecta`)
+                : 'Revisar',
             dias: it.current_stock > 0 ? it.days_left : 0,
             claseBarra: urgente ? 'pc-fill-danger' : 'pc-fill-warn',
             nota: it.current_stock > 0
@@ -765,7 +884,9 @@ function renderizarPanelColecta() {
             derecha: `Con ${escapeHtml(it.in_preparation_stock)} u. cubrís ${Math.round(it.cobertura_post_colecta || 0)} días: convendría ${escapeHtml(it.aviso_ajuste_units)}`,
             dias: it.cobertura_post_colecta,
             claseBarra: 'pc-fill-good',
-            nota: abierta ? 'Todavía podés ajustarlo.' : 'Esta colecta ya no se puede cambiar: ajustalo en la siguiente.'
+            nota: hayColectas
+                ? (colAbierta ? `Todavía podés ajustarlo en la colecta del ${escapeHtml(formatearFechaCorta(colAbierta.fecha_retiro))}.` : 'Esas colectas ya no se pueden cambiar: ajustalo en la siguiente.')
+                : (abierta ? 'Todavía podés ajustarlo.' : 'Esta colecta ya no se puede cambiar: ajustalo en la siguiente.')
         })).join(''));
 
     // Tienen de más
@@ -782,7 +903,7 @@ function renderizarPanelColecta() {
         })).join('') + (deMas.length > 6 ? `<div class="pc-mas">Y ${deMas.length - 6} más.</div>` : ''));
 
     cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length)
-        + tarjetaColecta(g.enColecta)
+        + (hayColectas ? calendarioColectas(colectasData) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta))
         + seccionPanel('Qué hacer hoy', htmlHacer)
         + htmlAjustar
         + htmlDeMas;

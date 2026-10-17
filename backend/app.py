@@ -1609,6 +1609,25 @@ def get_full_items():
             proxima_colecta["codigo"] = prox.get("shipment_code")
             proxima_colecta["id"] = prox.get("id")
 
+        # Todas las colectas vigentes (programadas o en camino; las retiradas hace poco siguen a la vista) para el calendario.
+        cur.execute("""
+            SELECT id, shipment_code, status, pickup_date, estimated_arrival_date, transit_days
+            FROM inbound_shipments
+            WHERE user_id = %s AND status IN ('scheduled', 'in_transit') AND pickup_date >= %s
+            ORDER BY pickup_date ASC, id ASC LIMIT 20
+        """, (account_id, today - timedelta(days=14)))
+        filas_col = cur.fetchall()
+        colectas = []
+        if filas_col:
+            ids = [f["id"] for f in filas_col]
+            cur.execute("SELECT shipment_id, title, sku, units_to_send FROM inbound_shipment_items WHERE shipment_id IN (" +
+                        ",".join(["%s"] * len(ids)) + ") ORDER BY id ASC", tuple(ids))
+            por_col = {}
+            for r in cur.fetchall():
+                por_col.setdefault(r["shipment_id"], []).append(r)
+            colectas = [_proy.armar_colecta(f, por_col.get(f["id"], []), hora=hora_limite)
+                        for f in filas_col if f.get("pickup_date")]
+
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()
 
@@ -1617,6 +1636,7 @@ def get_full_items():
         "items": output_items,
         "summary": summary,
         "proxima_colecta": proxima_colecta,
+        "colectas": colectas,
         "settings": settings,
         "plan_info": plan_info
     }), 200

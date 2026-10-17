@@ -27,7 +27,7 @@ def _corte(js, desde, hasta):
 
 HARNESS = r"""
 const vm = require('vm');
-const src = process.argv[2], caso = JSON.parse(process.argv[3]);
+const src = require('fs').readFileSync(process.argv[2], 'utf8'), caso = JSON.parse(process.argv[3]);
 const cont = { style: {}, innerHTML: '' };
 const ctx = { document: { getElementById: id => id === 'panelColecta' ? cont : null },
               setInterval: () => 1, Date, Math, String, console };
@@ -35,6 +35,7 @@ ctx.itemsData = caso.items;
 vm.createContext(ctx);
 vm.runInContext(src + '\nthis.__render = renderizarPanelColecta;', ctx);
 vm.runInContext('proximaColecta = ' + JSON.stringify(caso.prox), ctx);
+vm.runInContext('colectasData = ' + JSON.stringify(caso.colectas || []), ctx);
 ctx.__render();
 process.stdout.write(JSON.stringify({ html: cont.innerHTML, display: cont.style.display }));
 """
@@ -59,6 +60,10 @@ class TestPanelJS(unittest.TestCase):
         cabecera = _corte(js, '// Escapa datos de afuera', '// Sistema de Notificaciones Toast')
         panel = _corte(js, '// ── Panel de colecta', '// ── Motor de cálculo')
         cls.src = cabecera + panel
+        cls.src_tmp = tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8')
+        cls.src_tmp.write(cls.src)
+        cls.src_tmp.close()
+        cls.src_path = cls.src_tmp.name
         cls.tmp = tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8')
         cls.tmp.write(HARNESS)
         cls.tmp.close()
@@ -66,9 +71,10 @@ class TestPanelJS(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         os.unlink(cls.tmp.name)
+        os.unlink(cls.src_tmp.name)
 
-    def _correr(self, items, prox=None):
-        r = subprocess.run([NODE, self.tmp.name, self.src, json.dumps({'items': items, 'prox': prox})],
+    def _correr(self, items, prox=None, colectas=None):
+        r = subprocess.run([NODE, self.tmp.name, self.src_path, json.dumps({'items': items, 'prox': prox, 'colectas': colectas or []})],
                            capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
@@ -151,13 +157,77 @@ class TestPanelJS(unittest.TestCase):
     def test_comparar_con_la_propuesta(self):
         harness = (
             "const vm=require('vm');const ctx={document:{getElementById:()=>null},setInterval:()=>1,Date,Math,String,console};"
-            "vm.createContext(ctx);vm.runInContext(process.argv[1]+';'+'this.f=compararConPropuesta;',ctx);"
+            "vm.createContext(ctx);vm.runInContext(require('fs').readFileSync(process.argv[1],'utf8')+';'+'this.f=compararConPropuesta;',ctx);"
             "const r=[[100,100],[90,100],[50,100],[200,100],[10,0],[10,null]].map(a=>ctx.f(a[0],a[1]).estado);"
             "process.stdout.write(JSON.stringify(r));"
         )
-        r = subprocess.run([NODE, '-e', harness, self.src], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout), ['ok', 'ok', 'corto', 'demas', 'demas', 'sinDato'])
+
+    # ── varias colectas y calendario ──
+    def _col(self, id, retiro_dias, abierta, de_ml=True, estado='scheduled', codigo=None):
+        from datetime import date, timedelta
+        hoy = date.today()
+        retiro = hoy + timedelta(days=retiro_dias)
+        limite = (retiro - timedelta(days=1)).isoformat() + ('T23:00:00-03:00' if abierta else 'T00:01:00-03:00')
+        if not abierta:
+            limite = (hoy - timedelta(days=1)).isoformat() + 'T09:44:00-03:00'
+        return {'id': id, 'codigo': codigo or ('ML-%d' % (79000000 + id)), 'estado': estado, 'fecha_retiro': retiro.isoformat(),
+                'limite_edicion': limite, 'abierta': abierta, 'fecha_ingreso': (retiro + timedelta(days=3)).isoformat(),
+                'de_ml': de_ml, 'total_unidades': 400,
+                'productos': [{'titulo': 'Dátil', 'sku': '12072', 'unidades': 100}, {'titulo': 'Nueces', 'sku': '01011', 'unidades': 300}]}
+
+    def test_con_varias_colectas_hay_calendario_y_una_tarjeta_por_colecta(self):
+        cols = [self._col(3, 2, False), self._col(4, 11, True)]
+        html = self._correr([_item()], None, cols)['html']
+        self.assertIn('Calendario de colectas', html)
+        self.assertEqual(len(re.findall(r'class="pc-banner[ "]', html)), 2)
+        self.assertIn('id="colecta-3"', html)
+        self.assertIn('id="colecta-4"', html)
+
+    def test_cada_colecta_marca_limite_retiro_e_ingreso(self):
+        html = self._correr([_item()], None, [self._col(4, 11, True)])['html']
+        for texto in ('Límite 0004', 'Retiro 0004', 'Ingresa 0004'):
+            self.assertIn(texto, html)
+
+    def test_la_cerrada_se_ve_cerrada_y_la_abierta_ofrece_editar(self):
+        cols = [self._col(3, 2, False), self._col(4, 11, True)]
+        html = self._correr([_item()], None, cols)['html']
+        cerrada = html.split('id="colecta-3"')[1].split('id="colecta-4"')[0]
+        abierta = html.split('id="colecta-4"')[1]
+        self.assertIn('Ya no se puede cambiar', cerrada)
+        self.assertNotIn('abrirModalEditarEnvio(3)', cerrada)
+        self.assertIn('abrirModalEditarEnvio(4)', abierta)
+        self.assertIn('pc-cerrada', html.split('id="colecta-3"')[0][-60:])
+
+    def test_si_hay_una_abierta_el_ajuste_apunta_a_ella(self):
+        corto = _item(title='Dátil', in_preparation_stock=100, total_incoming=100, cobertura_post_colecta=9, aviso_ajuste_units=170)
+        pendiente = _item(title='Pasas', status='critical', current_stock=2, days_left=1, sugerido_al_ingreso=48)
+        cols = [self._col(3, 2, False), self._col(4, 11, True)]
+        html = self._correr([corto, pendiente], None, cols)['html']
+        self.assertIn('Todavía podés ajustarlo en la colecta del', html)
+        self.assertIn('Agregar 48 u. a la colecta del', html)
+        self.assertNotIn('ajustalo en la siguiente', html)
+
+    def test_si_todas_estan_cerradas_el_ajuste_va_a_la_siguiente(self):
+        corto = _item(title='Dátil', in_preparation_stock=100, total_incoming=100, cobertura_post_colecta=9, aviso_ajuste_units=170)
+        html = self._correr([corto], None, [self._col(3, 2, False)])['html']
+        self.assertIn('ajustalo en la siguiente', html)
+
+    def test_colecta_en_camino_no_ofrece_editar(self):
+        html = self._correr([_item()], None, [self._col(5, 1, False, estado='in_transit')])['html']
+        self.assertIn('en camino a Full', html)
+        self.assertNotIn('abrirModalEditarEnvio', html)
+
+    def test_calendario_escapa_los_codigos(self):
+        html = self._correr([_item()], None, [self._col(6, 5, True, codigo='ML-<script>x')])['html']
+        self.assertNotIn('<script>', html)
+
+    def test_sin_lista_de_colectas_se_usa_la_tarjeta_de_siempre(self):
+        out = self._correr([_item(in_preparation_stock=10, total_incoming=10, cobertura_post_colecta=20)], self._prox())['html']
+        self.assertNotIn('Calendario de colectas', out)
+        self.assertIn('Tu colecta del', out)
 
     def test_sin_colecta_armada_no_hay_tarjeta(self):
         out = self._correr([_item(status='critical', sugerido_al_ingreso=5)], None)

@@ -191,5 +191,36 @@ class TestBloqueadaPorMl(unittest.TestCase):
         self.assertFalse(p.bloqueada_por_ml('ML-1', None))
 
 
+class TestArmarColecta(unittest.TestCase):
+    FILA = {'id': 4, 'shipment_code': 'ML-79759779', 'status': 'scheduled',
+            'pickup_date': date(2026, 10, 28), 'estimated_arrival_date': date(2026, 10, 31), 'transit_days': 3}
+    PROD = [{'title': 'Dátil', 'sku': '12072', 'units_to_send': 100}, {'title': 'Nueces', 'sku': '01011', 'units_to_send': 300}]
+
+    def test_fechas_y_totales(self):
+        ahora = datetime(2026, 10, 17, 12, 0, tzinfo=p.HORA_BA)
+        c = p.armar_colecta(self.FILA, self.PROD, ahora=ahora)
+        self.assertEqual((c['fecha_retiro'], c['fecha_ingreso']), ('2026-10-28', '2026-10-31'))
+        self.assertTrue(c['limite_edicion'].startswith('2026-10-27T09:44'))
+        self.assertTrue(c['abierta'])
+        self.assertTrue(c['de_ml'])
+        self.assertEqual(c['total_unidades'], 400)
+        self.assertEqual(c['productos'][0], {'titulo': 'Dátil', 'sku': '12072', 'unidades': 100})
+
+    def test_cerrada_pasado_el_limite(self):
+        ahora = datetime(2026, 10, 27, 10, 0, tzinfo=p.HORA_BA)
+        self.assertFalse(p.armar_colecta(self.FILA, self.PROD, ahora=ahora)['abierta'])
+
+    def test_en_camino_nunca_figura_abierta(self):
+        ahora = datetime(2026, 10, 17, 12, 0, tzinfo=p.HORA_BA)
+        self.assertFalse(p.armar_colecta(dict(self.FILA, status='in_transit'), self.PROD, ahora=ahora)['abierta'])
+
+    def test_sin_fecha_de_ingreso_usa_el_transito(self):
+        fila = dict(self.FILA, estimated_arrival_date=None, transit_days=2)
+        self.assertEqual(p.armar_colecta(fila, self.PROD)['fecha_ingreso'], '2026-10-30')
+
+    def test_la_armada_en_enviobot_no_es_de_ml(self):
+        self.assertFalse(p.armar_colecta(dict(self.FILA, shipment_code='COL-FULL-1'), self.PROD)['de_ml'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -145,6 +145,31 @@ def bloqueada_por_ml(codigo, fecha_retiro, ahora=None, hora=None):
     return not cuenta_regresiva(fecha_retiro, ahora=ahora, hora=hora)["abierta"]
 
 
+def armar_colecta(fila, productos, hora=None, ahora=None):
+    """Una colecta lista para mostrar: estado, fechas (retiro, límite de edición, ingreso a Full) y sus productos.
+    `fila` es el registro de inbound_shipments; `productos`, sus renglones (title, sku, units_to_send)."""
+    retiro = fila["pickup_date"]
+    estado = fila.get("status") or "scheduled"
+    base = cuenta_regresiva(retiro, ahora=ahora, hora=hora)
+    ingreso = fila.get("estimated_arrival_date")
+    if not ingreso:
+        ingreso = retiro + timedelta(days=int(fila.get("transit_days") or 3))
+    unidades = sum(int(p.get("units_to_send") or 0) for p in productos)
+    return {
+        "id": fila.get("id"),
+        "codigo": fila.get("shipment_code"),
+        "estado": estado,
+        "fecha_retiro": retiro.isoformat(),
+        "limite_edicion": base["limite_edicion"],
+        "abierta": bool(base["abierta"]) and estado == "scheduled",
+        "fecha_ingreso": ingreso.isoformat(),
+        "de_ml": str(fila.get("shipment_code") or "").startswith("ML-"),
+        "total_unidades": unidades,
+        "productos": [{"titulo": p.get("title") or "", "sku": p.get("sku") or "",
+                       "unidades": int(p.get("units_to_send") or 0)} for p in productos],
+    }
+
+
 # ── Velocidad de venta corregida por días sin stock ─────────────────────────────────────
 MIN_DIAS_ACTIVOS = 3  # con menos días con stock que esto, el promedio sería puro ruido: no se corrige
 
