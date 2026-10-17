@@ -728,14 +728,24 @@ const ETIQUETAS_EVENTO = {
     ingreso: { icono: 'paquete', texto: 'Ingresa', largo: 'Entra a Full' }
 };
 
+// El retiro se mueve mientras la colecta no salió; el ingreso también cuando ya va en camino. Aunque Mercado Libre
+// la haya cerrado: la agenda puede cambiar por ellos o por nosotros, y el ingreso es una estimación, no un dato.
+function esArrastrable(ev) {
+    const c = ev.c;
+    if (ev.tipo === 'retiro') return c.estado === 'scheduled';
+    if (ev.tipo === 'ingreso') return c.estado === 'scheduled' || c.estado === 'in_transit';
+    return false;
+}
+
 function marcaCalendario(ev) {
     const e = ETIQUETAS_EVENTO[ev.tipo];
     const c = ev.c;
-    const estado = claseColorColecta(c);
-    const titulo = e.largo + ' · ' + (c.codigo || '');
-    const arrastrable = ev.tipo === 'retiro' && c.estado === 'scheduled' && c.abierta;
-    const arrastre = arrastrable ? ' draggable="true" ondragstart="arrastrarRetiro(event, ' + Number(c.id) + ')" ondragend="finArrastre()"' : '';
-    return '<button type="button" class="pc-cal-ev ' + estado + (arrastrable ? ' pc-cal-mover' : '') + '"' + arrastre + ' onclick="clicEnMarca(' + Number(c.id) + ')" title="' + escapeHtml(titulo + (arrastrable ? ' (arrastralo a otro día para moverla)' : '')) + '">' +
+    const arrastrable = esArrastrable(ev);
+    const titulo = e.largo + ' · ' + (c.codigo || '') + (c.pendiente ? ' (cambio sin confirmar)' : '') + (arrastrable ? ' · arrastralo a otro día' : '');
+    const arrastre = arrastrable
+        ? ' draggable="true" ondragstart="arrastrarMarca(event, ' + Number(c.id) + ', \'' + ev.tipo + '\')" ondragend="finArrastre()"' : '';
+    const clases = 'pc-cal-ev ' + claseColorColecta(c) + (arrastrable ? ' pc-cal-mover' : '') + (c.pendiente ? ' pc-pendiente' : '');
+    return '<button type="button" class="' + clases + '"' + arrastre + ' onclick="clicEnMarca(' + Number(c.id) + ')" title="' + escapeHtml(titulo) + '">' +
         iconoSvg(e.icono, 12).replace('margin-right: 4px;', 'margin-right: 3px;') +
         '<span>' + escapeHtml(e.texto) + ' ' + escapeHtml(numeroCorto(c.codigo)) + '</span></button>';
 }
@@ -762,14 +772,17 @@ function calendarioColectas(colectas, hoy) {
     const leyenda = '<div class="pc-cal-leyenda">' +
         ['limite', 'retiro', 'ingreso'].map(function (t) {
             return '<span>' + iconoSvg(ETIQUETAS_EVENTO[t].icono, 13).replace('margin-right: 4px;', 'margin-right: 4px;') + escapeHtml(ETIQUETAS_EVENTO[t].largo) + '</span>';
-        }).join('') + '</div>';
+        }).join('') + '<span class="pc-cal-ayuda">Arrastrá un retiro o un ingreso para proponer otra fecha.</span></div>';
+    const cajaHtml = htmlCajaCambios();
+    // La caja del cálculo va debajo del calendario: así no corre la grilla mientras se arrastra.
     return '<div class="pc-cal"><h3 class="pc-block-title">Calendario de colectas</h3>' +
-        '<div id="pc-cal-impacto" class="pc-imp" style="display:none"></div>' +
-        '<div class="pc-cal-grilla">' + cabecera + celdas + '</div>' + leyenda + '</div>';
+        '<div class="pc-cal-grilla">' + cabecera + celdas + '</div>' + leyenda +
+        '<div id="pc-cal-impacto" class="pc-imp" style="display:' + (cajaHtml ? 'block' : 'none') + '">' + cajaHtml + '</div></div>';
 }
 
-// ── Mover una colecta en el calendario: cuánto cambia lo que hace falta mandar ─────
-let colectaArrastrada = null;
+// ── Proponer otras fechas en el calendario: cuánto cambia lo que hace falta mandar ─────
+let colectaArrastrada = null;   // { id, tipo }
+let cambiosPendientes = {};     // id -> { retiro?, ingreso? } (fechas propuestas, todavía sin confirmar)
 
 function parsearFechaLocal(iso) {
     const p = String(iso || '').split('-');
@@ -780,15 +793,45 @@ function diasEntreFechas(a, b) {
     return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
+function sumarDiasISO(iso, n) {
+    const d = parsearFechaLocal(iso);
+    d.setDate(d.getDate() + n);
+    return claveDiaLocal(d);
+}
+
+// Mismo criterio que proyeccion.dia_habil_anterior (lunes a viernes, sin feriados).
+function diaHabilAnteriorISO(iso) {
+    const d = parsearFechaLocal(iso);
+    do { d.setDate(d.getDate() - 1); } while (d.getDay() === 0 || d.getDay() === 6);
+    return claveDiaLocal(d);
+}
+
+// Fechas de una colecta si se aplica un cambio (el ingreso acompaña al retiro salvo que se haya movido a mano).
+function fechasConCambio(c, cambio) {
+    const hueco = diasEntreFechas(parsearFechaLocal(c.fecha_retiro), parsearFechaLocal(c.fecha_ingreso));
+    const retiro = (cambio && cambio.retiro) || c.fecha_retiro;
+    const ingreso = (cambio && cambio.ingreso) || (cambio && cambio.retiro ? sumarDiasISO(cambio.retiro, hueco) : c.fecha_ingreso);
+    return { retiro: retiro, ingreso: ingreso };
+}
+
+// Las colectas tal como quedarían con los cambios propuestos.
+function colectasEfectivas() {
+    return (colectasData || []).map(function (c) {
+        const cambio = cambiosPendientes[c.id];
+        if (!cambio) return c;
+        const f = fechasConCambio(c, cambio);
+        const r = Object.assign({}, c, { pendiente: true, fecha_retiro: f.retiro, fecha_ingreso: f.ingreso });
+        if (cambio.retiro) r.limite_edicion = diaHabilAnteriorISO(f.retiro) + 'T09:44:00-03:00';
+        return r;
+    });
+}
+
 // Misma cuenta que proyeccion.sugerido_al_ingreso: lo que hay que mandar para llegar al objetivo desde el día en que entra.
-function impactoDeMover(c, nuevaFecha, hoy) {
+function impactoPorIngreso(c, ingresoISO, hoy) {
     hoy = hoy || new Date();
     const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-    const transito = diasEntreFechas(parsearFechaLocal(c.fecha_retiro), parsearFechaLocal(c.fecha_ingreso));
-    const nuevoIngreso = parsearFechaLocal(nuevaFecha);
-    nuevoIngreso.setDate(nuevoIngreso.getDate() + transito);
     const diasAntes = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(c.fecha_ingreso)));
-    const diasDespues = Math.max(0, diasEntreFechas(hoy0, nuevoIngreso));
+    const diasDespues = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(ingresoISO)));
     const filas = [];
     (c.productos || []).forEach(function (p) {
         const it = buscarItemPorSku(p.sku);
@@ -809,12 +852,16 @@ function impactoDeMover(c, nuevaFecha, hoy) {
         });
     });
     return {
-        nuevoIngreso: claveDiaLocal(nuevoIngreso),
+        nuevoIngreso: ingresoISO,
         diasAntes: diasAntes,
         diasDespues: diasDespues,
         filas: filas,
         totalDelta: filas.reduce(function (a, f) { return a + (f.despues - f.antes); }, 0)
     };
+}
+
+function impactoDeMover(c, nuevaFecha, hoy) {
+    return impactoPorIngreso(c, fechasConCambio(c, { retiro: nuevaFecha }).ingreso, hoy);
 }
 
 function textoDiferenciaDias(r) {
@@ -826,11 +873,8 @@ function signado(n) {
     return (n > 0 ? '+' : '') + n;
 }
 
-function htmlImpactoMovimiento(c, fecha) {
-    const r = impactoDeMover(c, fecha);
-    const cabecera = '<div class="pc-imp-titulo">Si la movés al ' + escapeHtml(nombreDiaColecta(fecha)) + '</div>' +
-        '<div class="pc-fila-nota">Entraría a Full el ' + escapeHtml(nombreDiaColecta(r.nuevoIngreso)) + ' (' + escapeHtml(textoDiferenciaDias(r)) + ').</div>';
-    if (!r.filas.length) return cabecera + '<div class="pc-fila-nota">No tengo ventas de estos productos para calcular el cambio.</div>';
+function htmlFilasImpacto(r) {
+    if (!r.filas.length) return '<div class="pc-fila-nota">No tengo ventas de estos productos para calcular el cambio.</div>';
     const cambian = r.filas.filter(function (f) { return f.despues !== f.antes || f.sinStock; });
     const filas = cambian.slice(0, 8).map(function (f) {
         const clase = f.despues > f.antes ? 'pc-cmp-aviso' : 'pc-info';
@@ -841,7 +885,14 @@ function htmlImpactoMovimiento(c, fecha) {
     const resumen = cambian.length === 0
         ? 'No cambia lo que necesitás mandar.'
         : 'En total: ' + signado(r.totalDelta) + ' u. respecto de hoy.' + (cambian.length > 8 ? ' Y ' + (cambian.length - 8) + ' productos más.' : '');
-    return cabecera + filas + '<div class="pc-imp-total">' + escapeHtml(resumen) + '</div>';
+    return filas + '<div class="pc-imp-total">' + escapeHtml(resumen) + '</div>';
+}
+
+function htmlImpactoMovimiento(c, fecha) {
+    const r = impactoDeMover(c, fecha);
+    return '<div class="pc-imp-titulo">Si la movés al ' + escapeHtml(nombreDiaColecta(fecha)) + '</div>' +
+        '<div class="pc-fila-nota">Entraría a Full el ' + escapeHtml(nombreDiaColecta(r.nuevoIngreso)) + ' (' + escapeHtml(textoDiferenciaDias(r)) + ').</div>' +
+        htmlFilasImpacto(r);
 }
 
 function textoImpactoMovimiento(c, fecha) {
@@ -853,21 +904,59 @@ function textoImpactoMovimiento(c, fecha) {
         (cambian.length ? '\n' + lineas.join('\n') + '\nEn total: ' + signado(r.totalDelta) + ' u. respecto de hoy.' : '\nNo cambia lo que necesitás mandar.');
 }
 
-function vistaPreviaMovimiento(clave) {
+// Resumen de lo propuesto, con los botones para confirmar o descartar. Vacío si no hay cambios.
+function htmlCajaCambios() {
+    const ids = Object.keys(cambiosPendientes);
+    if (!ids.length) return '';
+    const bloques = ids.map(function (id) {
+        const c = (colectasData || []).find(x => Number(x.id) === Number(id));
+        if (!c) return '';
+        const f = fechasConCambio(c, cambiosPendientes[id]);
+        const partes = [];
+        if (f.retiro !== c.fecha_retiro) partes.push('retiro: ' + formatearFechaCorta(c.fecha_retiro) + ' → ' + formatearFechaCorta(f.retiro));
+        if (f.ingreso !== c.fecha_ingreso) partes.push('ingreso: ' + formatearFechaCorta(c.fecha_ingreso) + ' → ' + formatearFechaCorta(f.ingreso));
+        const r = impactoPorIngreso(c, f.ingreso);
+        return '<div class="pc-imp-bloque"><div class="pc-imp-titulo">' + escapeHtml(c.codigo) + ' · ' + escapeHtml(partes.join(' · ')) + '</div>' +
+            '<div class="pc-fila-nota">Entraría a Full el ' + escapeHtml(nombreDiaColecta(f.ingreso)) + ' (' + escapeHtml(textoDiferenciaDias(r)) + ').</div>' +
+            htmlFilasImpacto(r) + '</div>';
+    }).join('');
+    return '<div class="pc-imp-cabecera">Cambios propuestos (todavía sin confirmar)</div>' + bloques +
+        '<div class="pc-fila-nota">Confirmar guarda las fechas en EnvioBot. Después tenés que hacer el mismo cambio en Mercado Libre.</div>' +
+        '<div class="pc-imp-acciones"><button type="button" class="btn btn-sm" onclick="confirmarCambiosCalendario()">Confirmar cambios</button>' +
+        '<button type="button" class="btn btn-secondary btn-sm" onclick="descartarCambiosCalendario()">Descartar</button></div>';
+}
+
+function pintarCaja(html) {
     const el = document.getElementById('pc-cal-impacto');
-    const c = (colectasData || []).find(x => Number(x.id) === Number(colectaArrastrada));
+    if (!el) return;
+    el.innerHTML = html;
+    el.style.display = html ? 'block' : 'none';
+}
+
+// Mientras se arrastra: lo que pasaría si se suelta en este día.
+function vistaPreviaMovimiento(clave) {
+    if (!colectaArrastrada) return;
+    const c = (colectasData || []).find(x => Number(x.id) === Number(colectaArrastrada.id));
+    const el = document.getElementById('pc-cal-impacto');
     if (!el || !c) return;
     if (el.dataset.dia === clave) return;
     el.dataset.dia = clave;
-    if (clave === c.fecha_retiro) { el.style.display = 'none'; return; }
-    el.innerHTML = htmlImpactoMovimiento(c, clave);
-    el.style.display = 'block';
+    const base = Object.assign({}, cambiosPendientes[c.id]);
+    base[colectaArrastrada.tipo] = clave;
+    const f = fechasConCambio(c, base);
+    const r = impactoPorIngreso(c, f.ingreso);
+    const titulo = colectaArrastrada.tipo === 'retiro'
+        ? 'Si la movés al ' + nombreDiaColecta(clave) : 'Si entra a Full el ' + nombreDiaColecta(clave);
+    pintarCaja('<div class="pc-imp-titulo">' + escapeHtml(titulo) + '</div>' +
+        '<div class="pc-fila-nota">Entraría a Full el ' + escapeHtml(nombreDiaColecta(f.ingreso)) + ' (' + escapeHtml(textoDiferenciaDias(r)) + ').</div>' +
+        htmlFilasImpacto(r));
 }
 
 function finArrastre() {
     colectaArrastrada = null;
     const el = document.getElementById('pc-cal-impacto');
-    if (el) { el.style.display = 'none'; el.dataset.dia = ''; }
+    if (el) el.dataset.dia = '';
+    pintarCaja(htmlCajaCambios());
 }
 
 // Clic en una marca: si la colecta se puede modificar abre la edición; si no, lleva a su tarjeta.
@@ -880,9 +969,9 @@ function clicEnMarca(id) {
     irAColecta(id);
 }
 
-function arrastrarRetiro(ev, id) {
-    ev.dataTransfer.setData('text/plain', 'colecta:' + Number(id));
-    colectaArrastrada = Number(id);
+function arrastrarMarca(ev, id, tipo) {
+    ev.dataTransfer.setData('text/plain', 'colecta:' + Number(id) + ':' + tipo);
+    colectaArrastrada = { id: Number(id), tipo: tipo };
     ev.dataTransfer.effectAllowed = 'move';
 }
 
@@ -892,37 +981,66 @@ function permitirSoltar(ev, clave) {
     ev.dataTransfer.dropEffect = 'move';
 }
 
-function textoConfirmarMovimiento(c, fecha) {
-    const base = 'Mover la colecta ' + c.codigo + ' al ' + nombreDiaColecta(fecha) + '?\n\n' + textoImpactoMovimiento(c, fecha);
-    return c.de_ml
-        ? base + '\n\nEsto cambia solo EnvioBot. Tenés que cambiar el turno también en Mercado Libre (si ya pasó su límite te lo cobra).'
-        : base + '\n\nDespués hay que llevar el cambio a Mercado Libre.';
+// Al soltar no se guarda nada: queda como cambio propuesto hasta que se aprieta "Confirmar cambios".
+function soltarEnDia(ev, fecha) {
+    ev.preventDefault();
+    const partes = (ev.dataTransfer.getData('text/plain') || '').split(':');
+    if (partes[0] !== 'colecta') return;
+    const id = Number(partes[1]);
+    const tipo = partes[2];
+    const c = (colectasData || []).find(x => Number(x.id) === id);
+    if (!c || (tipo !== 'retiro' && tipo !== 'ingreso')) { finArrastre(); return; }
+    const cambio = Object.assign({}, cambiosPendientes[id]);
+    cambio[tipo] = fecha;
+    const f = fechasConCambio(c, cambio);
+    if (f.ingreso < f.retiro) {
+        finArrastre();
+        showToast('El ingreso a Full no puede ser antes del retiro.', 'error');
+        return;
+    }
+    if (tipo === 'retiro' && fecha === c.fecha_retiro) delete cambio.retiro;
+    if (tipo === 'ingreso' && fecha === c.fecha_ingreso && !cambio.retiro) delete cambio.ingreso;
+    if (Object.keys(cambio).length === 0) delete cambiosPendientes[id]; else cambiosPendientes[id] = cambio;
+    colectaArrastrada = null;
+    renderizarPanelColecta();
 }
 
-async function soltarEnDia(ev, fecha) {
-    ev.preventDefault();
-    const dato = ev.dataTransfer.getData('text/plain') || '';
-    if (dato.indexOf('colecta:') !== 0) return;
-    const id = Number(dato.slice(8));
-    const c = (colectasData || []).find(x => Number(x.id) === id);
-    if (!c || c.fecha_retiro === fecha) return;
-    if (!window.confirm(textoConfirmarMovimiento(c, fecha))) return;
-    try {
-        const res = await fetch(`${API_BASE}/full/inbound/shipments/${id}/fecha-retiro`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ pickup_date: fecha })
-        });
-        const data = await res.json();
-        if (!res.ok) {
-            showToast(data.error || 'No pude mover la colecta.', 'error');
-            return;
+function descartarCambiosCalendario() {
+    cambiosPendientes = {};
+    renderizarPanelColecta();
+}
+
+async function confirmarCambiosCalendario() {
+    const ids = Object.keys(cambiosPendientes);
+    if (!ids.length) return;
+    let guardadas = 0;
+    for (const id of ids) {
+        const cambio = cambiosPendientes[id];
+        const cuerpo = {};
+        if (cambio.retiro) cuerpo.pickup_date = cambio.retiro;
+        if (cambio.ingreso) cuerpo.arrival_date = cambio.ingreso;
+        try {
+            const res = await fetch(`${API_BASE}/full/inbound/shipments/${Number(id)}/fechas`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(cuerpo)
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                showToast(data.error || 'No pude guardar el cambio.', 'error');
+                continue;
+            }
+            delete cambiosPendientes[id];
+            guardadas++;
+        } catch (e) {
+            showToast('Error de conexión: ' + e.message, 'error');
         }
-        finArrastre();
-        showToast('Colecta movida al ' + nombreDiaColecta(fecha) + '. Acordate de cambiar el turno también en Mercado Libre.', 'success', 6000);
+    }
+    if (guardadas) {
+        showToast('Fechas guardadas en EnvioBot. Ahora hacé el mismo cambio en Mercado Libre.', 'success', 6000);
         cargarDatos();
-    } catch (e) {
-        showToast('Error de conexión: ' + e.message, 'error');
+    } else {
+        renderizarPanelColecta();
     }
 }
 
@@ -1070,7 +1188,7 @@ function renderizarPanelColecta() {
         })).join('') + (deMas.length > 6 ? `<div class="pc-mas">Y ${deMas.length - 6} más.</div>` : ''));
 
     cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length)
-        + (hayColectas ? calendarioColectas(colectasData) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta))
+        + (hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta))
         + seccionPanel('Qué hacer hoy', htmlHacer)
         + htmlAjustar
         + htmlDeMas;

@@ -36,6 +36,7 @@ vm.createContext(ctx);
 vm.runInContext(src + '\nthis.__render = renderizarPanelColecta;', ctx);
 vm.runInContext('proximaColecta = ' + JSON.stringify(caso.prox), ctx);
 vm.runInContext('colectasData = ' + JSON.stringify(caso.colectas || []), ctx);
+vm.runInContext('cambiosPendientes = ' + JSON.stringify(caso.pendientes || {}), ctx);
 ctx.__render();
 process.stdout.write(JSON.stringify({ html: cont.innerHTML, display: cont.style.display }));
 """
@@ -73,8 +74,8 @@ class TestPanelJS(unittest.TestCase):
         os.unlink(cls.tmp.name)
         os.unlink(cls.src_tmp.name)
 
-    def _correr(self, items, prox=None, colectas=None):
-        r = subprocess.run([NODE, self.tmp.name, self.src_path, json.dumps({'items': items, 'prox': prox, 'colectas': colectas or []})],
+    def _correr(self, items, prox=None, colectas=None, pendientes=None):
+        r = subprocess.run([NODE, self.tmp.name, self.src_path, json.dumps({'items': items, 'prox': prox, 'colectas': colectas or [], 'pendientes': pendientes or {}})],
                            capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
@@ -220,11 +221,53 @@ class TestPanelJS(unittest.TestCase):
         self.assertIn('en camino a Full', html)
         self.assertNotIn('abrirModalEditarEnvio', html)
 
-    def test_solo_el_retiro_de_una_colecta_abierta_se_arrastra(self):
+    def test_retiro_e_ingreso_se_arrastran_aunque_ml_haya_cerrado(self):
         html = self._correr([_item()], None, [self._col(3, 2, False), self._col(4, 11, True)])['html']
-        self.assertEqual(html.count('draggable="true"'), 1)
-        self.assertIn('arrastrarRetiro(event, 4)', html)
-        self.assertNotIn('arrastrarRetiro(event, 3)', html)
+        self.assertEqual(html.count('draggable="true"'), 4)   # retiro e ingreso de cada colecta
+        self.assertIn("arrastrarMarca(event, 3, 'retiro')", html)
+        self.assertIn("arrastrarMarca(event, 3, 'ingreso')", html)
+
+    def test_el_limite_no_se_arrastra_y_la_que_ya_salio_solo_mueve_el_ingreso(self):
+        html = self._correr([_item()], None, [self._col(5, 1, False, estado='in_transit')])['html']
+        self.assertIn("arrastrarMarca(event, 5, 'ingreso')", html)
+        self.assertNotIn("arrastrarMarca(event, 5, 'retiro')", html)
+        self.assertNotIn("'limite')", html)
+
+    def test_la_caja_del_calculo_va_debajo_de_la_grilla(self):
+        html = self._correr([_item()], None, [self._col(4, 11, True)])['html']
+        self.assertGreater(html.index('id="pc-cal-impacto"'), html.index('pc-cal-grilla'))
+
+    def test_un_cambio_propuesto_se_ve_punteado_y_pide_confirmar(self):
+        from datetime import date, timedelta
+        col = self._col(4, 11, True)
+        nueva = (date.today() + timedelta(days=13)).isoformat()
+        out = self._correr([_item()], None, [col], {'4': {'retiro': nueva}})['html']
+        self.assertIn('pc-pendiente', out)
+        self.assertIn('Cambios propuestos (todavía sin confirmar)', out)
+        self.assertIn('confirmarCambiosCalendario()', out)
+        self.assertIn('descartarCambiosCalendario()', out)
+        self.assertNotIn('Cambios propuestos', self._correr([_item()], None, [col])['html'])
+
+    def test_el_ingreso_acompana_al_retiro_salvo_que_se_mueva_a_mano(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('colectasData = [' + process.argv[2] + ']; cambiosPendientes = {};', ctx);
+const c = vm.runInContext('colectasData[0]', ctx);
+const a = vm.runInContext('fechasConCambio(colectasData[0], { retiro: "2026-10-30" })', ctx);
+const b = vm.runInContext('fechasConCambio(colectasData[0], { retiro: "2026-10-30", ingreso: "2026-11-05" })', ctx);
+const d = vm.runInContext('diaHabilAnteriorISO("2026-10-19")', ctx);
+process.stdout.write(JSON.stringify({ a, b, d }));
+"""
+        col = {'id': 4, 'fecha_retiro': '2026-10-28', 'fecha_ingreso': '2026-10-31'}
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(col)], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual(out['a'], {'retiro': '2026-10-30', 'ingreso': '2026-11-02'})
+        self.assertEqual(out['b'], {'retiro': '2026-10-30', 'ingreso': '2026-11-05'})
+        self.assertEqual(out['d'], '2026-10-16')   # el límite de un lunes es el viernes
 
     def test_los_dias_pasados_no_reciben_colectas(self):
         html = self._correr([_item()], None, [self._col(4, 11, True)])['html']
@@ -307,7 +350,7 @@ process.stdout.write(JSON.stringify({ r, html, texto }));
 
     def test_el_mensaje_de_mover_avisa_que_hay_que_cambiar_ml(self):
         js = _leer(os.path.join('js', 'app.js'))
-        self.assertIn('Tenés que cambiar el turno también en Mercado Libre', js)
+        self.assertIn('Después tenés que hacer el mismo cambio en Mercado Libre', js)
 
     def test_calendario_escapa_los_codigos(self):
         html = self._correr([_item()], None, [self._col(6, 5, True, codigo='ML-<script>x')])['html']

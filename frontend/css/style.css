@@ -1773,3 +1773,8 @@ table.stock-table tr:hover td {
 .pc-imp-titulo { font-weight: 700; color: var(--text); }
 .pc-imp-fila { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px solid var(--border); }
 .pc-imp-total { margin-top: 6px; font-weight: 600; color: var(--text); }
+.pc-cal-ev.pc-pendiente { border-style: dashed; }
+.pc-cal-ayuda { margin-left: auto; font-style: italic; }
+.pc-imp-cabecera { font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.pc-imp-bloque { margin-bottom: 8px; }
+.pc-imp-acciones { display: flex; gap: 8px; margin-top: 10px; }

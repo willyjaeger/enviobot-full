@@ -170,16 +170,28 @@ def armar_colecta(fila, productos, hora=None, ahora=None):
     }
 
 
-def validar_nuevo_retiro(codigo, retiro_actual, nuevo, ahora=None, hora=None):
-    """Texto del problema si no se puede mover el retiro de esta colecta a `nuevo`; None si se puede."""
-    ahora = ahora or datetime.now(HORA_BA)
-    if bloqueada_por_ml(codigo, retiro_actual, ahora=ahora, hora=hora):
-        return "Mercado Libre ya cerró esta colecta (el límite para cambiarla pasó), así que no se puede mover."
-    if nuevo < ahora.date():
-        return "La fecha de retiro no puede ser anterior a hoy."
-    if str(codigo or '').startswith('ML-') and not cuenta_regresiva(nuevo, ahora=ahora, hora=hora)["abierta"]:
-        return "Para ese día ya pasó el límite de Mercado Libre: no llegás a cambiar el turno a tiempo."
-    return None
+def calcular_cambio_fechas(retiro_actual, ingreso_actual, transito_dias, nuevo_retiro=None, nuevo_ingreso=None, hoy=None):
+    """Fechas finales de una colecta si se mueve su retiro y/o su ingreso a Full.
+
+    El retiro y el ingreso se pueden mover aunque Mercado Libre haya cerrado la colecta: la agenda cambia por ellos o
+    por nosotros, y el ingreso es una estimación (retiro + demora supuesta), no un dato. Si solo se mueve el retiro,
+    el ingreso lo acompaña con la misma demora. Devuelve {'retiro','ingreso','transito_dias'} o {'error': texto}."""
+    hoy = hoy or datetime.now(HORA_BA).date()
+    if nuevo_retiro is not None and nuevo_retiro < hoy:
+        return {"error": "La fecha de retiro no puede ser anterior a hoy."}
+    retiro = nuevo_retiro or retiro_actual
+    if nuevo_ingreso is not None:
+        if nuevo_ingreso < hoy:
+            return {"error": "La fecha de ingreso no puede ser anterior a hoy."}
+        ingreso = nuevo_ingreso
+    elif nuevo_retiro is not None:
+        hueco = (ingreso_actual - retiro_actual).days if ingreso_actual else int(transito_dias or 3)
+        ingreso = nuevo_retiro + timedelta(days=hueco)
+    else:
+        ingreso = ingreso_actual or (retiro + timedelta(days=int(transito_dias or 3)))
+    if ingreso < retiro:
+        return {"error": "El ingreso a Full no puede ser antes del retiro."}
+    return {"retiro": retiro, "ingreso": ingreso, "transito_dias": (ingreso - retiro).days}
 
 
 # ── Velocidad de venta corregida por días sin stock ─────────────────────────────────────

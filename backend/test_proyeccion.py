@@ -222,24 +222,40 @@ class TestArmarColecta(unittest.TestCase):
         self.assertFalse(p.armar_colecta(dict(self.FILA, shipment_code='COL-FULL-1'), self.PROD)['de_ml'])
 
 
-class TestValidarNuevoRetiro(unittest.TestCase):
-    HOY = datetime(2026, 10, 17, 12, 0, tzinfo=p.HORA_BA)  # sábado
+class TestCalcularCambioFechas(unittest.TestCase):
+    HOY = date(2026, 10, 17)
+    RETIRO, INGRESO = date(2026, 10, 28), date(2026, 10, 31)
 
-    def test_se_puede_mover_una_abierta_a_otro_dia(self):
-        self.assertIsNone(p.validar_nuevo_retiro('ML-1', date(2026, 10, 28), date(2026, 10, 29), ahora=self.HOY))
+    def _c(self, **kw):
+        return p.calcular_cambio_fechas(self.RETIRO, self.INGRESO, 3, hoy=self.HOY, **kw)
 
-    def test_no_se_mueve_una_cerrada_de_ml(self):
-        self.assertIn('ya cerró', p.validar_nuevo_retiro('ML-1', date(2026, 10, 19), date(2026, 10, 29), ahora=self.HOY))
+    def test_mover_el_retiro_corre_el_ingreso_con_la_misma_demora(self):
+        r = self._c(nuevo_retiro=date(2026, 10, 30))
+        self.assertEqual((r['retiro'], r['ingreso'], r['transito_dias']), (date(2026, 10, 30), date(2026, 11, 2), 3))
 
-    def test_no_a_un_dia_pasado(self):
-        self.assertIn('anterior a hoy', p.validar_nuevo_retiro('COL-1', date(2026, 10, 28), date(2026, 10, 16), ahora=self.HOY))
+    def test_mover_solo_el_ingreso_cambia_la_demora(self):
+        r = self._c(nuevo_ingreso=date(2026, 11, 4))
+        self.assertEqual((r['retiro'], r['ingreso'], r['transito_dias']), (self.RETIRO, date(2026, 11, 4), 7))
 
-    def test_de_ml_no_a_un_dia_que_ya_no_llega_al_limite(self):
-        # retiro el lunes 19: su límite fue el viernes 16 (ya pasó)
-        self.assertIn('límite', p.validar_nuevo_retiro('ML-1', date(2026, 10, 28), date(2026, 10, 19), ahora=self.HOY))
+    def test_si_se_mueven_los_dos_gana_el_ingreso_elegido(self):
+        r = self._c(nuevo_retiro=date(2026, 10, 30), nuevo_ingreso=date(2026, 11, 3))
+        self.assertEqual((r['retiro'], r['ingreso']), (date(2026, 10, 30), date(2026, 11, 3)))
 
-    def test_la_armada_en_enviobot_se_mueve_a_cualquier_dia_futuro(self):
-        self.assertIsNone(p.validar_nuevo_retiro('COL-1', date(2026, 10, 19), date(2026, 10, 19), ahora=self.HOY))
+    def test_no_a_un_retiro_pasado_ni_a_un_ingreso_pasado(self):
+        self.assertIn('anterior a hoy', self._c(nuevo_retiro=date(2026, 10, 16))['error'])
+        self.assertIn('anterior a hoy', self._c(nuevo_ingreso=date(2026, 10, 16))['error'])
+
+    def test_el_ingreso_no_puede_ser_antes_del_retiro(self):
+        self.assertIn('antes del retiro', self._c(nuevo_ingreso=date(2026, 10, 27))['error'])
+
+    def test_una_colecta_cerrada_en_ml_igual_se_puede_mover(self):
+        # retiro el lunes 19 (límite ya pasó): la agenda puede cambiar por ML o por nosotros
+        r = p.calcular_cambio_fechas(date(2026, 10, 19), date(2026, 10, 22), 3, nuevo_retiro=date(2026, 10, 21), hoy=self.HOY)
+        self.assertEqual(r['retiro'], date(2026, 10, 21))
+
+    def test_sin_fecha_de_ingreso_usa_el_transito(self):
+        r = p.calcular_cambio_fechas(self.RETIRO, None, 2, nuevo_retiro=date(2026, 10, 30), hoy=self.HOY)
+        self.assertEqual(r['ingreso'], date(2026, 11, 1))
 
 
 if __name__ == '__main__':

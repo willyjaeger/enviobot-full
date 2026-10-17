@@ -3311,35 +3311,48 @@ def update_inbound_shipment_status(shipment_id):
 
     return jsonify({"ok": True, "message": f"Estado actualizado a '{new_status}'."}), 200
 
+@app.route("/api/full/inbound/shipments/<int:shipment_id>/fechas", methods=["PUT"])
 @app.route("/api/full/inbound/shipments/<int:shipment_id>/fecha-retiro", methods=["PUT"])
 @jwt_required()
 @_equipo.requiere_rol('operator')
-def mover_retiro_colecta(shipment_id):
-    """Cambia solo la fecha de retiro (arrastrando en el calendario). El ingreso a Full se corre con ella."""
+def mover_fechas_colecta(shipment_id):
+    """Cambia la fecha de retiro y/o la de ingreso a Full (arrastrando en el calendario). No toca las cantidades."""
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
+
+    def _fecha(clave):
+        valor = data.get(clave)
+        if valor in (None, ""):
+            return None
+        return datetime.strptime(str(valor), "%Y-%m-%d").date()
+
     try:
-        nuevo = datetime.strptime(str(data.get("pickup_date") or ""), "%Y-%m-%d").date()
+        nuevo_retiro = _fecha("pickup_date")
+        nuevo_ingreso = _fecha("arrival_date")
     except ValueError:
         return jsonify({"ok": False, "error": "La fecha no es válida."}), 400
+    if nuevo_retiro is None and nuevo_ingreso is None:
+        return jsonify({"ok": False, "error": "No hay ninguna fecha para cambiar."}), 400
     conn = get_db()
     try:
         account_id = get_account_user_id(user_id, conn)
         with conn.cursor() as cur:
-            cur.execute("SELECT id, shipment_code, status, pickup_date, transit_days FROM inbound_shipments WHERE id=%s AND user_id=%s",
+            cur.execute("SELECT id, status, pickup_date, estimated_arrival_date, transit_days FROM inbound_shipments WHERE id=%s AND user_id=%s",
                         (shipment_id, account_id))
             fila = cur.fetchone()
             if not fila:
                 return jsonify({"ok": False, "error": "Colecta no encontrada."}), 404
-            if fila["status"] != "scheduled":
-                return jsonify({"ok": False, "error": "Solo se puede mover una colecta que todavía no salió."}), 400
-            error = _proy.validar_nuevo_retiro(fila["shipment_code"], fila["pickup_date"], nuevo)
-            if error:
-                return jsonify({"ok": False, "error": error}), 400
-            ingreso = nuevo + timedelta(days=int(fila.get("transit_days") or 3))
-            cur.execute("UPDATE inbound_shipments SET pickup_date=%s, estimated_arrival_date=%s WHERE id=%s",
-                        (nuevo, ingreso, shipment_id))
-        return jsonify({"ok": True, "pickup_date": str(nuevo), "estimated_arrival_date": str(ingreso)}), 200
+            if fila["status"] not in ("scheduled", "in_transit"):
+                return jsonify({"ok": False, "error": "Solo se pueden mover las fechas de una colecta vigente."}), 400
+            if nuevo_retiro is not None and fila["status"] != "scheduled":
+                return jsonify({"ok": False, "error": "La colecta ya salió: el retiro no se puede mover."}), 400
+            r = _proy.calcular_cambio_fechas(fila["pickup_date"], fila["estimated_arrival_date"], fila.get("transit_days"),
+                                             nuevo_retiro, nuevo_ingreso)
+            if r.get("error"):
+                return jsonify({"ok": False, "error": r["error"]}), 400
+            cur.execute("UPDATE inbound_shipments SET pickup_date=%s, estimated_arrival_date=%s, transit_days=%s WHERE id=%s",
+                        (r["retiro"], r["ingreso"], r["transito_dias"], shipment_id))
+        return jsonify({"ok": True, "pickup_date": str(r["retiro"]), "estimated_arrival_date": str(r["ingreso"])}), 200
     finally:
         conn.close()
 
