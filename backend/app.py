@@ -26,7 +26,7 @@ import requests
 from dotenv import load_dotenv
 
 from whatsapp_service import (
-    enviar_mensaje_whatsapp, enviar_contacto_vcard, enviar_verificacion_whatsapp, generar_vcard_contacto,
+    enviar_mensaje_whatsapp, enviar_contacto_vcard, enviar_verificacion_whatsapp, generar_vcard_contacto, enviar_confirmacion_whatsapp,
     WHATSAPP_SIMULATION_MODE, EVOLUTION_API_URL, WHATSAPP_GATEWAY_URL
 )
 from alerts_engine import procesar_alertas_usuario
@@ -1689,9 +1689,9 @@ def _pagina_verificacion(estado, nombre=""):
             f"<h1>{'Número verificado' if listo else 'Verificá tu número'}</h1>"
             f"<p>{saludo}, "
             + ("ya vas a recibir las alertas de EnvioBot Full." if listo else
-               "tocá el botón para confirmar que este es tu WhatsApp y guardar EnvioBot Full en tu agenda.")
+               "tocá el botón para confirmar que este es tu WhatsApp.")
             + "</p>"
-            f'<button id="b" class="btn">{"Guardar el contacto" if listo else "Verificar mi número"}</button>'
+            + ("" if listo else '<button id="b" class="btn">Verificar mi número</button>') +
             '<p id="m" class="m"></p>'
         )
     return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -1711,10 +1711,9 @@ if(b){{b.onclick=function(){{
   fetch('/api/full/verify/wa/'+t,{{method:'POST'}}).then(function(r){{return r.json()}}).then(function(d){{
     if(!d.ok)throw 0;
     document.querySelector('h1').textContent='Número verificado';
-    b.textContent='Guardar el contacto';b.disabled=false;
-    document.getElementById('m').textContent='Se descargó el contacto: abrilo y tocá Guardar.';
-    b.onclick=function(){{location.href='/api/full/verify/wa/'+t+'/contacto.vcf'}};
-    location.href='/api/full/verify/wa/'+t+'/contacto.vcf';
+    b.style.display='none';
+    document.querySelector('p').textContent='Ya vas a recibir las alertas de EnvioBot Full.';
+    document.getElementById('m').textContent='Te mandamos el contacto por WhatsApp: volvé al chat y tocá Guardar.';
   }}).catch(function(){{b.disabled=false;b.textContent='Verificar mi número';document.getElementById('m').textContent='No se pudo verificar. Probá de nuevo.'}});
 }}}}
 </script></body></html>"""
@@ -1752,10 +1751,16 @@ def verificar_wa(token):
         if not row:
             conn.close()
             return jsonify({"ok": False, "error": "Link vencido."}), 404
+        primera_vez = not row["is_verified"]
         cur.execute("UPDATE verification_codes SET is_verified=1, verified_at=NOW() WHERE id=%s", (row["id"],))
         cur.execute("UPDATE alert_recipients SET is_verified=1 WHERE user_id=%s AND phone=%s",
                     (row["user_id"], row["destination"]))
     conn.close()
+    if primera_vez:
+        # Segundo mensaje: imagen "Guardá el contacto" + tarjeta de contacto (en segundo plano)
+        import threading
+        base = os.getenv("APP_URL", "https://enviobot.com.ar/full")
+        threading.Thread(target=enviar_confirmacion_whatsapp, args=(row["destination"], base), daemon=True).start()
     return jsonify({"ok": True}), 200
 
 @app.route("/api/full/verify/wa/<token>/contacto.vcf", methods=["GET"])

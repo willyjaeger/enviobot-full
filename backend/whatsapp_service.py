@@ -525,6 +525,43 @@ def enviar_verificacion_whatsapp(telefono: str, nombre_usuario: str, link_verifi
     return enviar_mensaje_whatsapp(telefono, msg)
 
 
+def enviar_confirmacion_whatsapp(telefono: str, base_url: str) -> dict:
+    """
+    Segundo envío, cuando el número ya quedó verificado: imagen "Guardá el contacto"
+    y debajo la tarjeta de contacto de EnvioBot Full (con logo) para tocar Guardar.
+    """
+    cfg = obtener_configuracion_whatsapp()
+    imagen = base_url.rstrip("/") + "/img/contacto-whatsapp.png"
+    res_img = enviar_imagen_whatsapp(telefono, imagen, "")
+    time.sleep(1.5)
+
+    clean_phone = normalizar_telefono(telefono)
+    if cfg["simulation_mode"] or cfg["provider"] == "simulation":
+        return {"ok": True, "simulated": True, "to": clean_phone, "imagen": res_img}
+    if cfg["provider"] not in ("gateway_local", "evolution"):
+        return {"ok": False, "error": "El proveedor no soporta tarjetas de contacto.", "imagen": res_img}
+
+    headers = {"Content-Type": "application/json"}
+    if cfg["api_key"]:
+        headers["apikey"] = cfg["api_key"]
+    api_url = cfg["api_url"] or "http://127.0.0.1:8085"
+    instance = cfg["instance_name"] or "enviobot_full"
+    payload = {
+        "number": clean_phone,
+        "displayName": cfg.get("vcard_name", "EnvioBot Full"),
+        "vcard": generar_vcard_contacto().replace("\r\n", "\n"),
+    }
+    try:
+        r = requests.post(f"{api_url}/message/sendContact/{instance}", headers=headers, json=payload, timeout=20)
+        ok = r.status_code in (200, 201)
+        if not ok:
+            logger.error(f"[WhatsApp] Tarjeta de contacto falló {r.status_code}: {r.text}")
+        return {"ok": ok, "imagen": res_img}
+    except Exception as e:
+        logger.error(f"[WhatsApp] Tarjeta de contacto falló: {e}")
+        return {"ok": False, "error": str(e), "imagen": res_img}
+
+
 def enviar_imagen_whatsapp(telefono: str, url_imagen: str, texto: str) -> dict:
     """Envía una imagen (por URL pública) con el texto de pie. Solo Evolution/gateway local."""
     cfg = obtener_configuracion_whatsapp()
@@ -582,7 +619,7 @@ def generar_vcard_contacto() -> str:
         f"ORG:{org}\r\n"
         f"TITLE:{titulo}\r\n"
         f"{foto}"
-        f"TEL;TYPE=CELL,VOICE:+{tel}\r\n"
+        f"TEL;type=CELL;type=VOICE;waid={tel}:+{tel}\r\n"
         "URL:https://enviobot.com.ar\r\n"
         "NOTE:Alertas de reposición y fecha límite de colecta en Mercado Envíos Full.\r\n"
         "END:VCARD\r\n"
