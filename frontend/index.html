@@ -197,11 +197,11 @@
                     </span>
                     <div>
                         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <strong id="eventNameText" style="color: #ff8080; font-size: 13.5px; font-weight: 800;">Cyber Monday 2026</strong>
-                            <span id="eventCutoffBadge" class="badge" style="background: rgba(239, 68, 68, 0.2); color: #fca5a5; font-size: 11px; font-weight: 700; border: 1px solid rgba(239, 68, 68, 0.4);">
+                            <strong id="eventNameText" style="color: #b91c1c; font-size: 13.5px; font-weight: 800;">Cyber Monday 2026</strong>
+                            <span id="eventCutoffBadge" class="badge" style="background: rgba(239, 68, 68, 0.2); color: #991b1b; font-size: 11px; font-weight: 700; border: 1px solid rgba(239, 68, 68, 0.5);">
                                 Corte Full: 24 de Octubre (Faltan 11 días)
                             </span>
-                            <span id="eventTurnosBadge" class="badge" style="background: rgba(245, 166, 35, 0.2); color: #fcd34d; font-size: 11px; font-weight: 700; border: 1px solid rgba(245, 166, 35, 0.4);">
+                            <span id="eventTurnosBadge" class="badge" style="background: rgba(245, 166, 35, 0.2); color: #92400e; font-size: 11px; font-weight: 700; border: 1px solid rgba(245, 166, 35, 0.6);">
                                 Turnos en Celina: demora de 7 días
                             </span>
                         </div>
@@ -1326,22 +1326,13 @@
                             </button>
                         </div>
 
-                        <!-- Tener la app en el celular -->
-                        <div style="background: var(--surf2); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
-                            <div>
-                                <div style="font-size: 12px; font-weight: 700; color: var(--text);">EnvioBot Full en tu celular</div>
-                                <div style="font-size: 11px; color: var(--text2);">Te mandamos por WhatsApp un link para guardar la app con un toque.</div>
-                            </div>
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="enviarAccesoCelular()" style="font-size: 11px; padding: 5px 12px; white-space: nowrap;">Mandármelo</button>
-                        </div>
-
                         <!-- Horario base de los avisos por WhatsApp (lo heredan los números que no tengan el suyo) -->
                         <div style="background: var(--surf2); padding: 10px 12px; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">
                             <div>
                                 <div style="font-size: 12px; font-weight: 700; color: var(--text);">Horario de los avisos por WhatsApp</div>
                                 <div style="font-size: 11px; color: var(--text2);">Lo usan todos los números que no tengan un horario propio: <strong id="waHorarioDueno" style="color: var(--text);">Lun a Vie, 08:30 a 18:00</strong></div>
                             </div>
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="editarHorarioWA(null)" style="font-size: 11px; padding: 5px 12px; white-space: nowrap;">Cambiar</button>
+                            <button type="button" class="btn btn-secondary btn-sm" id="btnCambiarHorarioDueno" onclick="editarHorarioWA(null)" style="font-size: 11px; padding: 5px 12px; white-space: nowrap;">Cambiar</button>
                         </div>
 
                         <!-- Tabla de Destinatarios de WhatsApp -->

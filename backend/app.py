@@ -1909,6 +1909,8 @@ def get_recipients():
         cur.execute("SELECT wa_days, wa_from, wa_to FROM user_settings WHERE user_id=%s", (user_id,))
         fila_dueno = cur.fetchone() or {}
         app_habilitada, acceso = _equipo.acceso_app(cur, user_id, [r["phone"] for r in recipients if r.get("phone")])
+        # Con Equipo prendido, solo el Dueño/Gerencia (administrador) cambia horarios y destinatarios
+        puede_editar = _equipo.es_admin(cur, user_id) if app_habilitada else True
     conn.close()
     for r in recipients:
         r["app_access"] = acceso.get(r.get("phone"), "none")
@@ -1927,6 +1929,7 @@ def get_recipients():
         "can_add_more": len(recipients) < max_allowed,
         "owner_schedule": _horario.a_texto(horario_dueno),
         "app_invite_enabled": app_habilitada,
+        "can_edit": puede_editar,
         "recipients": recipients
     }), 200
 
@@ -2155,35 +2158,6 @@ def delete_recipient(recipient_id):
         cur.execute("DELETE FROM alert_recipients WHERE id=%s AND user_id=%s", (recipient_id, user_id))
     conn.close()
     return jsonify({"ok": True, "message": "Destinatario eliminado."}), 200
-
-@app.route("/api/full/app/enviar-acceso", methods=["POST"])
-@jwt_required()
-@_equipo.requiere_rol('admin')
-def enviar_acceso_celular():
-    """Le manda al propio dueño, por WhatsApp, el link para instalar la app en su celular."""
-    user_id = int(get_jwt_identity())
-    conn = get_db()
-    with conn.cursor() as cur:
-        cur.execute("SELECT full_name FROM users WHERE id=%s", (user_id,))
-        u = cur.fetchone() or {}
-        cur.execute("""SELECT name, phone FROM alert_recipients
-                       WHERE user_id=%s AND is_active=1 AND role='admin' ORDER BY id ASC LIMIT 1""", (user_id,))
-        r = cur.fetchone()
-        telefono, nombre = (r or {}).get("phone"), (r or {}).get("name")
-        if not telefono:
-            cur.execute("SELECT whatsapp_phone FROM user_settings WHERE user_id=%s", (user_id,))
-            telefono = (cur.fetchone() or {}).get("whatsapp_phone")
-    conn.close()
-    if not telefono:
-        return jsonify({"ok": False, "error": "Cargá tu número de WhatsApp como Dueño y volvé a probar."}), 400
-    primero = ((nombre or u.get("full_name") or "").split(" ")[0]) or "Hola"
-    app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full").rstrip("/")
-    res = enviar_mensaje_whatsapp(
-        telefono,
-        f"{primero}, tocá este link desde tu celular para guardar EnvioBot Full como app:\n{app_url}/instalar.html")
-    ok = bool(res.get("ok")) and not res.get("simulated")
-    return jsonify({"ok": ok, "phone": telefono,
-                    "error": None if ok else "No se pudo enviar el WhatsApp. Probá de nuevo en un rato."}), 200
 
 @app.route("/api/full/recipients/test-whatsapp", methods=["POST"])
 @jwt_required()

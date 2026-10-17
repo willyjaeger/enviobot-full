@@ -41,6 +41,21 @@ class TestHorario(unittest.TestCase):
         self.assertTrue(h.whatsapp_permitido(utc.astimezone(p.HORA_BA)))
 
 
+class TestFeriados(unittest.TestCase):
+    def test_feriado_en_dia_de_semana_no_manda(self):
+        self.assertTrue(h.whatsapp_permitido(ba(16, 10, 0)))  # viernes común
+        self.assertFalse(h.whatsapp_permitido(datetime(2026, 10, 12, 10, 0, tzinfo=p.HORA_BA)))  # lunes feriado
+        self.assertFalse(h.whatsapp_permitido(datetime(2026, 11, 23, 10, 0, tzinfo=p.HORA_BA)))  # feriado trasladado
+
+    def test_el_horario_propio_tampoco_manda_en_feriado(self):
+        todos = h.horario_de({"wa_days": "0,1,2,3,4,5,6", "wa_from": "00:00", "wa_to": "23:59"})
+        self.assertFalse(h.whatsapp_permitido(datetime(2026, 12, 25, 12, 0, tzinfo=p.HORA_BA), todos))  # Navidad
+        self.assertTrue(h.whatsapp_permitido(datetime(2026, 12, 26, 12, 0, tzinfo=p.HORA_BA), todos))  # sábado común
+
+    def test_el_dia_siguiente_al_feriado_vuelve_a_mandar(self):
+        self.assertTrue(h.whatsapp_permitido(datetime(2026, 10, 13, 10, 0, tzinfo=p.HORA_BA)))
+
+
 class _Cur:
     def __init__(self):
         self.sql, self.params = "", ()

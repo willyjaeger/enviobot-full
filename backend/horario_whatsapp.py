@@ -2,7 +2,7 @@
 
 Regla de Guillermo (2026-10-16): los WhatsApp nunca salen fuera de horario. Si una alerta toca
 fuera de horario, NO se manda ni se anota como enviada: la próxima corrida dentro del horario la
-manda. Los mails no tienen esta restricción. No contempla feriados.
+manda. Los mails no tienen esta restricción. Los feriados nacionales (feriados_ar.py) tampoco: ese día no sale ningún WhatsApp.
 
 Quién decide el horario (2026-10-17):
   1. Por defecto, lunes a viernes de 8:30 a 18:00.
@@ -15,6 +15,7 @@ Formato guardado: días como "0,1,2,3,4" (lunes=0 ... domingo=6) y horas como "0
 from datetime import datetime
 
 import proyeccion
+from feriados_ar import es_feriado
 
 DESDE = (8, 30)
 HASTA = (18, 0)
@@ -69,6 +70,8 @@ def horario_de(fila, base=None):
 
 def en_horario(horario, ahora=None):
     ahora = ahora or datetime.now(proyeccion.HORA_BA)
+    if es_feriado(ahora.date()):
+        return False  # feriados nacionales: nunca, aunque el horario propio incluya ese día
     if ahora.weekday() not in horario["dias"]:
         return False
     return horario["desde"] <= (ahora.hour, ahora.minute) <= horario["hasta"]

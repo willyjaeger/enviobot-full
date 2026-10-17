@@ -3736,6 +3736,7 @@ async function cargarSettingsBackend() {
 
 let horarioDuenoWA = { dias: '0,1,2,3,4', desde: '08:30', hasta: '18:00' };
 let invitarAppHabilitado = false;
+let puedeEditarDestinatarios = true;
 
 async function cargarDestinatariosBackend() {
     const token = getToken();
@@ -3750,6 +3751,7 @@ async function cargarDestinatariosBackend() {
             if (data.plan_tier) currentPlanTier = data.plan_tier;
             if (data.owner_schedule) horarioDuenoWA = data.owner_schedule;
             invitarAppHabilitado = !!data.app_invite_enabled;
+            puedeEditarDestinatarios = data.can_edit !== false;
             renderizarDestinatariosWA();
         }
     } catch (e) {
@@ -4563,6 +4565,12 @@ function renderizarDestinatariosWA() {
 
     const limitMsg = document.getElementById('waLimitReachedMsg');
     const addBox = document.getElementById('addRecipientBox');
+    const btnHorDueno = document.getElementById('btnCambiarHorarioDueno');
+    if (btnHorDueno) {
+        btnHorDueno.disabled = !puedeEditarDestinatarios;
+        btnHorDueno.style.opacity = puedeEditarDestinatarios ? '1' : '.4';
+        btnHorDueno.title = puedeEditarDestinatarios ? '' : 'Solo el Dueño / Gerencia puede cambiarlo';
+    }
     const horDueno = document.getElementById('waHorarioDueno');
     if (horDueno) horDueno.textContent = resumenHorarioWA(horarioDuenoWA);
 
@@ -4572,6 +4580,12 @@ function renderizarDestinatariosWA() {
     } else {
         if (limitMsg) limitMsg.style.display = 'none';
         if (addBox) addBox.style.opacity = '1';
+    }
+    if (addBox && !puedeEditarDestinatarios) {
+        addBox.style.opacity = '0.4';
+        addBox.style.pointerEvents = 'none';
+    } else if (addBox) {
+        addBox.style.pointerEvents = '';
     }
 
     if (recipientsData.length === 0) {
@@ -4590,32 +4604,39 @@ function renderizarDestinatariosWA() {
 
         const isVerified = (r.is_verified === 1 || r.is_verified === true || r.is_verified === '1');
         const verifBadge = isVerified
-            ? `<span style="display: inline-block; margin-left: 8px; padding: 3px 10px; border-radius: 999px; background: #16a34a; color: #ffffff; font-size: 13px; font-weight: 800;">Verificado</span>`
-            : `<span style="display: inline-block; margin-left: 8px; padding: 3px 10px; border-radius: 999px; background: #f5a623; color: #111111; font-size: 13px; font-weight: 800;">Falta verificar</span>`;
+            ? `<span style="display: inline-block; margin-top: 4px; padding: 2px 10px; border-radius: 999px; background: #16a34a; color: #ffffff; font-size: 12px; font-weight: 800; white-space: nowrap;">Verificado</span>`
+            : `<span style="display: inline-block; margin-top: 4px; padding: 2px 10px; border-radius: 999px; background: #f5a623; color: #111111; font-size: 12px; font-weight: 800; white-space: nowrap;">Falta verificar</span>`;
+
+        // Una sola acción principal por persona; lo demás, como enlaces chicos.
+        const sinPermiso = 'Solo el Dueño / Gerencia puede cambiarlo';
+        const bloqueo = puedeEditarDestinatarios ? '' : ` disabled title="${sinPermiso}" style="opacity: .4; cursor: not-allowed;"`;
+        let principal = '';
+        if (!isVerified) {
+            principal = `<button class="btn btn-primary btn-sm" style="padding: 7px 14px; font-size: 13px; font-weight: 700;"${bloqueo} onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')">Reenviar verificación</button>`;
+        } else if (invitarAppHabilitado && r.app_access === 'activo') {
+            principal = '<span style="font-size: 13px; color: var(--text2); font-weight: 700;">Ya usa la app</span>';
+        } else if (invitarAppHabilitado) {
+            principal = `<button class="btn btn-secondary btn-sm" style="padding: 7px 14px; font-size: 13px; font-weight: 700;"${bloqueo} onclick="invitarAppWA(${r.id}, '${r.name}')">${r.app_access === 'invitado' ? 'Reenviar invitación' : 'Invitar a la app'}</button>`;
+        }
+        const enlaceBase = 'background: none; border: 0; padding: 7px 8px; font-size: 13px; cursor: pointer; color: var(--accent-text);';
+        const enlaceBloq = puedeEditarDestinatarios ? '' : ` disabled title="${sinPermiso}"`;
+        const enlaceEstilo = (extra) => puedeEditarDestinatarios ? `${enlaceBase}${extra || ''}` : `${enlaceBase} opacity: .4; cursor: not-allowed;${extra || ''}`;
 
         tr.innerHTML = `
-            <td>
-                <strong>${r.name}</strong>
+            <td style="white-space: nowrap; min-width: 130px;">
+                <div style="font-weight: 700; font-size: 14px;">${r.name}</div>
                 ${verifBadge}
             </td>
-            <td style="font-family: monospace; color: var(--text);">${r.phone}</td>
+            <td style="font-family: monospace; color: var(--text); white-space: nowrap;">${r.phone}</td>
             <td><span class="role-badge ${roleBadgeClass}">${roleLabel}</span></td>
-            <td style="color: var(--text2); font-size: 11px;">${whName}</td>
-            <td style="font-size: 11px; color: var(--text2);">${resumenHorarioWA(r.schedule || horarioDuenoWA)}${r.schedule_custom ? '' : ' <span style="opacity:.7">(del dueño)</span>'}</td>
+            <td style="color: var(--text2); font-size: 12px;">${whName}</td>
+            <td style="font-size: 12px; color: var(--text2);">${resumenHorarioWA(r.schedule || horarioDuenoWA)}${r.schedule_custom ? '' : ' <span style="opacity:.7">(del dueño)</span>'}</td>
             <td style="text-align: right; white-space: nowrap;">
-                <div style="display: inline-flex; gap: 8px; align-items: center; padding-left: 12px;">
-                    <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px;"
-                            onclick="editarHorarioWA(${r.id})" title="Elegir los días y horas en que recibe avisos">Horario</button>
-                    ${!invitarAppHabilitado ? '' : (r.app_access === 'activo'
-                        ? '<span style="font-size: 12px; color: var(--text2);">Ya usa la app</span>'
-                        : `<button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px;"
-                            onclick="invitarAppWA(${r.id}, '${r.name}')" title="Le mandamos un link para ver el stock desde el celular">${r.app_access === 'invitado' ? 'Reenviar invitación' : 'Invitar a la app'}</button>`)}
-                    ${isVerified ? '' : `<button class="btn btn-primary btn-sm" style="padding: 5px 12px; font-size: 12px;"
-                            onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')" title="Reenviar el botón de verificación">Reenviar verificación</button>`}
-                    <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px;"
-                            onclick="probarDestinatarioWA('${r.phone}', '${r.name}')" title="Enviar WhatsApp de prueba">Probar</button>
-                    <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px; color: #ff6b6b;"
-                            onclick="eliminarDestinatarioWA(${r.id})" title="Eliminar número">Quitar</button>
+                <div style="display: inline-flex; gap: 6px; align-items: center;">
+                    ${principal}
+                    <button type="button" style="${enlaceEstilo()}"${enlaceBloq} onclick="editarHorarioWA(${r.id})">Horario</button>
+                    <button type="button" style="${enlaceEstilo()}"${enlaceBloq} onclick="probarDestinatarioWA('${r.phone}', '${r.name}')">Probar</button>
+                    <button type="button" style="${enlaceEstilo(' color: #ff6b6b;')}"${enlaceBloq} onclick="eliminarDestinatarioWA(${r.id})">Quitar</button>
                 </div>
             </td>
         `;
@@ -4754,19 +4775,6 @@ async function agregarDestinatarioWA() {
 
     renderizarDestinatariosWA();
     showToast(`Número de ${name} agregado.`, "success");
-}
-
-async function enviarAccesoCelular() {
-    try {
-        const resp = await fetch(`${API_BASE}/full/app/enviar-acceso`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${getToken()}` }
-        });
-        const data = await resp.json();
-        showToast(data.ok ? `Te mandamos el link por WhatsApp al ${data.phone}. Abrilo desde el celular.` : (data.error || 'No se pudo enviar el link.'), data.ok ? 'success' : 'error', 5000);
-    } catch (e) {
-        showToast('No se pudo enviar el link.', 'error');
-    }
 }
 
 async function invitarAppWA(id, name) {
@@ -7156,7 +7164,7 @@ async function cargarMonitorEventosLogisticos() {
                 if (ev.days_to_cutoff <= 0) {
                     cutoffEl.textContent = `Corte Full: CERRADO (${cutoffTexto})`;
                     cutoffEl.style.background = 'rgba(239, 68, 68, 0.25)';
-                    cutoffEl.style.color = '#fca5a5';
+                    cutoffEl.style.color = '#991b1b';
                 } else {
                     cutoffEl.textContent = `Corte Full: ${cutoffTexto} (Faltan ${ev.days_to_cutoff} días)`;
                 }
