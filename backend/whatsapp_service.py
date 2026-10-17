@@ -518,7 +518,7 @@ def enviar_verificacion_whatsapp(telefono: str, nombre_usuario: str, link_verifi
     """
     msg = formatear_alerta_verificacion_whatsapp(nombre_usuario, link_verificacion)
     imagen = link_verificacion.split("/v/")[0] + "/img/verificar-whatsapp.png"
-    res = enviar_imagen_whatsapp(telefono, imagen, msg)
+    res = enviar_imagen_whatsapp(telefono, imagen, link_verificacion)
     if res.get("ok"):
         return res
     logger.warning(f"[WhatsApp] No se pudo mandar la imagen ({res.get('error')}); va solo el texto.")
