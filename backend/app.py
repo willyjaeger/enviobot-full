@@ -35,6 +35,7 @@ import equipo as _equipo
 import proyeccion as _proy
 import esquema as _esquema
 from inbound_service import render_remito_html
+import pdf_envio_ml as _pdf_ml
 
 load_dotenv()
 
@@ -2733,6 +2734,106 @@ def create_inbound_shipment():
             "estimated_arrival_date": str(estimated_arrival)
         }
     }), 201
+
+@app.route("/api/full/inbound/import-pdf", methods=["POST"])
+@jwt_required()
+@_equipo.requiere_rol('operator')
+def import_inbound_pdf():
+    """Carga una colecta ya armada en Mercado Libre a partir del PDF de instrucciones de preparación.
+
+    Sin `pickup_date`: solo lee y muestra (vista previa). Con `pickup_date` (AAAA-MM-DD): la guarda.
+    El código queda como ML-<número de envío de ML>, así se reconoce con el mismo número que en ML.
+    """
+    user_id = int(get_jwt_identity())
+    is_admin = is_admin_user(user_id)
+    conn = get_db()
+    try:
+        account_id = get_account_user_id(user_id, conn)
+        sub = get_user_full_subscription(account_id, conn)
+        if not (bool(sub.get("has_inbound", False)) or is_admin):
+            return jsonify({"ok": False, "requires_upgrade": True,
+                            "error": "El Módulo de Colectas y Envíos a Full es una función exclusiva para planes Pro Plus o Add-on activo."}), 403
+
+        archivo = request.files.get("file")
+        if not archivo:
+            return jsonify({"ok": False, "error": "Falta el archivo PDF."}), 400
+        contenido = archivo.read(5 * 1024 * 1024 + 1)
+        if len(contenido) > 5 * 1024 * 1024:
+            return jsonify({"ok": False, "error": "El PDF es demasiado grande."}), 413
+        try:
+            leido = _pdf_ml.leer_pdf(contenido)
+        except _pdf_ml.PdfEnvioError as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
+
+        codigo = f"ML-{leido['numero_ml']}"
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, status, pickup_date FROM inbound_shipments WHERE user_id=%s AND shipment_code=%s",
+                        (account_id, codigo))
+            existente = cur.fetchone()
+            cur.execute("""
+                SELECT id, item_id, variation_id, variation_name, inventory_id, sku, title, current_stock_full
+                FROM full_items WHERE user_id=%s AND is_monitored=1 ORDER BY id ASC
+            """, (account_id,))
+            filas = cur.fetchall()
+        encontrados, sin_match = _pdf_ml.emparejar_productos(leido["productos"], filas)
+
+        resumen = {
+            "numero_ml": leido["numero_ml"],
+            "codigo": codigo,
+            "total_unidades": sum(p["unidades"] for p in leido["productos"]),
+            "productos": [{"titulo": p["fila"]["title"] or p["titulo"], "sku": p["fila"]["sku"] or p["sku"],
+                           "unidades": p["unidades"]} for p in encontrados],
+            "sin_match": [{"titulo": p["titulo"], "sku": p["sku"], "unidades": p["unidades"]} for p in sin_match],
+            "ya_existe": bool(existente),
+        }
+
+        pickup_str = (request.form.get("pickup_date") or "").strip()
+        if not pickup_str:
+            return jsonify({"ok": True, "preview": True, "envio": resumen})
+
+        if existente:
+            return jsonify({"ok": False, "error": f"La colecta {codigo} ya está cargada.", "envio": resumen}), 409
+        try:
+            pickup_date = datetime.strptime(pickup_str, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"ok": False, "error": "La fecha de retiro no es válida."}), 400
+        if not encontrados:
+            return jsonify({"ok": False, "error": "Ningún producto del PDF coincide con tus publicaciones.", "envio": resumen}), 400
+
+        transit_days = 3
+        estimated_arrival = pickup_date + timedelta(days=transit_days)
+        total_units = sum(p["unidades"] for p in encontrados)
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO inbound_shipments (
+                    user_id, shipment_code, destination_warehouse, destination_name,
+                    status, target_coverage_days, lead_time_days, transit_days,
+                    total_items, total_units, total_boxes, packaging_type,
+                    carrier_notes, pickup_date, estimated_arrival_date
+                ) VALUES (%s, %s, 'meli_full', 'Mercado Envíos Full (Villa Celina)',
+                          'scheduled', 15, 2, %s, %s, %s, 0, 'cajas_master', %s, %s, %s)
+            """, (account_id, codigo, transit_days, len(encontrados), total_units,
+                  f"Importada del PDF de Mercado Libre (envío #{leido['numero_ml']})", pickup_date, estimated_arrival))
+            shipment_id = cur.lastrowid
+            for p in encontrados:
+                f = p["fila"]
+                cur.execute("""
+                    INSERT INTO inbound_shipment_items (
+                        shipment_id, item_id, inventory_id, variation_id, variation_name,
+                        sku, title, current_full_stock, vpd, suggested_units,
+                        units_to_send, units_per_box, box_count
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 0, %s, 0, 0)
+                """, (shipment_id, f["item_id"], f["inventory_id"], f["variation_id"], f["variation_name"],
+                      f["sku"], f["title"] or p["titulo"], int(f["current_stock_full"] or 0), p["unidades"]))
+        return jsonify({"ok": True, "preview": False, "message": f"Colecta {codigo} cargada.",
+                        "shipment": {"id": shipment_id, "shipment_code": codigo, "status": "scheduled",
+                                     "total_items": len(encontrados), "total_units": total_units,
+                                     "pickup_date": str(pickup_date),
+                                     "estimated_arrival_date": str(estimated_arrival)},
+                        "envio": resumen}), 201
+    finally:
+        conn.close()
+
 
 @app.route("/api/full/inbound/shipments/<int:shipment_id>", methods=["GET"])
 @jwt_required()

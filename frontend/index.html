@@ -232,6 +232,10 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                         <span>Armar colecta</span>
                     </button>
+                    <button type="button" class="btn btn-secondary pc-btn-grande" onclick="abrirImportarColectaPdf()" title="Cargar una colecta que ya armaste en Mercado Libre, arrastrando su PDF">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        <span>Cargar colecta de Mercado Libre</span>
+                    </button>
                     <button type="button" class="btn btn-secondary pc-btn-grande" id="btnHistorialColectasTop" onclick="abrirHistorialColectas()" title="Ver historial de envíos y hojas de despacho generadas">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                         <span>Historial de envíos (<span id="topbarHistorialBadge">0</span>)</span>
@@ -729,6 +733,38 @@
     </div>
 
     <!-- ── Modal Dedicado e Independiente: Historial de Envíos a Full ───────────── -->
+    <div class="modal-overlay" id="modalImportarPdf" style="display: none; z-index: 1460;">
+        <div class="modal-card" style="max-width: 620px; width: 96%; max-height: 90vh; overflow: auto;">
+            <div class="modal-header" style="margin-bottom: 12px; display: block;">
+                <h3 style="color: var(--accent); font-size: 20px; font-weight: 800; margin: 0;">Cargar una colecta de Mercado Libre</h3>
+                <p style="font-size: 13px; color: var(--text2); margin: 4px 0 0;">Si ya armaste el envío en Mercado Libre, no lo cargues a mano: arrastrá acá el PDF de instrucciones de preparación y listo.</p>
+            </div>
+            <div id="importPdfPaso1">
+                <label class="pc-dropzone" id="importPdfZona" for="importPdfInput">
+                    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <strong>Arrastrá el PDF hasta acá</strong>
+                    <span>o hacé clic para elegirlo</span>
+                    <input type="file" id="importPdfInput" accept="application/pdf,.pdf" style="display:none" onchange="procesarPdfColecta(this.files[0]); this.value='';">
+                </label>
+                <p style="font-size: 12.5px; color: var(--text2); margin: 10px 0 0;">En Mercado Libre: Gestión de envíos Full, abrí el envío y tocá "Descargar listado".</p>
+                <p id="importPdfError" style="color: var(--danger); font-size: 13px; margin: 8px 0 0;"></p>
+            </div>
+            <div id="importPdfPaso2" style="display: none;">
+                <div id="importPdfVista"></div>
+                <div style="margin-top: 14px;">
+                    <label for="importPdfFecha" style="font-weight: 700; font-size: 13px;">¿Qué día la retiran?</label>
+                    <input type="date" id="importPdfFecha" class="form-input" style="margin-top: 4px; max-width: 220px;">
+                    <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0;">Es el "Turno reservado" de Mercado Libre. El PDF no trae la fecha.</p>
+                </div>
+                <p id="importPdfErrorPaso2" style="color: var(--danger); font-size: 13px; margin: 8px 0 0;"></p>
+            </div>
+            <div class="modal-actions" style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                <button type="button" class="btn btn-secondary" onclick="cerrarImportarColectaPdf()">Cancelar</button>
+                <button type="button" class="btn" id="btnConfirmarImportPdf" onclick="confirmarImportPdf()" style="display: none;">Cargar esta colecta</button>
+            </div>
+        </div>
+    </div>
+
     <div class="modal-overlay" id="modalHistorialEnvios" style="display: none; z-index: 1450;">
         <div class="modal-card modal-card-large" id="modalHistorialEnviosCard" style="max-width: 1060px; width: 96%; max-height: 90vh; display: flex; flex-direction: column;">
             <div class="modal-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">

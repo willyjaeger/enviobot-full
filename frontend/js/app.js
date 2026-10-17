@@ -2136,6 +2136,134 @@ const abrirHojaDespacho = abrirRemitoOficial;
 window.abrirHojaDespacho = abrirRemitoOficial;
 window.abrirRemitoOficial = abrirRemitoOficial;
 
+// ── Cargar una colecta que ya está en Mercado Libre (arrastrando el PDF) ──────────
+let importPdfArchivo = null;
+
+function importPdfMostrar(paso) {
+    ['importPdfPaso1', 'importPdfPaso2'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (id === 'importPdfPaso' + paso) ? 'block' : 'none';
+    });
+    const bc = document.getElementById('btnConfirmarImportPdf');
+    if (bc) bc.style.display = paso === 2 ? '' : 'none';
+}
+
+function abrirImportarColectaPdf() {
+    const modal = document.getElementById('modalImportarPdf');
+    if (!modal) return;
+    importPdfArchivo = null;
+    importPdfMostrar(1);
+    const err = document.getElementById('importPdfError');
+    if (err) err.textContent = '';
+    modal.style.display = 'flex';
+}
+
+function cerrarImportarColectaPdf() {
+    const modal = document.getElementById('modalImportarPdf');
+    if (modal) modal.style.display = 'none';
+    importPdfArchivo = null;
+}
+
+function htmlVistaPreviaPdf(envio) {
+    const filas = (envio.productos || []).map(function (p) {
+        return '<tr><td>' + escapeHtml(p.titulo) + '</td><td class="pc-sku-inline">' + escapeHtml(p.sku) +
+            '</td><td style="text-align:right;font-weight:700;">' + escapeHtml(p.unidades) + ' u.</td></tr>';
+    }).join('');
+    const faltan = (envio.sin_match || []).map(function (p) {
+        return escapeHtml(p.titulo) + ' (' + escapeHtml(p.unidades) + ' u.)';
+    });
+    const aviso = faltan.length
+        ? '<div class="pc-vacio" style="margin-top:10px;">No encontré en EnvioBot ' + faltan.length +
+          (faltan.length === 1 ? ' producto' : ' productos') + ', así que no se cargan: ' + faltan.join(', ') + '.</div>'
+        : '';
+    const existe = envio.ya_existe
+        ? '<div class="pc-vacio" style="margin-top:10px;">Esta colecta ya está cargada en EnvioBot.</div>'
+        : '';
+    return '<div class="pc-hero-titulo">Envío #' + escapeHtml(envio.numero_ml) + '</div>' +
+        '<div class="pc-hero-sub">' + (envio.productos || []).length + ' productos, ' + escapeHtml(envio.total_unidades) + ' unidades</div>' +
+        '<div style="max-height:240px;overflow:auto;margin-top:10px;"><table class="pc-table"><tbody>' + filas + '</tbody></table></div>' +
+        aviso + existe;
+}
+
+async function enviarPdfColecta(archivo, fechaRetiro) {
+    const fd = new FormData();
+    fd.append('file', archivo);
+    if (fechaRetiro) fd.append('pickup_date', fechaRetiro);
+    const res = await fetch(`${API_BASE}/full/inbound/import-pdf`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getToken()}` },
+        body: fd
+    });
+    let data = {};
+    try { data = await res.json(); } catch (e) { data = { error: 'El servidor no respondió bien.' }; }
+    return { ok: res.ok, data: data };
+}
+
+async function procesarPdfColecta(archivo) {
+    abrirImportarColectaPdf();
+    const err = document.getElementById('importPdfError');
+    if (!archivo || !/\.pdf$/i.test(archivo.name || '')) {
+        if (err) err.textContent = 'Ese archivo no es un PDF. Arrastrá el PDF de instrucciones de preparación de Mercado Libre.';
+        return;
+    }
+    try {
+        const r = await enviarPdfColecta(archivo, null);
+        if (!r.ok) {
+            if (err) err.textContent = r.data.error || 'No pude leer el PDF.';
+            return;
+        }
+        importPdfArchivo = archivo;
+        document.getElementById('importPdfVista').innerHTML = htmlVistaPreviaPdf(r.data.envio);
+        const btn = document.getElementById('btnConfirmarImportPdf');
+        if (btn) btn.disabled = !!r.data.envio.ya_existe || !(r.data.envio.productos || []).length;
+        const e2 = document.getElementById('importPdfErrorPaso2');
+        if (e2) e2.textContent = '';
+        importPdfMostrar(2);
+    } catch (e) {
+        if (err) err.textContent = 'Error de conexión: ' + e.message;
+    }
+}
+
+async function confirmarImportPdf() {
+    const fecha = (document.getElementById('importPdfFecha') || {}).value;
+    const err = document.getElementById('importPdfErrorPaso2');
+    if (err) err.textContent = '';
+    if (!fecha) {
+        if (err) err.textContent = 'Poné la fecha de retiro (en Mercado Libre figura como "Turno reservado").';
+        return;
+    }
+    try {
+        const r = await enviarPdfColecta(importPdfArchivo, fecha);
+        if (!r.ok) {
+            if (err) err.textContent = r.data.error || 'No pude cargar la colecta.';
+            return;
+        }
+        showToast('Colecta ' + r.data.shipment.shipment_code + ' cargada: ' + r.data.shipment.total_units + ' unidades.', 'success');
+        cerrarImportarColectaPdf();
+        cargarDatos();
+    } catch (e) {
+        if (err) err.textContent = 'Error de conexión: ' + e.message;
+    }
+}
+
+// Arrastrar un PDF a cualquier parte de la pantalla abre la carga.
+['dragover', 'drop'].forEach(function (nombre) {
+    window.addEventListener(nombre, function (ev) {
+        const tipos = ev.dataTransfer && ev.dataTransfer.types;
+        if (!tipos || Array.prototype.indexOf.call(tipos, 'Files') < 0) return;
+        ev.preventDefault();
+        if (nombre === 'drop') {
+            const f = ev.dataTransfer.files && ev.dataTransfer.files[0];
+            if (f) procesarPdfColecta(f);
+        }
+    });
+});
+
+window.abrirImportarColectaPdf = abrirImportarColectaPdf;
+window.cerrarImportarColectaPdf = cerrarImportarColectaPdf;
+window.procesarPdfColecta = procesarPdfColecta;
+window.confirmarImportPdf = confirmarImportPdf;
+
 // ── Modales Independientes: Armar Colecta vs Historial de Envíos ──
 
 function abrirHistorialColectas() {

@@ -1681,3 +1681,8 @@ table.stock-table tr:hover td {
 .pc-fila-nota { font-size: 12px; color: var(--text2); }
 .pc-info { color: var(--info); font-weight: 600; }
 .pc-lista .pc-mas { padding: 4px 0 10px; }
+
+/* ── Carga de colecta por PDF ─────────────────────────────────────────────────── */
+.pc-dropzone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 34px 16px; border: 2px dashed var(--border); border-radius: 12px; color: var(--text2); cursor: pointer; text-align: center; }
+.pc-dropzone:hover { border-color: var(--accent); color: var(--text); }
+.pc-dropzone strong { color: var(--text); font-size: 15px; }
