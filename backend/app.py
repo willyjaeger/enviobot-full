@@ -1676,47 +1676,7 @@ def _enviar_verificacion_wa(user_id, phone, name):
         """, (user_id, phone, token))
     conn.close()
     app_url = os.getenv("APP_URL", "https://enviobot.com.ar/full").rstrip("/")
-    return enviar_verificacion_whatsapp(phone, name or "Usuario", f"{app_url}/v/{token}")
-
-def _pagina_verificacion(estado, nombre=""):
-    """HTML de la página del botón. estado: 'pendiente' | 'listo' | 'invalido'."""
-    if estado == "invalido":
-        cuerpo = "<h1>Link vencido</h1><p>Pedile a quien administra la cuenta que te vuelva a enviar la verificación.</p>"
-    else:
-        listo = estado == "listo"
-        saludo = f"Hola {nombre}" if nombre else "Hola"
-        cuerpo = (
-            f"<h1>{'Número verificado' if listo else 'Verificá tu número'}</h1>"
-            f"<p>{saludo}, "
-            + ("ya vas a recibir las alertas de EnvioBot Full." if listo else
-               "tocá el botón para confirmar que este es tu WhatsApp.")
-            + "</p>"
-            + ("" if listo else '<button id="b" class="btn">Verificar mi número</button>') +
-            '<p id="m" class="m"></p>'
-        )
-    return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>EnvioBot Full</title>
-<style>
-body{{margin:0;font-family:system-ui,sans-serif;background:#0f172a;color:#f1f5f9;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}}
-.c{{max-width:420px;width:100%;text-align:center;background:#1e293b;border-radius:16px;padding:32px 24px}}
-h1{{font-size:24px;margin:0 0 12px}} p{{color:#cbd5e1;line-height:1.5}}
-.btn{{display:block;width:100%;margin-top:24px;padding:20px;font-size:20px;font-weight:700;border:0;border-radius:12px;background:#22c55e;color:#052e16;cursor:pointer}}
-.m{{font-size:14px;min-height:20px}}
-</style></head><body><div class="c">{cuerpo}</div>
-<script>
-var b=document.getElementById('b');
-if(b){{b.onclick=function(){{
-  var t=location.pathname.split('/').pop();
-  b.disabled=true;b.textContent='Verificando...';
-  fetch('/api/full/verify/wa/'+t,{{method:'POST'}}).then(function(r){{return r.json()}}).then(function(d){{
-    if(!d.ok)throw 0;
-    document.querySelector('h1').textContent='Número verificado';
-    b.style.display='none';
-    document.querySelector('p').textContent='Ya vas a recibir las alertas de EnvioBot Full.';
-    document.getElementById('m').textContent='Te mandamos el contacto por WhatsApp: volvé al chat y tocá Guardar.';
-  }}).catch(function(){{b.disabled=false;b.textContent='Verificar mi número';document.getElementById('m').textContent='No se pudo verificar. Probá de nuevo.'}});
-}}}}
-</script></body></html>"""
+    return enviar_verificacion_whatsapp(phone, name or "Usuario", f"{app_url}/verificar.html?t={token}")
 
 def _token_wa(cur, token):
     cur.execute("""
@@ -1726,8 +1686,9 @@ def _token_wa(cur, token):
     """, (token,))
     return cur.fetchone()
 
-@app.route("/v/<token>", methods=["GET"])
-def pagina_verificar_wa(token):
+@app.route("/api/full/verify/wa/<token>", methods=["GET"])
+def estado_verificacion_wa(token):
+    """Datos mínimos para la página pública frontend/verificar.html."""
     conn = get_db()
     with conn.cursor() as cur:
         row = _token_wa(cur, token)
@@ -1735,13 +1696,11 @@ def pagina_verificar_wa(token):
         if row:
             cur.execute("SELECT name FROM alert_recipients WHERE user_id=%s AND phone=%s ORDER BY id DESC LIMIT 1",
                         (row["user_id"], row["destination"]))
-            r = cur.fetchone()
-            nombre = (r or {}).get("name", "") or ""
+            nombre = ((cur.fetchone() or {}).get("name") or "")
     conn.close()
     if not row:
-        return _pagina_verificacion("invalido"), 404
-    from html import escape
-    return _pagina_verificacion("listo" if row["is_verified"] else "pendiente", escape(nombre))
+        return jsonify({"ok": False, "error": "Link vencido."}), 404
+    return jsonify({"ok": True, "name": nombre, "verified": bool(row["is_verified"])}), 200
 
 @app.route("/api/full/verify/wa/<token>", methods=["POST"])
 def verificar_wa(token):

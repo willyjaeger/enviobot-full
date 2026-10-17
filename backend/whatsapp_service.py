@@ -517,7 +517,7 @@ def enviar_verificacion_whatsapp(telefono: str, nombre_usuario: str, link_verifi
     para la agenda (ya no se manda la tarjeta vCard por el chat).
     """
     msg = formatear_alerta_verificacion_whatsapp(nombre_usuario, link_verificacion)
-    imagen = link_verificacion.split("/v/")[0] + "/img/verificar-whatsapp.png"
+    imagen = link_verificacion.split("/verificar.html")[0] + "/img/verificar-whatsapp.png"
     res = enviar_imagen_whatsapp(telefono, imagen, link_verificacion)
     if res.get("ok"):
         return res

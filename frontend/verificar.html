@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EnvioBot Full</title>
+<style>
+body{margin:0;font-family:system-ui,sans-serif;background:#0f172a;color:#f1f5f9;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}
+.c{max-width:420px;width:100%;text-align:center;background:#1e293b;border-radius:16px;padding:32px 24px}
+h1{font-size:24px;margin:0 0 12px}
+p{color:#cbd5e1;line-height:1.5}
+.btn{display:block;width:100%;margin-top:24px;padding:20px;font-size:20px;font-weight:700;border:0;border-radius:12px;background:#22c55e;color:#052e16;cursor:pointer}
+.btn:disabled{opacity:.7}
+.m{font-size:14px;min-height:20px}
+</style>
+</head>
+<body>
+<div class="c">
+  <h1 id="t">EnvioBot Full</h1>
+  <p id="p">Un momento...</p>
+  <button id="b" class="btn" style="display:none">Verificar mi número</button>
+  <p id="m" class="m"></p>
+</div>
+<script>
+var token = new URLSearchParams(location.search).get('t') || '';
+var api = '/api/full/verify/wa/' + encodeURIComponent(token);
+var $ = function (id) { return document.getElementById(id); };
+
+function listo() {
+  $('t').textContent = 'Número verificado';
+  $('p').textContent = 'Ya vas a recibir las alertas de EnvioBot Full.';
+  $('b').style.display = 'none';
+}
+
+fetch(api).then(function (r) { return r.json(); }).then(function (d) {
+  if (!d.ok) throw 0;
+  var hola = d.name ? 'Hola ' + d.name + ', ' : 'Hola, ';
+  if (d.verified) { listo(); return; }
+  $('t').textContent = 'Verificá tu número';
+  $('p').textContent = hola + 'tocá el botón para confirmar que este es tu WhatsApp.';
+  $('b').style.display = 'block';
+}).catch(function () {
+  $('t').textContent = 'Link vencido';
+  $('p').textContent = 'Pedile a quien administra la cuenta que te vuelva a enviar la verificación.';
+});
+
+$('b').onclick = function () {
+  var b = $('b');
+  b.disabled = true; b.textContent = 'Verificando...';
+  fetch(api, { method: 'POST' }).then(function (r) { return r.json(); }).then(function (d) {
+    if (!d.ok) throw 0;
+    listo();
+    $('m').textContent = 'Te mandamos el contacto por WhatsApp: volvé al chat y tocá Guardar.';
+  }).catch(function () {
+    b.disabled = false; b.textContent = 'Verificar mi número';
+    $('m').textContent = 'No se pudo verificar. Probá de nuevo.';
+  });
+};
+</script>
+</body>
+</html>
