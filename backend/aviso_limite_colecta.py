@@ -17,8 +17,8 @@ import alerts_engine
 import esquema
 import proyeccion
 from email_service import enviar_email
-from horario_whatsapp import whatsapp_permitido
-from whatsapp_service import enviar_lote_con_demora, obtener_configuracion_whatsapp
+from horario_whatsapp import horario_de, whatsapp_permitido
+from whatsapp_service import enviar_lote_con_demora, normalizar_telefono, obtener_configuracion_whatsapp
 
 logger = logging.getLogger("aviso_limite_colecta")
 
@@ -46,12 +46,19 @@ def texto_aviso(fecha_retiro, limite, segundos_restantes, codigo=None, app_url="
 
 
 def _destinatarios(conn, user_id, settings):
+    """Teléfono -> horario de WhatsApp (el del destinatario, o el del dueño si no cambió nada)."""
+    horario_dueno = horario_de(settings)
+    destinos = {}
     with conn.cursor() as cur:
-        cur.execute("SELECT phone FROM alert_recipients WHERE user_id=%s AND is_active=1", (user_id,))
-        telefonos = [r["phone"] for r in cur.fetchall() if r.get("phone")]
-    if not telefonos and settings.get("whatsapp_phone"):
-        telefonos = [settings["whatsapp_phone"]]
-    return telefonos
+        con_horario = esquema.tiene_columna(cur, "alert_recipients", "wa_days")
+        cur.execute("SELECT phone" + (", wa_days, wa_from, wa_to" if con_horario else "")
+                    + " FROM alert_recipients WHERE user_id=%s AND is_active=1", (user_id,))
+        for r in cur.fetchall():
+            if r.get("phone"):
+                destinos.setdefault(r["phone"], horario_de(r, horario_dueno))
+    if not destinos and settings.get("whatsapp_phone"):
+        destinos[settings["whatsapp_phone"]] = horario_dueno
+    return destinos
 
 
 def procesar_usuario(conn, user_id, ahora=None):
@@ -82,20 +89,23 @@ def procesar_usuario(conn, user_id, ahora=None):
         if not (cuenta["abierta"] and cuenta["segundos_restantes"] <= proyeccion.MINUTOS_AVISO_LIMITE * 60):
             continue
         clave = f"{c.get('shipment_code') or 'colecta'}:{retiro.isoformat()}"
-        # Un registro por canal: si el WhatsApp tiene que esperar al horario, el mail no lo bloquea.
-        ya_wa = alerts_engine.ya_se_envio_alerta_hoy(conn, user_id, TIPO_ALERTA, clave + ":wa", horas_cooldown=72)
+        # Un registro por canal, y el de WhatsApp por destinatario (cada uno tiene su horario):
+        # si a alguien le toca esperar, el mail y los demás no lo bloquean.
         ya_mail = alerts_engine.ya_se_envio_alerta_hoy(conn, user_id, TIPO_ALERTA, clave + ":mail", horas_cooldown=72)
-        if ya_wa and ya_mail:
+        destinos = _destinatarios(conn, user_id, settings) if settings.get("notify_whatsapp", True) else {}
+        pendientes = [t for t in destinos
+                      if not alerts_engine.ya_se_envio_alerta_hoy(conn, user_id, TIPO_ALERTA, f"{clave}:wa:{normalizar_telefono(t)}", horas_cooldown=72)]
+        if not pendientes and ya_mail:
             continue  # ya se avisó de esta colecta
         limite = proyeccion.limite_edicion(retiro, hora)
         texto = texto_aviso(retiro, limite, cuenta["segundos_restantes"], c.get("shipment_code"), alerts_engine.APP_URL)
 
         enviado = False
-        telefonos = _destinatarios(conn, user_id, settings)
-        if (not ya_wa and telefonos and settings.get("notify_whatsapp", True)
-                and whatsapp_permitido(ahora) and obtener_configuracion_whatsapp().get("enabled", True)):
-            enviar_lote_con_demora(telefonos, texto)
-            alerts_engine.registrar_alerta_en_log(conn, user_id, clave + ":wa", TIPO_ALERTA, texto, channel="whatsapp")
+        a_enviar = [t for t in pendientes if whatsapp_permitido(ahora, destinos[t])]
+        if a_enviar and obtener_configuracion_whatsapp().get("enabled", True):
+            enviar_lote_con_demora(a_enviar, texto)
+            for t in a_enviar:
+                alerts_engine.registrar_alerta_en_log(conn, user_id, f"{clave}:wa:{normalizar_telefono(t)}", TIPO_ALERTA, texto, channel="whatsapp")
             enviado = True
         email_dest = settings.get("alert_email") or user.get("email")
         if not ya_mail and email_dest and settings.get("notify_email", True):

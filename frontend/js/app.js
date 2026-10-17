@@ -3112,6 +3112,8 @@ async function cargarSettingsBackend() {
     }
 }
 
+let horarioDuenoWA = { dias: '0,1,2,3,4', desde: '08:30', hasta: '18:00' };
+
 async function cargarDestinatariosBackend() {
     const token = getToken();
     if (!token) return;
@@ -3123,6 +3125,7 @@ async function cargarDestinatariosBackend() {
         if (data.ok && Array.isArray(data.recipients)) {
             recipientsData = data.recipients;
             if (data.plan_tier) currentPlanTier = data.plan_tier;
+            if (data.owner_schedule) horarioDuenoWA = data.owner_schedule;
             renderizarDestinatariosWA();
         }
     } catch (e) {
@@ -3931,6 +3934,8 @@ function renderizarDestinatariosWA() {
 
     const limitMsg = document.getElementById('waLimitReachedMsg');
     const addBox = document.getElementById('addRecipientBox');
+    const horDueno = document.getElementById('waHorarioDueno');
+    if (horDueno) horDueno.textContent = resumenHorarioWA(horarioDuenoWA);
 
     if (recipientsData.length >= maxAllowed) {
         if (limitMsg) limitMsg.style.display = 'block';
@@ -3941,7 +3946,7 @@ function renderizarDestinatariosWA() {
     }
 
     if (recipientsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text2); padding: 15px;">No tenés números de WhatsApp configurados todavía.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text2); padding: 15px;">No tenés números de WhatsApp configurados todavía.</td></tr>';
         return;
     }
 
@@ -3967,7 +3972,12 @@ function renderizarDestinatariosWA() {
             <td style="font-family: monospace; color: var(--text);">${r.phone}</td>
             <td><span class="role-badge ${roleBadgeClass}">${roleLabel}</span></td>
             <td style="color: var(--text2); font-size: 11px;">${whName}</td>
+            <td style="font-size: 11px; color: var(--text2);">${resumenHorarioWA(r.schedule || horarioDuenoWA)}${r.schedule_custom ? '' : ' <span style="opacity:.7">(del dueño)</span>'}</td>
             <td style="text-align: right;">
+                <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; margin-right: 4px;"
+                        onclick="editarHorarioWA(${r.id})" title="Elegir los días y horas en que recibe avisos">
+                    Horario
+                </button>
                 ${isVerified ? '' : `<button class="btn btn-primary btn-sm" style="padding: 3px 8px; font-size: 11px; margin-right: 4px;" 
                         onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')" title="Reenviar el botón de verificación">
                     Reenviar verificación
@@ -3984,6 +3994,77 @@ function renderizarDestinatariosWA() {
         `;
         tbody.appendChild(tr);
     });
+}
+
+const DIAS_WA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+function resumenHorarioWA(h) {
+    const dias = String(h.dias || '').split(',').filter(x => x !== '').map(Number);
+    let txt;
+    if (dias.length === 7) txt = 'Todos los días';
+    else if (dias.length > 1 && dias.every((d, i) => i === 0 || d === dias[i - 1] + 1)) txt = `${DIAS_WA[dias[0]]} a ${DIAS_WA[dias[dias.length - 1]]}`;
+    else txt = dias.map(d => DIAS_WA[d]).join(', ');
+    return `${txt}, ${h.desde} a ${h.hasta}`;
+}
+
+// id = null: horario base de la cuenta (dueño). Si no, el de ese destinatario.
+function editarHorarioWA(id) {
+    const rec = id === null ? null : recipientsData.find(x => x.id === id);
+    const actual = rec ? (rec.schedule || horarioDuenoWA) : horarioDuenoWA;
+    const dias = String(actual.dias).split(',').filter(x => x !== '');
+
+    const viejo = document.getElementById('modalHorarioWA');
+    if (viejo) viejo.remove();
+    const m = document.createElement('div');
+    m.id = 'modalHorarioWA';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    m.innerHTML = `
+        <div style="background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:20px;max-width:420px;width:100%;">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px;">${rec ? 'Horario de ' + rec.name : 'Horario base de la cuenta'}</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">${rec ? 'Días y horas en que este número recibe avisos por WhatsApp.' : 'Lo usan todos los números que no tengan un horario propio.'}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+                ${DIAS_WA.map((d, i) => `<label style="display:flex;align-items:center;gap:4px;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;"><input type="checkbox" class="hwa-dia" value="${i}" ${dias.includes(String(i)) ? 'checked' : ''}>${d}</label>`).join('')}
+            </div>
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;font-size:13px;">
+                Desde <input type="time" id="hwaDesde" value="${actual.desde}" class="filter-input" style="padding:6px 8px;">
+                hasta <input type="time" id="hwaHasta" value="${actual.hasta}" class="filter-input" style="padding:6px 8px;">
+            </div>
+            <div id="hwaError" style="color:#ff7676;font-size:12px;min-height:16px;margin-bottom:8px;"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                ${rec && rec.schedule_custom ? '<button type="button" class="btn btn-secondary btn-sm" id="hwaHeredar" style="margin-right:auto;">Usar el del dueño</button>' : ''}
+                <button type="button" class="btn btn-secondary btn-sm" id="hwaCancelar">Cancelar</button>
+                <button type="button" class="btn btn-sm" id="hwaGuardar" style="background:var(--accent);color:#111;font-weight:700;">Guardar</button>
+            </div>
+        </div>`;
+    document.body.appendChild(m);
+
+    const cerrar = () => m.remove();
+    m.addEventListener('click', e => { if (e.target === m) cerrar(); });
+    document.getElementById('hwaCancelar').onclick = cerrar;
+
+    const enviar = async (cuerpo) => {
+        const url = rec ? `${API_BASE}/full/recipients/${rec.id}/schedule` : `${API_BASE}/full/schedule/owner`;
+        try {
+            const resp = await fetch(url, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+                body: JSON.stringify(cuerpo)
+            });
+            const data = await resp.json();
+            if (!data.ok) { document.getElementById('hwaError').textContent = data.error || 'No se pudo guardar.'; return; }
+            cerrar();
+            await cargarDestinatariosBackend();
+        } catch (e) {
+            document.getElementById('hwaError').textContent = 'Error de conexión. Probá de nuevo.';
+        }
+    };
+    document.getElementById('hwaGuardar').onclick = () => enviar({
+        days: Array.from(m.querySelectorAll('.hwa-dia:checked')).map(x => Number(x.value)),
+        from: document.getElementById('hwaDesde').value,
+        to: document.getElementById('hwaHasta').value
+    });
+    const her = document.getElementById('hwaHeredar');
+    if (her) her.onclick = () => enviar({ inherit: true });
 }
 
 async function agregarDestinatarioWA() {

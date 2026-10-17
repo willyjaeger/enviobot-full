@@ -30,6 +30,7 @@ from whatsapp_service import (
     WHATSAPP_SIMULATION_MODE, EVOLUTION_API_URL, WHATSAPP_GATEWAY_URL
 )
 from alerts_engine import procesar_alertas_usuario
+import horario_whatsapp as _horario
 from email_service import enviar_email, enviar_email_prueba, enviar_email_bienvenida_verificacion
 import equipo as _equipo
 import proyeccion as _proy
@@ -152,6 +153,17 @@ def init_verification_tables():
                     cur.execute("ALTER TABLE alert_recipients ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT FALSE")
             except Exception:
                 pass
+
+            # Horario de WhatsApp: del dueño (user_settings) y propio de cada destinatario (alert_recipients).
+            # NULL = usar el de arriba (destinatario -> dueño -> lunes a viernes 8:30 a 18:00).
+            for tabla in ("user_settings", "alert_recipients"):
+                for col in ("wa_days VARCHAR(20) NULL", "wa_from VARCHAR(5) NULL", "wa_to VARCHAR(5) NULL"):
+                    try:
+                        cur.execute(f"SHOW COLUMNS FROM {tabla} LIKE '{col.split()[0]}'")
+                        if not cur.fetchone():
+                            cur.execute(f"ALTER TABLE {tabla} ADD COLUMN {col}")
+                    except Exception:
+                        pass
 
             try:
                 cur.execute("SHOW COLUMNS FROM users LIKE 'is_blocked'")
@@ -1748,13 +1760,21 @@ def get_recipients():
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, name, phone, role, warehouse_filter, is_active, 
-                   COALESCE(is_verified, 1) AS is_verified, created_at
+                   COALESCE(is_verified, 1) AS is_verified, created_at,
+                   wa_days, wa_from, wa_to
             FROM alert_recipients
             WHERE user_id=%s AND is_active=1
             ORDER BY id ASC
         """, (user_id,))
         recipients = cur.fetchall()
+        cur.execute("SELECT wa_days, wa_from, wa_to FROM user_settings WHERE user_id=%s", (user_id,))
+        fila_dueno = cur.fetchone() or {}
     conn.close()
+
+    horario_dueno = _horario.horario_de(fila_dueno)
+    for r in recipients:
+        r["schedule"] = _horario.a_texto(_horario.horario_de(r, horario_dueno))
+        r["schedule_custom"] = bool(r.get("wa_days") or r.get("wa_from") or r.get("wa_to"))
 
     return jsonify({
         "ok": True,
@@ -1763,8 +1783,57 @@ def get_recipients():
         "max_allowed": max_allowed,
         "current_count": len(recipients),
         "can_add_more": len(recipients) < max_allowed,
+        "owner_schedule": _horario.a_texto(horario_dueno),
         "recipients": recipients
     }), 200
+
+@app.route("/api/full/schedule/owner", methods=["PUT"])
+@jwt_required()
+@_equipo.requiere_rol('admin')
+def guardar_horario_dueno():
+    """Horario base de WhatsApp de la cuenta: lo heredan los destinatarios que no tengan el suyo."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    horario, error = _horario.validar(data.get("days"), data.get("from"), data.get("to"))
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+    t = _horario.a_texto(horario)
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("SELECT user_id FROM user_settings WHERE user_id=%s", (user_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({"ok": False, "error": "Guardá primero la configuración de alertas."}), 404
+        cur.execute("UPDATE user_settings SET wa_days=%s, wa_from=%s, wa_to=%s WHERE user_id=%s",
+                    (t["dias"], t["desde"], t["hasta"], user_id))
+    conn.close()
+    return jsonify({"ok": True, "schedule": t}), 200
+
+@app.route("/api/full/recipients/<int:recipient_id>/schedule", methods=["PUT"])
+@jwt_required()
+@_equipo.requiere_rol('admin')
+def guardar_horario_destinatario(recipient_id):
+    """Horario propio de un destinatario. {"inherit": true} lo vuelve a dejar con el del dueño."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    if data.get("inherit"):
+        valores = (None, None, None)
+    else:
+        horario, error = _horario.validar(data.get("days"), data.get("from"), data.get("to"))
+        if error:
+            return jsonify({"ok": False, "error": error}), 400
+        t = _horario.a_texto(horario)
+        valores = (t["dias"], t["desde"], t["hasta"])
+    conn = get_db()
+    with conn.cursor() as cur:
+        cur.execute("SELECT id FROM alert_recipients WHERE id=%s AND user_id=%s", (recipient_id, user_id))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({"ok": False, "error": "No encontramos ese número."}), 404
+        cur.execute("UPDATE alert_recipients SET wa_days=%s, wa_from=%s, wa_to=%s WHERE id=%s AND user_id=%s",
+                    valores + (recipient_id, user_id))
+    conn.close()
+    return jsonify({"ok": True}), 200
 
 @app.route("/api/full/recipients", methods=["POST"])
 @jwt_required()

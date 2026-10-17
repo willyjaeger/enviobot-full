@@ -25,7 +25,10 @@ from whatsapp_service import (
     obtener_configuracion_whatsapp
 )
 from email_service import enviar_alerta_stock_email, enviar_email
-from horario_whatsapp import whatsapp_permitido
+import esquema
+import proyeccion
+from horario_whatsapp import horario_de, en_horario
+from whatsapp_service import normalizar_telefono
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -84,6 +87,14 @@ def ya_se_envio_alerta_hoy(conn, user_id: int, alert_type: str, item_id: str = N
             """, (user_id, alert_type, limite) + extra)
         row = cur.fetchone()
         return bool(row)
+
+
+def wa_ya_enviado(conn, user_id: int, nivel: str, phone: str, horas_cooldown: int = 20) -> bool:
+    """Cada destinatario tiene su propio control, porque cada uno puede tener su horario.
+    También cuenta el registro viejo CONSOLIDADO (de antes de los horarios por destinatario)."""
+    clave = "wa:" + normalizar_telefono(phone)
+    return (ya_se_envio_alerta_hoy(conn, user_id, nivel, item_id=clave, horas_cooldown=horas_cooldown, channel="whatsapp")
+            or ya_se_envio_alerta_hoy(conn, user_id, nivel, item_id="CONSOLIDADO", horas_cooldown=horas_cooldown, channel="whatsapp"))
 
 
 def registrar_alerta_en_log(conn, user_id: int, item_id: str, alert_type: str, mensaje: str, channel: str = "whatsapp"):
@@ -241,33 +252,32 @@ def procesar_alertas_usuario(user_id: int) -> dict:
         cooldown_hours = int(cadence.get("cooldown_hours", 20))
         pacing_delay = int(cadence.get("pacing_delay_seconds", 3))
 
-        # El cooldown es por canal: si el WhatsApp quedó para más tarde (fuera de horario), el mail que
-        # ya salió no debe impedir que el WhatsApp salga cuando corresponda.
-        ya_wa = ya_se_envio_alerta_hoy(conn, user_id, nivel_alerta, horas_cooldown=cooldown_hours, channel="whatsapp")
+        # El cooldown es por canal, y el de WhatsApp es por destinatario: cada uno tiene su horario.
+        # Si a alguien le toca fuera de su horario, espera a la próxima corrida dentro de él;
+        # el mail que ya salió no lo frena.
         ya_mail = ya_se_envio_alerta_hoy(conn, user_id, nivel_alerta, horas_cooldown=cooldown_hours, channel="email")
-        wa_en_horario = whatsapp_permitido()
-        if not wa_en_horario and not ya_wa:
-            logger.info(f"[Alerts Engine] Usuario {user_id}: fuera del horario de WhatsApp (lun-vie 8:30 a 18:00). Se manda en la próxima corrida dentro del horario.")
-        enviar_wa = wa_en_horario and not ya_wa
         enviar_mail = not ya_mail
-        if not enviar_wa and not enviar_mail:
-            logger.info(f"[Alerts Engine] Usuario {user_id} ya recibió alerta de nivel '{nivel_alerta}' en las últimas {cooldown_hours}hs o está fuera de horario. Omitiendo.")
-            return resultado
 
-        # Obtener destinatarios de WhatsApp configurados
+        # Destinatarios de WhatsApp con su horario (el suyo, o el del dueño si no cambió nada)
+        horario_dueno = horario_de(settings)
+        destinos = {}  # teléfono -> horario
+
         with conn.cursor() as cur:
+            con_horario = esquema.tiene_columna(cur, "alert_recipients", "wa_days")
             cur.execute("""
-                SELECT phone, name, role, warehouse_filter 
+                SELECT phone, name, role, warehouse_filter""" + (", wa_days, wa_from, wa_to" if con_horario else "") + """
                 FROM alert_recipients 
                 WHERE user_id=%s AND is_active=1
             """, (user_id,))
             destinatarios = cur.fetchall()
 
-        telefonos = [r["phone"] for r in destinatarios if r.get("phone")]
+        for r in destinatarios:
+            if r.get("phone"):
+                destinos.setdefault(r["phone"], horario_de(r, horario_dueno))
 
         # Si no tiene destinatarios en la tabla pero tiene teléfono en user_settings
-        if not telefonos and settings.get("whatsapp_phone"):
-            telefonos = [settings["whatsapp_phone"]]
+        if not destinos and settings.get("whatsapp_phone"):
+            destinos[settings["whatsapp_phone"]] = horario_dueno
 
         # Sumar destinatarios administradores/globales configurados en admin.enviobot.com.ar
         admin_recs = wa_cfg.get("recipients", [])
@@ -280,17 +290,25 @@ def procesar_alertas_usuario(user_id: int) -> dict:
                 }
                 notif_flag = key_map.get(nivel_alerta, "notify_daily_digest")
                 if ar.get(notif_flag, True) or ar.get("notify_daily_digest", True):
-                    phone_clean = ar["phone"]
-                    if phone_clean not in telefonos:
-                        telefonos.append(phone_clean)
+                    destinos.setdefault(ar["phone"], horario_dueno)
+
+        ahora_ba = datetime.now(proyeccion.HORA_BA)
+        pendientes = [t for t in destinos if not wa_ya_enviado(conn, user_id, nivel_alerta, t, cooldown_hours)]
+        telefonos = [t for t in pendientes if en_horario(destinos[t], ahora_ba)]
+        if pendientes and not telefonos:
+            logger.info(f"[Alerts Engine] Usuario {user_id}: los {len(pendientes)} destinatarios pendientes están fuera de su horario de WhatsApp. Se manda en la próxima corrida dentro del horario.")
+        enviar_wa = bool(telefonos) and wa_cfg.get("enabled", True)
+        if not enviar_wa and not enviar_mail:
+            logger.info(f"[Alerts Engine] Usuario {user_id}: nada para enviar de nivel '{nivel_alerta}' (ya enviado en las últimas {cooldown_hours}hs o fuera de horario). Omitiendo.")
+            return resultado
 
         # 1. DISPARAR WHATSAPP (Si está habilitado globalmente)
-        if enviar_wa and telefonos and wa_cfg.get("enabled", True):
+        if enviar_wa:
             logger.info(f"[Alerts Engine] Enviando WhatsApp a {len(telefonos)} destinatarios para usuario {user_id}")
             res_wa = enviar_lote_con_demora(telefonos, texto_wa, delay_segundos=pacing_delay)
             resultado["mensajes_whatsapp_enviados"] = len(res_wa)
-            # Registrar en log
-            registrar_alerta_en_log(conn, user_id, "CONSOLIDADO", nivel_alerta, texto_wa, channel="whatsapp")
+            for t in telefonos:
+                registrar_alerta_en_log(conn, user_id, "wa:" + normalizar_telefono(t), nivel_alerta, texto_wa, channel="whatsapp")
 
         # 2. DISPARAR EMAIL (Si está habilitado)
         email_dest = settings.get("alert_email") or user.get("email")

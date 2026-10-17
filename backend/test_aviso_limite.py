@@ -98,7 +98,7 @@ class TestProcesar(unittest.TestCase):
         a.enviar_lote_con_demora = lambda tels, txt, **k: self.wa.append((tels, txt)) or []
         a.enviar_email = lambda dest, asunto, txt, *x, **k: self.mails.append((dest, txt)) or {"ok": True}
         a.obtener_configuracion_whatsapp = lambda: {"enabled": True}
-        a.whatsapp_permitido = lambda ahora=None: True
+        a.whatsapp_permitido = lambda ahora=None, horario=None: True
         a.alerts_engine.ya_se_envio_alerta_hoy = lambda conn, uid, tipo, clave, horas_cooldown=20: clave in self.ya
         a.alerts_engine.registrar_alerta_en_log = lambda conn, uid, clave, tipo, msg, channel="whatsapp": (
             self.logs.append((clave, channel)), self.ya.add(clave))
@@ -142,12 +142,12 @@ class TestProcesar(unittest.TestCase):
     def test_fuera_de_horario_el_whatsapp_espera_pero_el_mail_sale(self):
         c = self._conn()
         ahora = datetime(2026, 10, 16, 8, 45, tzinfo=p.HORA_BA)
-        a.whatsapp_permitido = lambda ahora=None: False
+        a.whatsapp_permitido = lambda ahora=None, horario=None: False
         a.procesar_usuario(c, 1, ahora)
         self.assertEqual(self.wa, [])
         self.assertEqual(len(self.mails), 1)
         # Corrida siguiente, ya dentro del horario: sale el WhatsApp y el mail NO se repite.
-        a.whatsapp_permitido = lambda ahora=None: True
+        a.whatsapp_permitido = lambda ahora=None, horario=None: True
         a.procesar_usuario(c, 1, datetime(2026, 10, 16, 8, 55, tzinfo=p.HORA_BA))
         self.assertEqual(len(self.wa), 1)
         self.assertEqual(len(self.mails), 1)
