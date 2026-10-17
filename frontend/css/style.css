@@ -1069,7 +1069,7 @@ table.stock-table tr:hover td {
 }
 
 .modal-card-config {
-    max-width: 740px;
+    max-width: 1040px;
     width: 94%;
     max-height: 86vh;
     padding: 22px 26px;
@@ -1686,3 +1686,6 @@ table.stock-table tr:hover td {
 .pc-dropzone { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 34px 16px; border: 2px dashed var(--border); border-radius: 12px; color: var(--text2); cursor: pointer; text-align: center; }
 .pc-dropzone:hover { border-color: var(--accent); color: var(--text); }
 .pc-dropzone strong { color: var(--text); font-size: 15px; }
+
+/* Tabla de destinatarios: en pantallas angostas se desplaza hacia el costado en vez de amontonar los botones */
+#configTabWhatsapp { overflow-x: auto; }

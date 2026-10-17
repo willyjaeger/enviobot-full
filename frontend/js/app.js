@@ -3977,23 +3977,17 @@ function renderizarDestinatariosWA() {
             <td><span class="role-badge ${roleBadgeClass}">${roleLabel}</span></td>
             <td style="color: var(--text2); font-size: 11px;">${whName}</td>
             <td style="font-size: 11px; color: var(--text2);">${resumenHorarioWA(r.schedule || horarioDuenoWA)}${r.schedule_custom ? '' : ' <span style="opacity:.7">(del dueño)</span>'}</td>
-            <td style="text-align: right;">
-                <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; margin-right: 4px;"
-                        onclick="editarHorarioWA(${r.id})" title="Elegir los días y horas en que recibe avisos">
-                    Horario
-                </button>
-                ${isVerified ? '' : `<button class="btn btn-primary btn-sm" style="padding: 3px 8px; font-size: 11px; margin-right: 4px;" 
-                        onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')" title="Reenviar el botón de verificación">
-                    Reenviar verificación
-                </button>`}
-                <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; margin-right: 4px;" 
-                        onclick="probarDestinatarioWA('${r.phone}', '${r.name}')" title="Enviar WhatsApp de prueba">
-                    Probar
-                </button>
-                <button class="btn btn-secondary btn-sm" style="padding: 3px 8px; font-size: 11px; color: #ff6b6b;" 
-                        onclick="eliminarDestinatarioWA(${r.id})" title="Eliminar número">
-                    Quitar
-                </button>
+            <td style="text-align: right; white-space: nowrap;">
+                <div style="display: inline-flex; gap: 8px; align-items: center; padding-left: 12px;">
+                    <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px;"
+                            onclick="editarHorarioWA(${r.id})" title="Elegir los días y horas en que recibe avisos">Horario</button>
+                    ${isVerified ? '' : `<button class="btn btn-primary btn-sm" style="padding: 5px 12px; font-size: 12px;"
+                            onclick="reenviarVerificacionWA('${r.phone}', '${r.name}')" title="Reenviar el botón de verificación">Reenviar verificación</button>`}
+                    <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px;"
+                            onclick="probarDestinatarioWA('${r.phone}', '${r.name}')" title="Enviar WhatsApp de prueba">Probar</button>
+                    <button class="btn btn-secondary btn-sm" style="padding: 5px 12px; font-size: 12px; color: #ff6b6b;"
+                            onclick="eliminarDestinatarioWA(${r.id})" title="Eliminar número">Quitar</button>
+                </div>
             </td>
         `;
         tbody.appendChild(tr);
@@ -4021,9 +4015,9 @@ function editarHorarioWA(id) {
     if (viejo) viejo.remove();
     const m = document.createElement('div');
     m.id = 'modalHorarioWA';
-    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
     m.innerHTML = `
-        <div style="background:var(--surf);border:1px solid var(--border);border-radius:10px;padding:20px;max-width:420px;width:100%;">
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 24px;max-width:440px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.6);">
             <div style="font-size:15px;font-weight:700;margin-bottom:4px;">${rec ? 'Horario de ' + rec.name : 'Horario base de la cuenta'}</div>
             <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">${rec ? 'Días y horas en que este número recibe avisos por WhatsApp.' : 'Lo usan todos los números que no tengan un horario propio.'}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
