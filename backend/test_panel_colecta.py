@@ -138,6 +138,27 @@ class TestPanelJS(unittest.TestCase):
         self.assertNotIn('abrirModalEditarEnvio', out)
         self.assertIn('Ver detalle', out)
 
+    def test_la_tarjeta_muestra_los_cuatro_pasos_y_marca_donde_esta(self):
+        it = _item(in_preparation_stock=10, total_incoming=10, cobertura_post_colecta=20)
+        for paso in ('Propuesta', 'Armada en ML', 'Retirada', 'Recibida'):
+            self.assertIn('>' + paso + '</li>', self._correr([it], self._prox(codigo='ML-1'))['html'])
+        de_ml = self._correr([it], self._prox(codigo='ML-78889570'))['html']
+        self.assertIn('pc-paso-hecho">Propuesta', de_ml)
+        self.assertIn('pc-paso-actual">Armada en ML', de_ml)
+        propia = self._correr([it], self._prox(codigo='COL-FULL-1'))['html']
+        self.assertIn('pc-paso-actual">Propuesta', propia)
+
+    def test_comparar_con_la_propuesta(self):
+        harness = (
+            "const vm=require('vm');const ctx={document:{getElementById:()=>null},setInterval:()=>1,Date,Math,String,console};"
+            "vm.createContext(ctx);vm.runInContext(process.argv[1]+';'+'this.f=compararConPropuesta;',ctx);"
+            "const r=[[100,100],[90,100],[50,100],[200,100],[10,0],[10,null]].map(a=>ctx.f(a[0],a[1]).estado);"
+            "process.stdout.write(JSON.stringify(r));"
+        )
+        r = subprocess.run([NODE, '-e', harness, self.src], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout), ['ok', 'ok', 'corto', 'demas', 'demas', 'sinDato'])
+
     def test_sin_colecta_armada_no_hay_tarjeta(self):
         out = self._correr([_item(status='critical', sugerido_al_ingreso=5)], None)
         self.assertNotIn('Tu colecta', out['html'])

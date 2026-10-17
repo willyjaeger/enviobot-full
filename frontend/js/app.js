@@ -580,6 +580,36 @@ function tarjetaEstadoGeneral(g, total) {
         </div></div>`;
 }
 
+// Los cuatro pasos de una colecta. Una cargada desde Mercado Libre (código ML-...) ya está en el paso 2.
+function pasosColecta(codigo) {
+    const armadaEnMl = String(codigo || '').indexOf('ML-') === 0;
+    const pasos = ['Propuesta', 'Armada en ML', 'Retirada', 'Recibida'];
+    const actual = armadaEnMl ? 1 : 0;
+    return '<ol class="pc-pasos">' + pasos.map(function (nombre, i) {
+        const clase = i < actual ? 'pc-paso-hecho' : (i === actual ? 'pc-paso-actual' : '');
+        return '<li class="' + clase + '">' + escapeHtml(nombre) + '</li>';
+    }).join('') + '</ol>';
+}
+
+// Lo que se mandó en la colecta contra lo que EnvioBot sugiere para ese producto.
+function compararConPropuesta(enviadas, sugerido) {
+    if (sugerido === null || sugerido === undefined || isNaN(Number(sugerido))) return { estado: 'sinDato', texto: '' };
+    const sug = Math.round(Number(sugerido));
+    const env = Math.round(Number(enviadas) || 0);
+    if (sug <= 0) return { estado: 'demas', texto: 'No hacía falta mandar' };
+    const razon = env / sug;
+    if (razon >= TOLERANCIA_AVISO_AJUSTE && razon <= 1.25) return { estado: 'ok', texto: 'Coincide con lo que sugerimos (' + sug + ')' };
+    if (razon < TOLERANCIA_AVISO_AJUSTE) return { estado: 'corto', texto: 'Corto: sugerimos ' + sug };
+    return { estado: 'demas', texto: 'De más: sugerimos ' + sug };
+}
+
+function buscarItemPorSku(sku) {
+    const norm = function (v) { const s = String(v || '').trim().toUpperCase(); return s.replace(/^0+/, '') || s; };
+    const buscado = norm(sku);
+    if (!buscado) return null;
+    return (typeof itemsData !== 'undefined' ? itemsData : []).find(function (it) { return norm(it.sku) === buscado; }) || null;
+}
+
 function tablaProductosColecta(enColecta) {
     const hayGalpon = enColecta.some(it => it.prep_item_id && it.prep_status);
     const filas = enColecta.map(it => {
@@ -627,6 +657,7 @@ function tarjetaColecta(enColecta) {
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">${titulo}${codigo}</div>
             <div class="pc-banner-sub">${cuanto}${estado}${entra}</div>
+            ${proximaColecta ? pasosColecta(proximaColecta.codigo) : ''}
         </div>
         ${botonColecta}
         ${detalle}
@@ -2169,10 +2200,20 @@ function cerrarImportarColectaPdf() {
 }
 
 function htmlVistaPreviaPdf(envio) {
+    const cuenta = { ok: 0, corto: 0, demas: 0 };
     const filas = (envio.productos || []).map(function (p) {
+        const it = buscarItemPorSku(p.sku);
+        const cmp = compararConPropuesta(p.unidades, it ? it.sugerido_al_ingreso : null);
+        if (cuenta[cmp.estado] !== undefined) cuenta[cmp.estado]++;
+        const clase = cmp.estado === 'ok' ? 'pc-info' : (cmp.estado === 'sinDato' ? '' : 'pc-cmp-aviso');
         return '<tr><td>' + escapeHtml(p.titulo) + '</td><td class="pc-sku-inline">' + escapeHtml(p.sku) +
-            '</td><td style="text-align:right;font-weight:700;">' + escapeHtml(p.unidades) + ' u.</td></tr>';
+            '</td><td style="text-align:right;font-weight:700;">' + escapeHtml(p.unidades) + ' u.</td>' +
+            '<td class="' + clase + '" style="font-size:12px;">' + escapeHtml(cmp.texto) + '</td></tr>';
     }).join('');
+    const resumenCmp = (cuenta.ok + cuenta.corto + cuenta.demas) > 0
+        ? '<div class="pc-hero-sub" style="margin-top:6px;">Contra lo que sugiere EnvioBot: ' + cuenta.ok + ' coinciden, ' +
+          cuenta.corto + ' quedan cortos, ' + cuenta.demas + ' van de más.</div>'
+        : '';
     const faltan = (envio.sin_match || []).map(function (p) {
         return escapeHtml(p.titulo) + ' (' + escapeHtml(p.unidades) + ' u.)';
     });
@@ -2185,6 +2226,7 @@ function htmlVistaPreviaPdf(envio) {
         : '';
     return '<div class="pc-hero-titulo">Envío #' + escapeHtml(envio.numero_ml) + '</div>' +
         '<div class="pc-hero-sub">' + (envio.productos || []).length + ' productos, ' + escapeHtml(envio.total_unidades) + ' unidades</div>' +
+        resumenCmp +
         '<div style="max-height:240px;overflow:auto;margin-top:10px;"><table class="pc-table"><tbody>' + filas + '</tbody></table></div>' +
         aviso + existe;
 }
@@ -2519,6 +2561,43 @@ window.eliminarEnvioInbound = eliminarEnvioInbound;
 
 let shipmentEnEdicionId = null;
 let itemsEnEdicion = [];
+let edicionCerrada = false;        // pasó el límite de edición de una colecta de ML: se muestra solo para ver
+let limiteEdicionCerrada = null;
+
+// Muestra u oculta los controles de edición según la colecta siga abierta o ya haya cerrado.
+function aplicarModoCerradoEdicion() {
+    const mostrar = (id, visible) => { const el = document.getElementById(id); if (el) el.style.display = visible ? '' : 'none'; };
+    mostrar('editarEnvioBuscador', !edicionCerrada);
+    mostrar('btnGuardarEdicionEnvio', !edicionCerrada);
+    const cancelar = document.getElementById('btnCancelarEdicionEnvio');
+    if (cancelar) cancelar.textContent = edicionCerrada ? 'Cerrar' : 'Cancelar';
+    const sub = document.getElementById('editarEnvioSubtitulo');
+    if (sub) {
+        sub.textContent = edicionCerrada
+            ? 'Esta colecta ya no se puede modificar. Podés ver lo que se mandó.'
+            : 'Modificá fecha de retiro, agregá o quitá artículos, y ajustá cantidades o unidades por bulto antes de enviar a Villa Celina.';
+    }
+    ['editarEnvioFechaRetiro', 'editarEnvioPackaging', 'editarEnvioNotas'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = edicionCerrada;
+    });
+    const aviso = document.getElementById('editarEnvioCerradaAviso');
+    if (!aviso) return;
+    if (!edicionCerrada) { aviso.style.display = 'none'; return; }
+    const cuando = limiteEdicionCerrada ? ` (el límite fue el ${textoLimiteEdicion(limiteEdicionCerrada)})` : '';
+    const texto = document.getElementById('editarEnvioCerradaTexto');
+    if (texto) {
+        texto.textContent = `Mercado Libre la cerró${cuando}, así que no se pueden sumar artículos ni cambiar cantidades. `
+            + 'Lo que falta reponer va en una colecta nueva, que se crea en Mercado Libre.';
+    }
+    aviso.style.display = 'block';
+}
+
+function prepararProximaColectaDesdeCerrada() {
+    cerrarModalEditarEnvio(false);
+    abrirModalColecta();
+}
+window.prepararProximaColectaDesdeCerrada = prepararProximaColectaDesdeCerrada;
 
 async function abrirModalEditarEnvio(shipmentId) {
     const token = getToken();
@@ -2566,12 +2645,22 @@ async function abrirModalEditarEnvio(shipmentId) {
         const headerCode = document.getElementById('editarEnvioCodigoHeader');
         if (headerCode) headerCode.textContent = sh.shipment_code;
 
+        edicionCerrada = !!sh.cerrada_por_ml;
+        limiteEdicionCerrada = sh.limite_edicion || null;
+
         const badge = document.getElementById('editarEnvioStatusBadge');
         if (badge) {
-            badge.textContent = 'En Preparación / Editable';
-            badge.style.background = 'rgba(33, 150, 243, 0.15)';
-            badge.style.color = '#64b5f6';
+            if (edicionCerrada) {
+                badge.textContent = 'Cerrada por Mercado Libre';
+                badge.style.background = 'rgba(239, 68, 68, 0.15)';
+                badge.style.color = '#ef4444';
+            } else {
+                badge.textContent = 'En Preparación / Editable';
+                badge.style.background = 'rgba(33, 150, 243, 0.15)';
+                badge.style.color = '#64b5f6';
+            }
         }
+        aplicarModoCerradoEdicion();
 
         // Llenar campos de formulario
         const fechaInput = document.getElementById('editarEnvioFechaRetiro');
@@ -2645,6 +2734,31 @@ function verificarAlertasStockEdicion() {
         return isRisk;
     });
 
+    // Colecta cerrada: lo que está en riesgo se lista como material para la próxima, sin botón de sumar.
+    if (edicionCerrada) {
+        alertBox.style.display = 'none';
+        listContainer.innerHTML = '';
+        const proxima = document.getElementById('editarEnvioListaProxima');
+        if (!proxima) return;
+        proxima.innerHTML = criticosFuera.length === 0 ? '' :
+            '<div style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase;">Para la próxima colecta</div>'
+            + criticosFuera.slice(0, 8).map(it => {
+                const vpd = parseFloat(it.vpd) || 0;
+                const stock = parseInt(it.current_stock, 10) || 0;
+                const sug = Math.max(1, Math.ceil((25 * vpd) - stock));
+                const skuStr = it.sku ? `SKU: ${it.sku}` : 'Sin SKU';
+                return `<div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;">
+                    <div style="font-weight: 700; color: var(--text); font-size: 12px;">${it.title}</div>
+                    <div style="font-size: 11px; color: var(--text2); display: flex; gap: 8px; margin-top: 1px;">
+                        <span style="color: var(--accent); font-family: monospace;">${skuStr}</span>
+                        <span>Stock Full: <strong style="color: ${stock <= 0 ? '#ef4444' : 'var(--text)'};">${stock}</strong></span>
+                        <span>Ritmo: <strong>${vpd}/día</strong></span>
+                        <span style="color: #64b5f6;">Sugerido: <strong>${sug} un.</strong></span>
+                    </div></div>`;
+            }).join('');
+        return;
+    }
+
     if (criticosFuera.length === 0) {
         alertBox.style.display = 'none';
         listContainer.innerHTML = '';
@@ -2681,6 +2795,7 @@ function verificarAlertasStockEdicion() {
 window.verificarAlertasStockEdicion = verificarAlertasStockEdicion;
 
 function agregarItemCriticoAEdicion(itemId, sugUnits) {
+    if (edicionCerrada) return;
     const it = itemsData.find(x => x.id === itemId);
     if (!it) return;
 
@@ -2738,7 +2853,7 @@ function renderizarItemsEdicion() {
         const varHtml = it.variation_name ? `<span style="font-size: 11px; color: var(--text2); display: block;">${it.variation_name}</span>` : '';
 
         let sugHintHtml = '';
-        const sugerido = sugeridoEdicion(it);
+        const sugerido = edicionCerrada ? null : sugeridoEdicion(it);
         if (sugerido) {
             sugHintHtml = `
                 <div style="font-size: 10.5px; color: var(--accent); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px;">
@@ -2762,13 +2877,13 @@ function renderizarItemsEdicion() {
                 <td style="padding: 8px 10px; text-align: center; color: var(--text);">${it.current_full_stock}</td>
                 <td style="padding: 8px 10px; text-align: center; color: var(--text2);">${it.vpd}</td>
                 <td style="padding: 8px 10px; text-align: center;">
-                    <input type="number" min="1" max="99999" value="${it.units_to_send}" 
+                    <input type="number" min="1" max="99999" value="${it.units_to_send}" ${edicionCerrada ? 'disabled' : ''}
                            oninput="onCambiarUnidadesEdicion(${idx}, this.value)" 
                            style="width: 80px; text-align: center; padding: 4px 6px; font-size: 13px; font-weight: 700; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
                     ${sugHintHtml}
                 </td>
                 <td style="padding: 8px 10px; text-align: center;">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="quitarItemDeEdicion(${idx})" title="Quitar del envío" style="padding: 2px 7px;">
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="quitarItemDeEdicion(${idx})" title="Quitar del envío" style="padding: 2px 7px;" ${edicionCerrada ? 'disabled' : ''}>
                         ✕
                     </button>
                 </td>
@@ -2939,6 +3054,7 @@ function agregarItemAEdicion(itemId) {
 window.agregarItemAEdicion = agregarItemAEdicion;
 
 async function guardarEdicionEnvio() {
+    if (edicionCerrada) return;
     if (!shipmentEnEdicionId) {
         alert("Error interno: no se encontró ID del envío en edición.");
         return;

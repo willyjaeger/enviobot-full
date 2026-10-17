@@ -2980,9 +2980,15 @@ def get_inbound_shipment_detail(shipment_id):
         items = cur.fetchall() or []
     conn.close()
 
+    pickup_date_obj = shipment.get("pickup_date")
     if shipment.get("pickup_date"): shipment["pickup_date"] = str(shipment["pickup_date"])
     if shipment.get("estimated_arrival_date"): shipment["estimated_arrival_date"] = str(shipment["estimated_arrival_date"])
     if shipment.get("created_at"): shipment["created_at"] = str(shipment["created_at"])
+
+    # El panel usa esto para mostrar la colecta como cerrada (misma regla que el PUT).
+    shipment["cerrada_por_ml"] = _proy.bloqueada_por_ml(shipment.get("shipment_code"), pickup_date_obj)
+    if pickup_date_obj:
+        shipment["limite_edicion"] = _proy.limite_edicion(pickup_date_obj).isoformat()
 
     return jsonify({"ok": True, "shipment": shipment, "items": items}), 200
 
