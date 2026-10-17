@@ -32,6 +32,7 @@ from whatsapp_service import (
 from alerts_engine import procesar_alertas_usuario
 from email_service import enviar_email, enviar_email_prueba, enviar_email_bienvenida_verificacion
 import equipo as _equipo
+import proyeccion as _proy
 from inbound_service import render_remito_html
 
 load_dotenv()
@@ -1224,7 +1225,9 @@ def get_full_items():
 
         # ── Mercadería en Preparación vs Tránsito hacia Full (Envíos Activos EnvioBot) ────────
         cur.execute("""
-            SELECT s.status, isi.item_id, isi.inventory_id, isi.sku, SUM(isi.units_to_send) AS total_units
+            SELECT s.status, isi.item_id, isi.inventory_id, isi.sku, SUM(isi.units_to_send) AS total_units,
+                   MIN(COALESCE(s.estimated_arrival_date,
+                                DATE_ADD(s.pickup_date, INTERVAL COALESCE(s.transit_days, 0) DAY))) AS arrival_date
             FROM inbound_shipment_items isi
             JOIN inbound_shipments s ON s.id = isi.shipment_id
             WHERE s.user_id = %s AND s.status IN ('scheduled', 'in_transit')
@@ -1235,6 +1238,10 @@ def get_full_items():
         prep_by_sku = {}
         prep_by_inv = {}
         prep_by_item = {}
+        # Fecha de llegada de lo que está en preparación (la más cercana), por la misma clave.
+        arrival_by_sku = {}
+        arrival_by_inv = {}
+        arrival_by_item = {}
 
         transit_by_sku = {}
         transit_by_inv = {}
@@ -1254,6 +1261,12 @@ def get_full_items():
             if sku_k: target_sku_dict[sku_k] = target_sku_dict.get(sku_k, 0) + qty
             if inv_k: target_inv_dict[inv_k] = target_inv_dict.get(inv_k, 0) + qty
             if item_k: target_item_dict[item_k] = target_item_dict.get(item_k, 0) + qty
+
+            llegada = r.get("arrival_date")
+            if st == "scheduled" and llegada:
+                for dic, clave in ((arrival_by_sku, sku_k), (arrival_by_inv, inv_k), (arrival_by_item, item_k)):
+                    if clave and (clave not in dic or llegada < dic[clave]):
+                        dic[clave] = llegada
 
         # ── Recalcular Métricas Consolidadas y Semáforos ──────────────────────────
         today = datetime.utcnow().date()
@@ -1333,6 +1346,26 @@ def get_full_items():
             else:
                 c_item["status"] = "ok"
 
+            # ── Proyección a la fecha de ingreso (campos nuevos; no tocan los de arriba) ──
+            # Lo que está en preparación llega en su fecha; lo despachado, tras el flete; lo que
+            # ya está en el muelle, en 1 día. Se proyecta al ingreso MÁS LEJANO: es el más cauto.
+            llegada_prep = arrival_by_inv.get(inv_key) or arrival_by_sku.get(sku_key) or arrival_by_item.get(item_key)
+            lt_prep = c_item["effective_lead_time"]
+            dias_ingreso = _proy.dias_hasta_ingreso(None, today, None, lt_prep, transit)
+            if prep_units > 0:
+                dias_ingreso = max(0, _proy.dias_hasta_ingreso("scheduled", today, llegada_prep, lt_prep, transit))
+            if remaining_transit > 0:
+                dias_ingreso = max(dias_ingreso if prep_units > 0 else 0,
+                                   _proy.dias_hasta_ingreso("in_transit", today, None, lt_prep, transit))
+            if in_process_units > 0 and prep_units == 0 and remaining_transit == 0:
+                dias_ingreso = _proy.dias_hasta_ingreso("in_reception", today)
+            c_item["dias_hasta_ingreso"] = dias_ingreso
+            c_item["stock_al_ingreso"] = round(_proy.stock_al_ingreso(stock, vpd, dias_ingreso), 1)
+            c_item["cobertura_post_colecta"] = _proy.cobertura_post_colecta(stock, vpd, dias_ingreso, total_incoming)
+            c_item["sugerido_al_ingreso"] = _proy.sugerido_al_ingreso(stock, vpd, dias_ingreso, total_incoming, target_cov)
+            c_item["aviso_ajuste_units"] = _proy.aviso_ajuste(stock, vpd, dias_ingreso, prep_units, target_cov) if prep_units > 0 else None
+            c_item["fecha_ingreso"] = (today + timedelta(days=dias_ingreso)).isoformat()
+
             output_items.append(c_item)
 
         # ── Aplicar Filtros de Estado y Búsqueda sobre el Catálogo Consolidado ──
@@ -1369,6 +1402,19 @@ def get_full_items():
             "count_in_process": sum(1 for x in output_items if x["status"] in ("in_reception", "in_transit"))
         }
 
+        # Próxima colecta en preparación con fecha de retiro: de ahí sale la cuenta regresiva.
+        cur.execute("""
+            SELECT id, shipment_code, pickup_date
+            FROM inbound_shipments
+            WHERE user_id = %s AND status = 'scheduled' AND pickup_date >= %s
+            ORDER BY pickup_date ASC, id ASC LIMIT 1
+        """, (account_id, today))
+        prox = cur.fetchone()
+        proxima_colecta = None
+        if prox and prox.get("pickup_date"):
+            proxima_colecta = _proy.cuenta_regresiva(prox["pickup_date"])
+            proxima_colecta["codigo"] = prox.get("shipment_code")
+
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()
 
@@ -1376,6 +1422,7 @@ def get_full_items():
         "ok": True,
         "items": output_items,
         "summary": summary,
+        "proxima_colecta": proxima_colecta,
         "settings": settings,
         "plan_info": plan_info
     }), 200

@@ -20,7 +20,10 @@ const ICONOS_SVG = {
     calendario: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
     paquete: '<line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
     candado: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-    llama: '<path d="M12 12c2-2.96 0-7-1-8 0 3.038-1.773 4.741-3 6-1.226 1.26-2 3.24-2 5a6 6 0 1 0 12 0c0-1.532-1.056-3.94-2-5-1.786 3-2.791 3-4 2z"/>'
+    llama: '<path d="M12 12c2-2.96 0-7-1-8 0 3.038-1.773 4.741-3 6-1.226 1.26-2 3.24-2 5a6 6 0 1 0 12 0c0-1.532-1.056-3.94-2-5-1.786 3-2.791 3-4 2z"/>',
+    reloj: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    bombilla: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/>',
+    radar: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'
 };
 
 function iconoSvg(nombre, tam = 14) {
@@ -270,7 +273,9 @@ async function cargarDatos() {
             cargarMonitorEventosLogisticos();
             if (data.items && data.items.length > 0) {
                 itemsData = data.items.map(it => adaptarItemDesdeBackend(it));
+                proximaColecta = data.proxima_colecta || null;
                 recalcularTodo();
+                renderizarPanelColecta();
                 return;
             } else {
                 itemsData = [];
@@ -345,8 +350,139 @@ function adaptarItemDesdeBackend(raw) {
         vpd: raw.vpd_weighted || 0,
         channels: raw.channels || [],
         account_nickname: raw.account_nickname || "",
-        backend_status: raw.status || 'ok'
+        backend_status: raw.status || 'ok',
+        units_per_box: raw.units_per_box || 0,
+        dias_hasta_ingreso: raw.dias_hasta_ingreso !== undefined ? raw.dias_hasta_ingreso : null,
+        stock_al_ingreso: raw.stock_al_ingreso !== undefined ? raw.stock_al_ingreso : null,
+        cobertura_post_colecta: raw.cobertura_post_colecta !== undefined ? raw.cobertura_post_colecta : null,
+        sugerido_al_ingreso: raw.sugerido_al_ingreso || 0,
+        aviso_ajuste_units: raw.aviso_ajuste_units || null,
+        fecha_ingreso: raw.fecha_ingreso || null
     };
+}
+
+// ── Panel de colecta: cuenta regresiva + colecta en preparación + radar ─────────
+let proximaColecta = null;
+let panelColectaTimer = null;
+
+function textoCuentaRegresiva(limiteIso) {
+    const ms = new Date(limiteIso).getTime() - Date.now();
+    if (!(ms > 0)) return null;
+    const minTotal = Math.floor(ms / 60000);
+    const dias = Math.floor(minTotal / 1440);
+    const horas = Math.floor((minTotal % 1440) / 60);
+    const min = minTotal % 60;
+    const partes = [];
+    if (dias) partes.push(`${dias} ${dias === 1 ? 'día' : 'días'}`);
+    if (horas || dias) partes.push(`${horas} ${horas === 1 ? 'hora' : 'horas'}`);
+    if (!dias) partes.push(`${min} min`);
+    return partes.join(' y ');
+}
+
+function formatearFechaCorta(iso) {
+    if (!iso) return '-';
+    const [a, m, d] = String(iso).slice(0, 10).split('-');
+    return `${d}/${m}`;
+}
+
+function nombreItemPanel(it) {
+    const variacion = it.variation_name ? ` (${escapeHtml(it.variation_name)})` : '';
+    return `${escapeHtml(it.title)}${variacion}<span class="pc-sku">${it.sku ? escapeHtml(it.sku) : ''}</span>`;
+}
+
+function renderizarPanelColecta() {
+    const cont = document.getElementById('panelColecta');
+    if (!cont) return;
+    if (!itemsData || itemsData.length === 0) {
+        cont.style.display = 'none';
+        return;
+    }
+
+    // Banner con el límite para modificar la colecta (día anterior al retiro, 9:40 hora de Buenos Aires)
+    let banner = '';
+    if (proximaColecta) {
+        const resto = textoCuentaRegresiva(proximaColecta.limite_edicion);
+        const lim = new Date(proximaColecta.limite_edicion);
+        const limTxt = lim.toLocaleString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' });
+        const codigo = proximaColecta.codigo ? ` ${escapeHtml(proximaColecta.codigo)}` : '';
+        banner = `
+            <div class="pc-banner ${resto ? '' : 'pc-cerrada'}">
+                <span class="pc-banner-icon">${iconoSvg('reloj', 22).replace('margin-right: 4px;', '')}</span>
+                <div class="pc-banner-text">
+                    <div>Colecta${codigo} con retiro el ${formatearFechaCorta(proximaColecta.fecha_retiro)}. Podés modificarla hasta el ${escapeHtml(limTxt)}.</div>
+                    <div class="pc-banner-sub">${resto ? `Faltan ${escapeHtml(resto)} para cambiar unidades.` : 'Ya pasó el límite: la colecta no se puede modificar.'}</div>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver colecta</button>
+            </div>`;
+    }
+
+    // Bloque 1: lo que ya está en una colecta en preparación
+    const enColecta = itemsData.filter(it => (it.in_preparation_stock || 0) > 0);
+    let bloqueColecta = '';
+    if (enColecta.length > 0) {
+        const filas = enColecta.map(it => {
+            const cob = it.cobertura_post_colecta;
+            const cobTxt = cob === null ? '-' : `${Math.round(cob)} días`;
+            const aviso = it.aviso_ajuste_units
+                ? `<span class="pc-aviso">${iconoSvg('bombilla', 13)}Subió la venta: con ${escapeHtml(it.aviso_ajuste_units)} u. cubrís ${escapeHtml(it.target_stock_days)} días</span>`
+                : '';
+            return `<tr>
+                <td>${nombreItemPanel(it)}${aviso}</td>
+                <td class="pc-num">${escapeHtml(it.in_preparation_stock)} u.</td>
+                <td class="pc-num">${formatearFechaCorta(it.fecha_ingreso)}</td>
+                <td class="pc-num">${cobTxt}</td>
+            </tr>`;
+        }).join('');
+        bloqueColecta = `
+            <div>
+                <h3 class="pc-block-title">Colecta en preparación (${enColecta.length})</h3>
+                <table class="pc-table">
+                    <thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th class="pc-num">Ingresa</th><th class="pc-num">Cubre al ingresar</th></tr></thead>
+                    <tbody>${filas}</tbody>
+                </table>
+            </div>`;
+    }
+
+    // Bloque 2: radar de lo que todavía no está en ninguna colecta y pide acción
+    const radar = itemsData
+        .filter(it => (it.total_incoming || 0) === 0 && ['warning', 'critical', 'out_of_stock'].includes(it.status))
+        .sort((a, b) => (b.sugerido_al_ingreso || 0) - (a.sugerido_al_ingreso || 0));
+    const maxRadar = 8;
+    let bloqueRadar = '';
+    if (radar.length > 0) {
+        const filas = radar.slice(0, maxRadar).map(it => {
+            const alIngreso = it.stock_al_ingreso === null ? '-' : `${Math.round(it.stock_al_ingreso)} u.`;
+            return `<tr>
+                <td>${nombreItemPanel(it)}</td>
+                <td class="pc-num">${escapeHtml(it.current_stock)} u.</td>
+                <td class="pc-num">${alIngreso}</td>
+                <td class="pc-num pc-accion">${it.sugerido_al_ingreso > 0 ? `Enviar ${escapeHtml(it.sugerido_al_ingreso)} u.` : '-'}</td>
+            </tr>`;
+        }).join('');
+        const mas = radar.length > maxRadar
+            ? `<div class="pc-mas">Y ${radar.length - maxRadar} más. <a onclick="irAEstado('action_required')">Verlos en la tabla</a></div>` : '';
+        bloqueRadar = `
+            <div>
+                <h3 class="pc-block-title">${iconoSvg('radar', 13)}Para la próxima colecta (${radar.length})</h3>
+                <table class="pc-table">
+                    <thead><tr><th>Producto</th><th class="pc-num">Hoy en Full</th><th class="pc-num">Al ingreso</th><th class="pc-num">Sugerido</th></tr></thead>
+                    <tbody>${filas}</tbody>
+                </table>
+                ${mas}
+            </div>`;
+    }
+
+    if (!banner && !bloqueColecta && !bloqueRadar) {
+        cont.style.display = 'none';
+        return;
+    }
+    cont.innerHTML = banner + bloqueColecta + bloqueRadar;
+    cont.style.display = 'flex';
+
+    // La cuenta regresiva se refresca sola cada minuto.
+    if (!panelColectaTimer) {
+        panelColectaTimer = setInterval(renderizarPanelColecta, 60000);
+    }
 }
 
 // ── Motor de cálculo de quiebre y semáforos ────────────────────────
