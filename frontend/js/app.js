@@ -3167,6 +3167,65 @@ function cerrarModalHistorialEnvios() {
 }
 window.cerrarModalHistorialEnvios = cerrarModalHistorialEnvios;
 
+// ── Ventana de Avisos: cambios notorios en el ritmo de venta ─────────────────────
+let _avisosVistosHasta = 0;
+try { _avisosVistosHasta = Number(localStorage.getItem('avisosVistosHasta')) || 0; } catch (e) { /* sin almacenamiento */ }
+
+function abrirAvisos() {
+    const modal = document.getElementById('modalAvisos');
+    if (modal) modal.style.display = 'flex';
+    cargarAvisos(false);
+}
+window.abrirAvisos = abrirAvisos;
+
+function cerrarAvisos() {
+    const modal = document.getElementById('modalAvisos');
+    if (modal) modal.style.display = 'none';
+}
+window.cerrarAvisos = cerrarAvisos;
+
+async function cargarAvisos(soloContador = false) {
+    const token = getToken();
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/avisos`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (!data.ok) return;
+        const avisos = data.avisos || [];
+        const nuevos = avisos.filter(a => a.fecha && Date.parse(a.fecha) > _avisosVistosHasta).length;
+        const badge = document.getElementById('topbarAvisosBadge');
+        if (badge) { badge.textContent = nuevos; badge.style.display = nuevos ? 'inline-block' : 'none'; }
+        if (soloContador) return;
+
+        const cont = document.getElementById('avisosContainer');
+        if (!cont) return;
+        cont.innerHTML = avisos.length ? avisos.map(a => {
+            const baja = a.sentido === 'baja';
+            const color = baja ? 'var(--red, #e5484d)' : 'var(--green, #30a46c)';
+            const cuando = a.fecha ? new Date(a.fecha).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+            const nuevo = a.fecha && Date.parse(a.fecha) > _avisosVistosHasta;
+            return `<div style="border: 1px solid var(--border); border-left: 4px solid ${color}; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; background: var(--surf2);">
+                <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                    <strong style="color: ${color};">${baja ? 'Bajó el ritmo de venta' : 'Subió el ritmo de venta'}${nuevo ? ' · nuevo' : ''}</strong>
+                    <span style="font-size: 12px; color: var(--text2);">${escapeHtml(cuando)}</span>
+                </div>
+                <div style="margin-top: 4px; font-weight: 600;">${escapeHtml(a.producto)}</div>
+                <div style="font-size: 12px; color: var(--text2);">Publicación ${escapeHtml(a.item_id)}${a.sku ? ' · SKU ' + escapeHtml(a.sku) : ''}${a.stock != null ? ' · Stock en Full: ' + escapeHtml(String(a.stock)) : ''}</div>
+                <div style="margin-top: 6px;">${escapeHtml(a.detalle)}</div>
+                <div style="font-size: 12px; color: var(--text2); margin-top: 4px;">Verificá qué sucede y si tenés stock suficiente para la próxima colecta.</div>
+            </div>`;
+        }).join('') : `<div style="text-align: center; padding: 40px; color: var(--text2);">No hay avisos. Cuando el ritmo de venta de un producto con stock cambie de forma notoria, vas a verlo acá.</div>`;
+
+        _avisosVistosHasta = Date.now();
+        try { localStorage.setItem('avisosVistosHasta', String(_avisosVistosHasta)); } catch (e) { /* sin almacenamiento */ }
+        if (badge) badge.style.display = 'none';
+    } catch (e) {
+        const cont = document.getElementById('avisosContainer');
+        if (cont && !soloContador) cont.textContent = 'No se pudieron cargar los avisos.';
+    }
+}
+window.cargarAvisos = cargarAvisos;
+
 function irACrearColectaDesdeHistorial() {
     cerrarModalHistorialEnvios();
     abrirModalColecta();
@@ -6503,6 +6562,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         cargarDatos();
         cargarHistorialColectas(true);
         cargarMonitorEventosLogisticos();
+        cargarAvisos(true);
     }
 
     // 7. Verificar visibilidad del botón de instalación de aplicación en escritorio

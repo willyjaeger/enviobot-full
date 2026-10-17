@@ -28,6 +28,7 @@ from email_service import enviar_alerta_stock_email, enviar_email
 import esquema
 import proyeccion
 from horario_whatsapp import horario_de, en_horario
+import pausa_avisos
 from whatsapp_service import normalizar_telefono
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -121,7 +122,6 @@ def procesar_alertas_usuario(user_id: int) -> dict:
     Evalúa todos los pronósticos de un usuario y dispara las alertas correspondientes
     si hay productos en fecha límite o en riesgo crítico de quiebre.
     """
-    conn = get_db()
     resultado = {
         "user_id": user_id,
         "items_criticos": 0,
@@ -130,8 +130,20 @@ def procesar_alertas_usuario(user_id: int) -> dict:
         "mensajes_whatsapp_enviados": 0,
         "email_enviado": False
     }
+    if not pausa_avisos.puede_enviar(pausa_avisos.ALERTA_STOCK):
+        logger.info(f"[Alerts Engine] Usuario {user_id}: avisos pausados (ENVIOBOT_AVISOS). No se evalúa ni se envía nada.")
+        resultado["pausado"] = True
+        return resultado
+    conn = get_db()
 
     try:
+        # Cambio notorio en el ritmo de venta (avisos del panel + WhatsApp en horario). Si falla, no frena las alertas de stock.
+        try:
+            import cambio_tasa
+            cambio_tasa.procesar_usuario(conn, user_id)
+        except Exception as e:
+            logger.warning(f"[Alerts Engine] Cambio de ritmo de venta, usuario {user_id}: {e}")
+
         with conn.cursor() as cur:
             # Obtener datos de usuario
             cur.execute("SELECT id, full_name, email FROM users WHERE id=%s", (user_id,))

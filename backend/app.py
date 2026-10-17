@@ -2201,6 +2201,34 @@ def trigger_alerts_now():
     except Exception as e:
         return jsonify({"ok": False, "error": f"Error procesando alertas: {str(e)}"}), 500
 
+@app.route("/api/full/avisos", methods=["GET"])
+@jwt_required()
+def listar_avisos():
+    """Ventana de Avisos: cambios notorios en el ritmo de venta detectados por cambio_tasa.py (últimos 30 días)."""
+    import cambio_tasa
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    try:
+        account_id = get_account_user_id(user_id, conn)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT item_id, message, sent_at FROM alert_logs
+                WHERE user_id=%s AND alert_type=%s AND channel='panel' AND sent_at >= %s
+                ORDER BY sent_at DESC LIMIT 100
+            """, (account_id, cambio_tasa.TIPO_ALERTA, datetime.utcnow() - timedelta(days=30)))
+            filas = cur.fetchall()
+    finally:
+        conn.close()
+    avisos = []
+    for f in filas:
+        a = cambio_tasa.texto_panel(f["message"])
+        if a:
+            a["item_id"] = f["item_id"].split(":")[0]
+            a["fecha"] = f["sent_at"].isoformat() + "Z" if f.get("sent_at") else None
+            avisos.append(a)
+    return jsonify({"ok": True, "avisos": avisos}), 200
+
+
 @app.route("/api/full/whatsapp/status", methods=["GET"])
 @jwt_required()
 def get_whatsapp_status():
