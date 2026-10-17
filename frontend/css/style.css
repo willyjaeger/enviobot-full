@@ -28,6 +28,16 @@
     --col-2:                 var(--good);
     --col-3:                 #b78cf0;
     --col-4:                 #2fc4be;
+    --serie-1:               #5b8def;
+    --serie-2:               #4caf50;
+    --serie-3:               #b78cf0;
+    --serie-4:               #2fc4be;
+    --serie-5:               #f06fa8;
+    --serie-6:               #e5c44a;
+    --serie-7:               #7bd1f5;
+    --serie-8:               #9ccc65;
+    --serie-9:               #ff8a65;
+    --serie-10:              #8d9bd6;
     --btn-secondary-bg:      #3a3e4a;
     --btn-secondary-hover:   #474c5a;
     --logo-bg:               var(--surface);
@@ -47,6 +57,16 @@
     --info:                  #2f6fe0;
     --col-3:                 #8a4fd6;
     --col-4:                 #0f8f8a;
+    --serie-1:               #2f6fe0;
+    --serie-2:               #2e8b34;
+    --serie-3:               #8a4fd6;
+    --serie-4:               #0f8f8a;
+    --serie-5:               #d63d82;
+    --serie-6:               #a98a00;
+    --serie-7:               #1c8bbf;
+    --serie-8:               #5e8f1d;
+    --serie-9:               #d9572a;
+    --serie-10:              #5563b0;
     --text:                  #1a1c22;
     --text2:                 #676b78;
     --btn-secondary-bg:      #dde1e7;
@@ -1803,3 +1823,18 @@ table.stock-table tr:hover td {
 .pc-g-llega-txt { fill: var(--text); }
 .pc-g-repone { fill: var(--warn); stroke: var(--surface); stroke-width: 1.5; }
 .pc-g-quiebre { fill: var(--danger); }
+.pc-s0 { --s: var(--serie-1); } .pc-s1 { --s: var(--serie-2); } .pc-s2 { --s: var(--serie-3); } .pc-s3 { --s: var(--serie-4); } .pc-s4 { --s: var(--serie-5); }
+.pc-s5 { --s: var(--serie-6); } .pc-s6 { --s: var(--serie-7); } .pc-s7 { --s: var(--serie-8); } .pc-s8 { --s: var(--serie-9); } .pc-s9 { --s: var(--serie-10); }
+.pc-g-serie { fill: none; stroke: var(--s); stroke-width: 1.8; stroke-linejoin: round; pointer-events: none; transition: opacity 0.15s; }
+.pc-g-hit { fill: none; stroke: transparent; stroke-width: 9; pointer-events: stroke; }
+.pc-g-banda { fill: var(--text2); opacity: 0.14; }
+.pc-g-propia { stroke: var(--text); opacity: 0.85; stroke-dasharray: 5 3; }
+.pc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.pc-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--s); border-radius: 14px; padding: 2px 10px; font-size: 12px; color: var(--text); background: var(--surface); cursor: pointer; }
+.pc-chip-punto { width: 9px; height: 9px; border-radius: 50%; background: var(--s); display: inline-block; flex-shrink: 0; }
+.pc-chip-off { opacity: 0.4; text-decoration: line-through; }
+.pc-chip-mini { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+.pc-zoom { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; }
+.pc-tab-activo { color: var(--text); border-color: var(--text2); font-weight: 700; }
+.pc-demora { margin-left: auto; font-size: 12px; color: var(--text2); display: inline-flex; align-items: center; gap: 6px; }
+.pc-demora input { width: 52px; padding: 2px 4px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }

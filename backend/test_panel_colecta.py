@@ -397,7 +397,7 @@ process.stdout.write(JSON.stringify(r));
         return {'id': id, 'fecha_ingreso': (date.today() + timedelta(days=dia)).isoformat(), 'productos': [{'sku': '12072', 'unidades': unidades}]}
 
     def test_proyeccion_baja_lo_que_se_vende_y_sube_cuando_entra_la_colecta(self):
-        r = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', self.ITEM, [self._col_proy(5, 300)])
+        r = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date(), 0)', self.ITEM, [self._col_proy(5, 300)])
         stock = [p['stock'] for p in r['puntos']]
         self.assertEqual(stock[0], 100)
         self.assertEqual(stock[4], 60)
@@ -405,21 +405,60 @@ process.stdout.write(JSON.stringify(r));
         self.assertEqual(r['umbral'], 70)          # 10 por día x (3 + 2 + 2) días
 
     def test_nunca_baja_de_cero_y_marca_el_quiebre(self):
-        r = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', self.ITEM, [])
+        r = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date(), 0)', self.ITEM, [])
         self.assertEqual(min(p['stock'] for p in r['puntos']), 0)
         self.assertEqual(r['quiebreDia'], 10)
         self.assertTrue(r['sinStockAntes'])
 
     def test_el_dia_de_reponer_cuenta_la_colecta_que_ya_viene(self):
-        sin = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', self.ITEM, [])
-        con = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', self.ITEM, [self._col_proy(5, 300)])
+        sin = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date(), 0)', self.ITEM, [])
+        con = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date(), 0)', self.ITEM, [self._col_proy(5, 300)])
         self.assertEqual(sin['reponerDia'], 3)       # sin colecta: ya está por debajo del nivel enseguida
         self.assertGreater(con['reponerDia'], 20)    # con 300 u. entrando, lo que hay que reponer es mucho más adelante
         self.assertFalse(con['sinStockAntes'])
 
+    def test_la_demora_de_ml_atrasa_el_momento_en_que_queda_en_venta(self):
+        con0 = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date(), 0)', self.ITEM, [self._col_proy(5, 300)])
+        con2 = self._proy('proyeccionProducto(itemsData[0], colectasData, new Date(), 2)', self.ITEM, [self._col_proy(5, 300)])
+        self.assertEqual(con0['llegadas'][0]['dia'], 5)
+        self.assertEqual((con2['llegadas'][0]['ingresoDia'], con2['llegadas'][0]['dia']), (5, 7))
+        self.assertEqual(con2['puntos'][7]['stock'], 30 + 300)
+
+    def test_todos_juntos_tiene_colores_leyenda_ejes_con_nombre_y_zoom(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('itemsData = ' + process.argv[2] + '; colectasData = ' + process.argv[3] + ';', ctx);
+const html = vm.runInContext('htmlTodosJuntos(colectasData[0], colectasData, new Date(), 42, 2, {})', ctx);
+const zoom = vm.runInContext('htmlTodosJuntos(colectasData[0], colectasData, new Date(), 14, 2, {1: true})', ctx);
+process.stdout.write(JSON.stringify({ html, zoom }));
+"""
+        items = [dict(self.ITEM, sku='A1', title='Dátil'), dict(self.ITEM, sku='B2', title='Nueces', vpd=5)]
+        col = {'id': 4, 'codigo': 'ML-79759779', 'fecha_ingreso': self._col_proy(8, 1)['fecha_ingreso'],
+               'productos': [{'sku': 'A1', 'titulo': 'Dátil', 'unidades': 100}, {'sku': 'B2', 'titulo': 'Nueces', 'unidades': 100}]}
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(items), json.dumps([col])], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)
+        html = out['html']
+        self.assertIn('Días de venta que le quedan', html)             # eje Y con nombre
+        self.assertIn('Hora de reponer', html)
+        self.assertIn('Tu objetivo', html)
+        self.assertIn('en venta el', html)                              # la raya vertical dice qué es
+        self.assertIn('pc-s0', html)
+        self.assertIn('pc-s1', html)                                    # un color por producto
+        self.assertEqual(html.count('class="pc-chip '), 2)              # un botón por producto en la leyenda
+        self.assertIn('Dátil</button>', html)
+        self.assertIn('Nueces</button>', html)
+        self.assertIn('cambiarRangoProyeccion(4, 14)', html)            # zoom
+        self.assertIn('2 semanas', html)
+        self.assertIn('pc-chip-off', out['zoom'])                       # el producto oculto se ve apagado
+        self.assertEqual(out['zoom'].count('class="pc-g-serie'), 1)     # y su línea no se dibuja
+
     def test_sin_ventas_no_se_proyecta(self):
         item = dict(self.ITEM, vpd=0)
-        self.assertIsNone(self._proy('proyeccionProducto(itemsData[0], colectasData, new Date())', item, []))
+        self.assertIsNone(self._proy('proyeccionProducto(itemsData[0], colectasData, new Date(), 0)', item, []))
 
     def test_cada_colecta_trae_los_graficos_por_producto_y_juntos(self):
         item = dict(self.ITEM)
