@@ -5605,6 +5605,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         inicializarBranding();
     }
 
+    // 0b. Vuelta del acceso con Google: el servidor deja el token (o el error) en el
+    // fragmento (#...), que no viaja a los logs. Se lee y se borra de la barra.
+    const hashGoogle = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const googleToken = hashGoogle.get('google_token');
+    const googleError = hashGoogle.get('google_error');
+    if (googleToken || googleError) {
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+    }
+    if (googleToken) {
+        localStorage.setItem('enviobot_full_token', googleToken);
+        localStorage.setItem('token', googleToken);
+    }
+
     // 1. Detectar si viene token en la URL desde OAuth (?auth_token=... o ?token=...)
     const params = new URLSearchParams(window.location.search);
     const tokenFromUrl = params.get('auth_token') || params.get('token');
@@ -5655,6 +5668,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 4. Verificar sesión y estado de vinculación
     const hasActiveSession = await checkUserSession();
+
+    if (googleError) {
+        const errBox = document.getElementById('mainAuthErrorMsg');
+        if (errBox && !hasActiveSession) {
+            errBox.textContent = googleError;
+            errBox.style.display = 'block';
+        } else {
+            showToast(googleError, 'error');
+        }
+    }
 
     // 5. Cargar datos reales de MeLi directamente
     if (hasActiveSession) {

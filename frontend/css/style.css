@@ -1268,6 +1268,42 @@ table.stock-table tr:hover td {
     outline: none;
 }
 
+.auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0;
+    color: var(--text2);
+    font-size: 12px;
+}
+.auth-divider::before,
+.auth-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+}
+
+.btn-google {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px;
+    background: var(--surf2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+    box-sizing: border-box;
+}
+.btn-google:hover {
+    border-color: var(--accent);
+}
+
 /* ── Pantalla de Bienvenida (Cliente Nuevo sin conexión MeLi) ── */
 .onboarding-welcome-container {
     width: 100%;

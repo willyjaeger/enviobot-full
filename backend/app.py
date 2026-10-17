@@ -609,6 +609,124 @@ def register():
         "requires_ml_connect": True
     }), 201
 
+# Login/registro con Google. Mismo cliente OAuth que EnvioBot Pedidos, pero con su
+# propia URL de retorno (GOOGLE_REDIRECT_URI, que hay que dar de alta en Google Cloud).
+# Sin las 3 variables en el .env el botón avisa que no está configurado y el resto
+# del acceso sigue andando.
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "")
+_GOOGLE_STATE_TTL = 600  # segundos que tiene el usuario para elegir su cuenta de Google
+_GOOGLE_APP_URL = os.getenv("APP_URL", "https://enviobot.com.ar/full").rstrip("/")
+
+
+def _google_state_crear():
+    """State firmado y con vencimiento: no se guarda en memoria, así sirve con varios workers."""
+    base = f"{secrets.token_urlsafe(16)}.{int(time.time())}"
+    firma = hmac.new(app.config["JWT_SECRET_KEY"].encode(), base.encode(), hashlib.sha256).hexdigest()
+    return f"{base}.{firma}"
+
+
+def _google_state_valido(state):
+    try:
+        nonce, ts, firma = (state or "").rsplit(".", 2)
+        esperada = hmac.new(app.config["JWT_SECRET_KEY"].encode(), f"{nonce}.{ts}".encode(), hashlib.sha256).hexdigest()
+        return hmac.compare_digest(firma, esperada) and 0 <= time.time() - int(ts) <= _GOOGLE_STATE_TTL
+    except Exception:
+        return False
+
+
+def _google_volver_con_error(mensaje):
+    # En el fragmento (#...) para que no quede en los logs del servidor.
+    return redirect(f"{_GOOGLE_APP_URL}/#" + urlencode({"google_error": mensaje}))
+
+
+@app.route("/api/auth/google/login", methods=["GET"])
+@app.route("/api/full/auth/google/login", methods=["GET"])
+def google_login():
+    """Arranca el acceso con Google. Es un redirect (no JSON): el botón es un link."""
+    if not GOOGLE_CLIENT_ID or not GOOGLE_REDIRECT_URI:
+        return _google_volver_con_error("El acceso con Google todavía no está configurado en el servidor.")
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": _google_state_crear(),
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    return redirect("https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params))
+
+
+@app.route("/api/auth/google/callback", methods=["GET"])
+@app.route("/api/full/auth/google/callback", methods=["GET"])
+def google_callback():
+    """Google vuelve acá con code+state. Crea la cuenta si no existe, habilita Full y entra."""
+    if request.args.get("error"):
+        return _google_volver_con_error("Cancelaste el acceso con Google.")
+    code = request.args.get("code")
+    if not code or not _google_state_valido(request.args.get("state")):
+        return _google_volver_con_error("La sesión con Google venció o no es válida. Volvé a intentar.")
+
+    try:
+        r = requests.post("https://oauth2.googleapis.com/token", data={
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": GOOGLE_REDIRECT_URI,
+            "grant_type": "authorization_code",
+        }, timeout=15)
+        if r.status_code != 200:
+            print(f"✗ Google token: {r.status_code}")
+            return _google_volver_con_error("No se pudo completar el acceso con Google.")
+        u = requests.get("https://www.googleapis.com/oauth2/v3/userinfo",
+                         headers={"Authorization": f"Bearer {r.json().get('access_token')}"}, timeout=15)
+        if u.status_code != 200:
+            return _google_volver_con_error("No se pudo obtener tu perfil de Google.")
+
+        profile = u.json()
+        email = (profile.get("email") or "").strip().lower()
+        if not email:
+            return _google_volver_con_error("Tu cuenta de Google no tiene un email asociado.")
+        # Solo si Google confirmó el mail es de esa persona; si no, alguien podría
+        # entrar a la cuenta de otro creando una cuenta de Google con su mail.
+        verificado = profile.get("email_verified")
+        if not (verificado is True or str(verificado).strip().lower() == "true"):
+            return _google_volver_con_error("Google no tiene verificado el email de esa cuenta. Verificalo o entrá con tu email y contraseña.")
+        full_name = (profile.get("name") or email.split("@")[0]).strip()
+
+        conn = get_db()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, owner_id, COALESCE(is_blocked, 0) AS is_blocked FROM users WHERE email = %s LIMIT 1", (email,))
+                user = cur.fetchone()
+                if user:
+                    if user["is_blocked"]:
+                        return _google_volver_con_error("Tu cuenta se encuentra bloqueada por la administración. Comunicate con soporte.")
+                    user_id = user["id"]
+                    if not user.get("owner_id"):
+                        # Mismo criterio que el registro con contraseña: quien ya es cliente de
+                        # Pedidos y entra a Full queda con Full habilitado.
+                        cur.execute("UPDATE users SET has_full = 1 WHERE id = %s", (user_id,))
+                else:
+                    # Sin contraseña utilizable: esta cuenta entra por Google (password_hash es NOT NULL).
+                    cur.execute("""
+                        INSERT INTO users (email, password_hash, full_name, business_name, platform, has_pedidos, has_full)
+                        VALUES (%s, %s, %s, '', 'ml', 0, 1)
+                    """, (email, hash_pw(secrets.token_urlsafe(32)), full_name))
+                    user_id = cur.lastrowid
+                    cur.execute("INSERT IGNORE INTO user_settings (user_id, alert_email) VALUES (%s, %s)", (user_id, email))
+        finally:
+            conn.close()
+
+        token = create_access_token(identity=str(user_id))
+        return redirect(f"{_GOOGLE_APP_URL}/#" + urlencode({"google_token": token}))
+    except Exception as e:
+        print(f"✗ Error en google_callback: {e}")
+        return _google_volver_con_error("Ocurrió un error inesperado con el acceso de Google.")
+
+
 @app.route("/api/auth/login", methods=["POST"])
 @app.route("/api/full/auth/login", methods=["POST"])
 def login():
