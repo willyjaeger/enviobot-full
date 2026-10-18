@@ -11,7 +11,7 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="icon" type="image/png" href="img/icon.png">
     <link rel="apple-touch-icon" href="img/icon.png">
-    <link rel="stylesheet" href="css/movil.css?v=20261017_1">
+    <link rel="stylesheet" href="css/movil.css?v=20261018_2">
 </head>
 <body>
     <header class="top">
@@ -22,9 +22,15 @@
                 <div class="brand-sub" id="subtitulo">Cargando...</div>
             </div>
         </div>
+        <div class="acciones">
+        <button class="icon-btn" id="btnAvisos" aria-label="Avisos">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="campana-badge" id="campanaBadge" style="display:none">0</span>
+        </button>
         <button class="icon-btn" id="btnRefrescar" aria-label="Actualizar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         </button>
+        </div>
     </header>
 
     <main id="vista"></main>
@@ -52,6 +58,6 @@
     <section class="sheet" id="sheet" aria-modal="true" role="dialog"></section>
     <div class="toast" id="toast"></div>
 
-    <script src="js/movil.js?v=20261017_1"></script>
+    <script src="js/movil.js?v=20261018_2"></script>
 </body>
 </html>
