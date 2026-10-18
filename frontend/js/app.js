@@ -598,6 +598,7 @@ const TITULOS_SEGMENTO = {
 };
 
 const EXPLICACION_SEGMENTO = {
+    tranquilos: 'Tienen stock suficiente, o ya tienen una colecta en camino que los cubre: solo queda esperar que entre. Los días cuentan lo que hay en Full más lo que viaja en colectas.',
     urgentes: 'Se quedan sin stock antes de que les entre mercadería. Los números son las unidades a mandar.',
     pronto: 'Todavía hay stock, pero conviene sumarlos a la próxima colecta. Los números son las unidades a mandar.',
     deMas: 'Entre lo que hay en Full y lo que ya viaja en tus colectas, alcanza para mucho más que tu objetivo. Los días dicen cuánto te dura.'
@@ -610,6 +611,7 @@ function mostrarDetalleSegmento(ev, grupo) {
     ev.currentTarget.classList.add('pc-seg-activo');
     let lista = (grupoBarraPanel[grupo] || []).slice();
     if (grupo === 'deMas') lista.sort((a, b) => (b.covered_days_left || 0) - (a.covered_days_left || 0));
+    else if (grupo === 'tranquilos') lista.sort((a, b) => (a.covered_days_left || 0) - (b.covered_days_left || 0));
     else lista.sort((a, b) => (a.days_left || 0) - (b.days_left || 0));
     const max = 10;
     const filas = lista.slice(0, max).map(it => {
@@ -617,7 +619,7 @@ function mostrarDetalleSegmento(ev, grupo) {
         let dato = '';
         if (grupo === 'urgentes' || grupo === 'pronto') {
             dato = it.sugerido_al_ingreso > 0 ? `<b>${escapeHtml(it.sugerido_al_ingreso)} u.</b>` : 'Revisar';
-        } else if (grupo === 'deMas') {
+        } else if (grupo === 'deMas' || grupo === 'tranquilos') {
             const enCamino = Math.max(0, (it.total_incoming || 0));
             dato = `<b>${escapeHtml(Math.round(it.covered_days_left || 0))} días</b> <span class="pc-tip-sub">(${escapeHtml(it.current_stock || 0)} en Full + ${escapeHtml(enCamino)} en colectas)</span>`;
         } else if (it.current_stock !== undefined) {
@@ -656,6 +658,15 @@ function ocultarDetalleSegmento() {
     document.querySelectorAll('.pc-seg-activo').forEach(e => e.classList.remove('pc-seg-activo'));
 }
 
+// Qué quiere decir cada color de la barra, en una línea (solo de los que aparecen).
+function explicacionBarra(tranquilos, pronto, urgentes) {
+    const partes = [];
+    if (tranquilos > 0) partes.push('<b>Tranquilos:</b> tienen stock suficiente, o ya hay una colecta en camino que los cubre y solo falta esperar que entre.');
+    if (pronto > 0) partes.push('<b>Conviene mandar pronto:</b> hoy tienen stock, pero se les va a acabar y ninguna colecta los cubre.');
+    if (urgentes > 0) partes.push('<b>Urgentes:</b> están por quedarse sin stock (o ya no tienen) y no están en ninguna colecta.');
+    return partes.join(' ');
+}
+
 function tarjetaEstadoGeneral(g, total) {
     const accion = g.urgentes.length + g.pronto.length;
     let icono, clase, titulo, sub;
@@ -687,7 +698,8 @@ function tarjetaEstadoGeneral(g, total) {
             ${dato(tranquilosTodos.length, '--good', `${tranquilosTodos.length} tranquilos`, 'ok')}
             ${dato(g.pronto.length, '--warn', `${g.pronto.length} conviene mandar pronto`, 'warning')}
             ${dato(g.urgentes.length, '--danger', `${g.urgentes.length} urgentes`, 'critical')}
-        </div></div>`;
+        </div>
+        <div class="pc-leyenda-expl">${explicacionBarra(tranquilosTodos.length, g.pronto.length, g.urgentes.length)}</div></div>`;
 }
 
 // Los cuatro pasos de una colecta. Una cargada desde Mercado Libre (código ML-...) ya está en el paso 2.

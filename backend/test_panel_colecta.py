@@ -113,6 +113,41 @@ class TestPanelJS(unittest.TestCase):
         self.assertIn('Todo bajo control', out['html'])
         self.assertNotIn('Atención', out['html'])
 
+    def test_la_barra_explica_que_es_cada_color_solo_de_los_que_aparecen(self):
+        todo = self._correr([_item(), _item(status='critical', sugerido_al_ingreso=1), _item(status='warning', sugerido_al_ingreso=1)])['html']
+        self.assertIn('<b>Tranquilos:</b> tienen stock suficiente, o ya hay una colecta en camino que los cubre y solo falta esperar que entre.', todo)
+        self.assertIn('<b>Conviene mandar pronto:</b>', todo)
+        self.assertIn('<b>Urgentes:</b>', todo)
+        solo_ok = self._correr([_item(), _item()])['html']
+        self.assertIn('<b>Tranquilos:</b>', solo_ok)
+        self.assertNotIn('<b>Urgentes:</b>', solo_ok)
+        self.assertNotIn('<b>Conviene mandar pronto:</b>', solo_ok)
+
+    def test_el_detalle_de_tranquilos_dice_que_los_cubre_la_colecta(self):
+        harness = r"""
+const vm = require('vm');
+const tip = { style: {}, innerHTML: '' };
+const barra = { classList: { add() {} } };
+const ctx = { document: { getElementById: id => id === 'pc-tip' ? tip : null, createElement: () => tip, body: { appendChild() {} },
+              querySelectorAll: () => [] }, setInterval: () => 1, Date, Math, String, console,
+              window: { innerWidth: 1000, innerHeight: 800 } };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('grupoBarraPanel = { tranquilos: ' + process.argv[2] + ' };', ctx);
+ctx.__ev = { currentTarget: { parentElement: barra, classList: { add() {} } }, clientX: 10, clientY: 10 };
+vm.runInContext('mostrarDetalleSegmento(__ev, "tranquilos")', ctx);
+process.stdout.write(tip.innerHTML);
+"""
+        items = [{'title': 'Con colecta', 'current_stock': 0, 'total_incoming': 300, 'covered_days_left': 40},
+                 {'title': 'Con stock', 'current_stock': 90, 'total_incoming': 0, 'covered_days_left': 60}]
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(items)], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        html = r.stdout
+        self.assertIn('ya tienen una colecta en camino que los cubre', html)
+        self.assertIn('40 días', html)
+        self.assertIn('0 en Full + 300 en colectas', html)
+        self.assertLess(html.index('Con colecta'), html.index('Con stock'))   # primero al que menos le dura
+
     def test_el_conteo_de_la_leyenda_cierra_con_el_total(self):
         out = self._correr([_item(), _item(), _item(status='critical', sugerido_al_ingreso=1),
                             _item(status='warning', sugerido_al_ingreso=1), _item(sobrestock=True, covered_days_left=99)])
@@ -658,7 +693,8 @@ process.stdout.write(creado ? creado.innerHTML : '');
         out = self._correr([_item(title='<img src=x onerror=alert(1)>', sku='"><b>', status='critical',
                                   sugerido_al_ingreso=5, variation_name='<i>x</i>')])
         self.assertNotIn('<img', out['html'])
-        self.assertNotIn('<b>', out['html'])
+        propio = out['html'].replace('<div class="pc-leyenda-expl"><b>', '')   # la leyenda de la barra usa <b> a propósito
+        self.assertNotIn('"><b>', propio)   # el SKU malicioso no se cuela
         self.assertNotIn('<i>x', out['html'])
         self.assertIn('&lt;img', out['html'])
 
