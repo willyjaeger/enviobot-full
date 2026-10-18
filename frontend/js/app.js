@@ -390,6 +390,8 @@ function adaptarItemDesdeBackend(raw) {
         target_stock_days: raw.target_coverage_days || 30,
         vpd: raw.vpd_weighted || 0,
         channels: raw.channels || [],
+        pausado: !!raw.pausado,
+        canales_pausados: raw.canales_pausados || 0,
         account_nickname: raw.account_nickname || "",
         backend_status: raw.status || 'ok',
         units_per_box: raw.units_per_box || 0,
@@ -550,8 +552,9 @@ function nombreItemPanel(it) {
 //  - tienen de más: cobertura por encima del umbral de exceso
 //  - tranquilos: todo lo demás (incluye lo que ya viaja en una colecta)
 function clasificarItemsPanel(items) {
-    const g = { urgentes: [], pronto: [], deMas: [], tranquilos: [], enColecta: [] };
+    const g = { urgentes: [], pronto: [], deMas: [], tranquilos: [], enColecta: [], pausados: [] };
     items.forEach(it => {
+        if (it.pausado) { g.pausados.push(it); return; }
         const cubierto = (it.total_incoming || 0) > 0;
         if (it.sobrestock) g.deMas.push(it);
         else if (!cubierto && (it.status === 'critical' || it.status === 'out_of_stock')) g.urgentes.push(it);
@@ -1914,7 +1917,7 @@ function renderizarPanelColecta() {
             nota: `Objetivo: ${escapeHtml(it.target_stock_days)} días.`
         })).join('') + (deMas.length > 6 ? `<div class="pc-mas">Y ${deMas.length - 6} más.</div>` : ''));
 
-    cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length)
+    cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)
         + (hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta))
         + seccionPanel('Qué hacer hoy', htmlHacer)
         + htmlAjustar
@@ -2013,6 +2016,13 @@ function recalcularTodo() {
                 it.status = 'ok';
             }
         }
+
+        // Publicación pausada en ML: no vende, no es una urgencia. Se muestra aparte y sin rojo.
+        if (it.pausado) {
+            it.status_calculado = it.status;
+            it.status = 'paused';
+            it.is_overdue = false;
+        }
     });
 
     actualizarMetricas();
@@ -2025,11 +2035,47 @@ function recalcularTodo() {
     }
 }
 
+// Resumen de lo que hay en Full, con lo que Mercado Libre informa de cada publicación.
+function renderizarResumenPublicaciones() {
+    const cont = document.getElementById('resumenPublicaciones');
+    if (!cont) return;
+    const total = itemsData.length;
+    const pausados = itemsData.filter(it => it.pausado).length;
+    const activos = total - pausados;
+    let pubs = 0, pubsPausadas = 0, clasica = 0, premium = 0, catalogo = 0;
+    itemsData.forEach(it => (it.channels || []).forEach(ch => {
+        pubs++;
+        if ((ch.status || 'active') !== 'active') pubsPausadas++;
+        if (ch.is_catalog) catalogo++;
+        else if (ch.listing_type === 'gold_pro') premium++;
+        else clasica++;
+    }));
+    const unidades = itemsData.reduce((a, it) => a + (it.current_stock || 0), 0);
+    const noDisp = itemsData.reduce((a, it) => a + (it.not_available_stock || 0), 0);
+    const sinStockActivos = itemsData.filter(it => !it.pausado && (it.current_stock || 0) <= 0).length;
+    const pausadosConStock = itemsData.filter(it => it.pausado && (it.current_stock || 0) > 0).length;
+    const dato = function (valor, texto, filtro, extra) {
+        const clic = filtro ? ` onclick="irAEstado('${filtro}')" style="cursor: pointer;"` : '';
+        return `<div class="rp-dato${extra || ''}"${clic}><b>${valor}</b><span>${texto}</span></div>`;
+    };
+    cont.innerHTML =
+        dato(total, 'artículos en Full', 'all') +
+        dato(activos, 'activos', '') +
+        dato(pausados, 'pausados', 'paused', pausados > 0 ? ' rp-pausado' : '') +
+        dato(pubs, `publicaciones (${clasica} clásicas, ${premium} premium, ${catalogo} catálogo)`, '') +
+        (pubsPausadas > 0 ? dato(pubsPausadas, 'publicaciones pausadas', '') : '') +
+        dato(unidades.toLocaleString('es-AR'), 'unidades en Full', '') +
+        (noDisp > 0 ? dato(noDisp.toLocaleString('es-AR'), 'no disponibles (dañadas, en revisión o en traslado)', '') : '') +
+        (sinStockActivos > 0 ? dato(sinStockActivos, 'activos sin stock', 'critical') : '') +
+        (pausadosConStock > 0 ? dato(pausadosConStock, 'pausados con stock parado en Full', 'paused') : '');
+}
+
 function actualizarMetricas() {
     let ok = 0, warn = 0, crit = 0, inProcess = 0, totalUnits = 0;
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
 
     itemsData.forEach(it => {
+        if (it.pausado) return;
         if (it.status === 'ok') ok++;
         else if (it.status === 'warning') warn++;
         else if (it.status === 'in_reception' || it.status === 'in_transit' || it.status === 'in_preparation') inProcess++;
@@ -2044,6 +2090,7 @@ function actualizarMetricas() {
     });
 
     document.getElementById('statTotal').textContent = itemsData.length;
+    renderizarResumenPublicaciones();
     document.getElementById('statOk').textContent = ok + inProcess;
     document.getElementById('statWarning').textContent = warn;
     document.getElementById('statCritical').textContent = crit;
@@ -2193,7 +2240,7 @@ function irAQuiebreInminente() {
     renderizarTabla();
 
     // 5. Encontrar el artículo con mayor urgencia (sin stock o quiebre inminente)
-    const critItems = itemsData.filter(it => it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
+    const critItems = itemsData.filter(it => !it.pausado && (it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0));
     critItems.sort((a, b) => {
         const daysA = a.days_left !== undefined ? a.days_left : 999;
         const daysB = b.days_left !== undefined ? b.days_left : 999;
@@ -2315,7 +2362,7 @@ function renderizarTabla() {
         if (currentFilter === 'action_required') {
             matchStatus = it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock';
         } else if (currentFilter === 'critical') {
-            matchStatus = it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0;
+            matchStatus = !it.pausado && (it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
         } else if (currentFilter !== 'all') {
             matchStatus = it.status === currentFilter;
         }
@@ -2359,7 +2406,7 @@ function renderizarTabla() {
             valA = Number(a.target_stock_days !== undefined ? a.target_stock_days : 0);
             valB = Number(b.target_stock_days !== undefined ? b.target_stock_days : 0);
         } else if (currentSortColumn === 'status') {
-            const statusOrder = { 'out_of_stock': 1, 'critical': 2, 'warning': 3, 'in_preparation': 4, 'in_transit': 5, 'in_reception': 6, 'ok': 7 };
+            const statusOrder = { 'out_of_stock': 1, 'critical': 2, 'warning': 3, 'in_preparation': 4, 'in_transit': 5, 'in_reception': 6, 'ok': 7, 'paused': 8 };
             valA = statusOrder[a.status] || 99;
             valB = statusOrder[b.status] || 99;
         } else {
@@ -2376,6 +2423,7 @@ function renderizarTabla() {
         const tr = document.createElement('tr');
         tr.id = `stock_row_${it.id}`;
         tr.dataset.status = it.status;
+        if (it.pausado) tr.classList.add('fila-pausada');
         tr.style.cursor = 'pointer';
         tr.onclick = (e) => {
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON') {
@@ -2385,7 +2433,9 @@ function renderizarTabla() {
 
         // Estado Sobrio (Texto limpio, sin cajas llamativas)
         let badgeHtml = '';
-        if (it.status === 'ok') {
+        if (it.pausado) {
+            badgeHtml = '<span class="badge badge-pausada" title="Esta publicación está pausada en Mercado Libre: no vende, por eso no cuenta como urgencia">Pausada en ML</span>';
+        } else if (it.status === 'ok') {
             badgeHtml = '<span class="badge badge-ok">Óptimo</span>';
         } else if (it.status === 'warning') {
             badgeHtml = '<span class="badge badge-warn">Preparar</span>';
@@ -2410,7 +2460,9 @@ function renderizarTabla() {
 
         // FECHA DE QUIEBRE ESTIMADA (Sobria y legible)
         let quiebraElHtml = '—';
-        if (it.status === 'in_preparation') {
+        if (it.pausado) {
+            quiebraElHtml = '<span style="color: var(--text2);">Pausada</span>';
+        } else if (it.status === 'in_preparation') {
             quiebraElHtml = `<span style="color: #64b5f6; font-weight: 600;" title="Colecta generada en depósito">+${it.in_preparation_stock} en preparación</span>`;
         } else if (it.status === 'in_transit') {
             quiebraElHtml = `<span style="color: #ffb74d; font-weight: 600;" title="Envío despachado en camino">+${it.in_transit_stock} en camino</span>`;
@@ -2429,7 +2481,9 @@ function renderizarTabla() {
 
         // CUÁNDO PEDIR COLECTA EN MELI (Limpio y directo, con botón de acción)
         let fechaColectaHtml = '—';
-        if (it.status === 'in_preparation') {
+        if (it.pausado) {
+            fechaColectaHtml = '<span style="color: var(--text2);">No hace falta mientras esté pausada</span>';
+        } else if (it.status === 'in_preparation') {
             fechaColectaHtml = `<span style="color: #64b5f6; font-weight: 600;" title="Colecta generada, pendiente de retiro">+${it.in_preparation_stock} un. en preparación</span>`;
         } else if (it.status === 'in_transit') {
             fechaColectaHtml = `<span style="color: #ffb74d; font-weight: 600;" title="Despacho en viaje hacia Full">+${it.in_transit_stock} un. en camino</span>`;
@@ -2457,7 +2511,8 @@ function renderizarTabla() {
         if (it.channels && it.channels.length > 0) {
             const chItems = it.channels.map(ch => {
                 const typeLabel = ch.is_catalog ? 'Catálogo' : (ch.type_label || (ch.listing_type === 'gold_pro' ? 'Premium' : 'Clásica'));
-                return `<a href="${ch.permalink}" target="_blank" class="channel-pill" onclick="event.stopPropagation();">${typeLabel}</a>`;
+                const pausadaCh = (ch.status || 'active') !== 'active' ? ' <span class="tag-pausada">pausada</span>' : '';
+                return `<a href="${ch.permalink}" target="_blank" class="channel-pill" onclick="event.stopPropagation();">${typeLabel}</a>${pausadaCh}`;
             });
             channelsHtml = chItems.join(' · ');
         } else if (it.permalink) {
@@ -2842,7 +2897,7 @@ async function abrirModalColecta(targetItemId = null, options = {}) {
     itemsData.forEach(it => {
         let suggested = calcularSugeridoColectaItem(it, daysFactor);
         const isTarget = targetItemId && (it.id === targetItemId || it.id === Number(targetItemId));
-        const isUrgent = (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
+        const isUrgent = !it.pausado && (it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
 
         // Si el artículo requiere reposición urgente o es el target, asegurar unidades positivas
         if (isUrgent || isTarget) {
@@ -3050,6 +3105,7 @@ function renderizarFilasColecta(highlightItemId = null) {
 
         // 2. Score de urgencia
         const scoreUrgencia = (it) => {
+            if (it.pausado) return 6;
             if (it.status === 'out_of_stock' || it.current_stock <= 0) return 1;
             if (it.status === 'critical') return 2;
             if (it.status === 'warning') return 3;
@@ -3089,7 +3145,9 @@ function renderizarFilasColecta(highlightItemId = null) {
 
         // Badge de urgencia bien visible en la fila de Colecta
         let urgenciaBadge = '';
-        if (it.status === 'out_of_stock' || it.current_stock <= 0) {
+        if (it.pausado) {
+            urgenciaBadge = '<span class="badge badge-pausada" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Pausada en ML</span>';
+        } else if (it.status === 'out_of_stock' || it.current_stock <= 0) {
             urgenciaBadge = '<span class="badge badge-danger" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Sin stock</span>';
         } else if (it.status === 'critical') {
             urgenciaBadge = '<span class="badge badge-danger" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Quiebre inminente</span>';
@@ -3991,7 +4049,7 @@ function verificarAlertasStockEdicion() {
         if (idsEnEdicion.has(itemIdStr)) return false;
         if (itemSku && skusEnEdicion.has(itemSku)) return false;
 
-        const isRisk = (it.status === 'critical' || it.status === 'warning' || it.status === 'out_of_stock' || (it.days_left !== null && it.days_left <= 10) || it.current_stock <= 0);
+        const isRisk = !it.pausado && (it.status === 'critical' || it.status === 'warning' || it.status === 'out_of_stock' || (it.days_left !== null && it.days_left <= 10) || it.current_stock <= 0);
         return isRisk;
     });
 

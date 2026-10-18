@@ -113,6 +113,13 @@ class TestPanelJS(unittest.TestCase):
         self.assertIn('Todo bajo control', out['html'])
         self.assertNotIn('Atención', out['html'])
 
+    def test_un_articulo_pausado_en_ml_no_cuenta_como_urgente_ni_en_el_total(self):
+        out = self._correr([_item(title='Pausado', status='paused', pausado=True, current_stock=0, sugerido_al_ingreso=20),
+                            _item(title='Bien')])
+        self.assertIn('Todo bajo control', out['html'])
+        self.assertNotIn('Atención', out['html'])
+        self.assertNotIn('Pausado', out['html'])
+
     def test_la_barra_explica_que_es_cada_color_solo_de_los_que_aparecen(self):
         todo = self._correr([_item(), _item(status='critical', sugerido_al_ingreso=1), _item(status='warning', sugerido_al_ingreso=1)])['html']
         self.assertIn('<b>Tranquilos:</b> tienen stock suficiente, o ya hay una colecta en camino que los cubre y solo falta esperar que entre.', todo)

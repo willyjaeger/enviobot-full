@@ -1533,6 +1533,14 @@ def get_full_items():
             else:
                 c_item["status"] = "ok"
 
+            # Publicación pausada en ML (todas sus publicaciones): no vende, así que no es una urgencia.
+            canales = c_item.get("channels") or []
+            c_item["canales_pausados"] = sum(1 for ch in canales if (ch.get("status") or "active") != "active")
+            c_item["pausado"] = bool(canales) and c_item["canales_pausados"] == len(canales)
+            if c_item["pausado"]:
+                c_item["status_calculado"] = c_item["status"]
+                c_item["status"] = "paused"
+
             # ── Proyección a la fecha de ingreso (campos nuevos; no tocan los de arriba) ──
             # Lo que está en preparación llega en su fecha; lo despachado, tras el flete; lo que
             # ya está en el muelle, en 1 día. Se proyecta al ingreso MÁS LEJANO: es el más cauto.
@@ -1583,7 +1591,7 @@ def get_full_items():
             output_items = filtered_by_search
 
         # Ordenamiento prioritario por urgencia y cobertura restante
-        status_priority = {'out_of_stock': 1, 'critical': 2, 'warning': 3, 'in_transit': 4, 'in_reception': 5, 'ok': 6}
+        status_priority = {'out_of_stock': 1, 'critical': 2, 'warning': 3, 'in_transit': 4, 'in_reception': 5, 'ok': 6, 'paused': 8}
         output_items.sort(key=lambda x: (status_priority.get(x["status"], 7), x["days_left"]))
 
         # Resumen consolidado para las tarjetas de KPI
@@ -1592,7 +1600,9 @@ def get_full_items():
             "count_ok": sum(1 for x in output_items if x["status"] == "ok"),
             "count_warning": sum(1 for x in output_items if x["status"] == "warning"),
             "count_critical": sum(1 for x in output_items if x["status"] in ("critical", "out_of_stock")),
-            "count_in_process": sum(1 for x in output_items if x["status"] in ("in_reception", "in_transit"))
+            "count_in_process": sum(1 for x in output_items if x["status"] in ("in_reception", "in_transit")),
+            "count_paused": sum(1 for x in output_items if x.get("pausado")),
+            "count_active": sum(1 for x in output_items if not x.get("pausado"))
         }
 
         # Próxima colecta en preparación con fecha de retiro: de ahí sale la cuenta regresiva.

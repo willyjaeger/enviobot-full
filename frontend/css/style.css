@@ -1879,3 +1879,12 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .pc-g-tip-pie { color: var(--text2); font-size: 11px; margin-top: 6px; border-top: 1px solid var(--border); padding-top: 4px; }
 .pc-leyenda-expl { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text2); }
 .pc-leyenda-expl b { color: var(--text); font-weight: 600; }
+
+/* Publicaciones pausadas en Mercado Libre y resumen del listado */
+.resumen-publicaciones { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.rp-dato { display: flex; align-items: baseline; gap: 6px; font-size: 13px; color: var(--text2); }
+.rp-dato b { font-size: 18px; color: var(--text); font-weight: 700; }
+.rp-dato.rp-pausado { border-radius: 6px; padding: 0 8px; border: 1px dashed var(--text2); }
+.badge-pausada { background: transparent; color: var(--text2); border: 1px dashed var(--text2); white-space: nowrap; }
+.fila-pausada { opacity: 0.6; }
+.tag-pausada { font-size: 10.5px; font-weight: 700; color: var(--text2); border: 1px dashed var(--text2); border-radius: 4px; padding: 0 4px; }
