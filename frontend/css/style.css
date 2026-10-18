@@ -1908,3 +1908,4 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .copiable:hover { background: var(--bg); outline: 1px dashed var(--text2); }
 .pc-fila-ident a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .pc-fila-ident a:hover { text-decoration: underline; }
+.pc-alerta-exc { color: var(--warn); display: inline-flex; vertical-align: middle; cursor: help; }

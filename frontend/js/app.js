@@ -391,6 +391,7 @@ function adaptarItemDesdeBackend(raw) {
         vpd: raw.vpd_weighted || 0,
         channels: raw.channels || [],
         pausado: !!raw.pausado,
+        ventas_30d: raw.sales_last_30d || 0,
         canales_pausados: raw.canales_pausados || 0,
         account_nickname: raw.account_nickname || "",
         backend_status: raw.status || 'ok',
@@ -611,15 +612,42 @@ function identificacionItem(it) {
         (pubs.length ? '<span>' + pubs.join(' · ') + '</span>' : '');
 }
 
+// Días de stock con una venta por día realista: la ponderada de siempre, pero nunca menos que el promedio de los últimos 30 días.
+// (La ponderada casi no cuenta lo vendido hace más de 15 días, y en productos de poca venta infla los días.)
+const UMBRAL_EXCEDENTE_ML_DIAS = 60;
+
+function vpdParaExcedente(it) {
+    return Math.max(Number(it.vpd) || 0, (Number(it.ventas_30d) || 0) / 30);
+}
+
+function diasStockReales(it) {
+    const viaja = (it.in_process_stock || 0) + (it.in_transit_stock || 0) + (it.in_preparation_stock || 0);
+    const total = (it.current_stock || 0) + viaja;
+    const v = vpdParaExcedente(it);
+    return v > 0 ? total / v : null;
+}
+
+// "Stock suficiente" con su tooltip; el ícono de alerta aparece cuando el stock pasa los días que Mercado Libre recomienda
+// (más allá puede cobrar almacenamiento). Es una estimación nuestra: hasta donde se, ML no avisa esto por API.
+function etiquetaStockSuficiente(it) {
+    const dias = diasStockReales(it);
+    const excede = dias === null || dias > UMBRAL_EXCEDENTE_ML_DIAS;
+    const txt = (dias === null ? 'Sin ventas en los últimos 30 días.' : 'Stock para ' + Math.round(dias).toLocaleString('es-AR') + ' días.') +
+        (excede ? ' Atención: pasa los ' + UMBRAL_EXCEDENTE_ML_DIAS + ' días de venta que recomienda Mercado Libre, y podría cobrarte almacenamiento por stock excedente. Es una estimación de EnvioBot: Mercado Libre no lo informa por API.' : '');
+    return '<span title="' + escapeHtml(txt) + '">Stock suficiente' +
+        (excede ? ' <span class="pc-alerta-exc">' + iconoSvg('alerta', 14).replace('margin-right: 4px;', 'margin-left: 2px;') + '</span>' : '') + '</span>';
+}
+
 // De dónde sale el número de días: unidades hoy en Full, lo que viaja y cuánto se vende por día.
 function cuentaDeDias(it) {
     const dec = function (n) { return (Math.round(n * 100) / 100).toLocaleString('es-AR'); };
     const viaja = (it.in_process_stock || 0) + (it.in_transit_stock || 0) + (it.in_preparation_stock || 0);
     const total = (it.current_stock || 0) + viaja;
+    const v = vpdParaExcedente(it);
     return 'En Full ' + dec(it.current_stock || 0) + ' u.' + (viaja ? ' + ' + dec(viaja) + ' u. en camino' : '') +
         (it.not_available_stock ? ' (y ' + dec(it.not_available_stock) + ' u. no disponibles)' : '') +
-        ' · vendés ' + dec(it.vpd || 0) + ' u. por día' +
-        (it.vpd > 0 ? ' → ' + dec(total) + ' ÷ ' + dec(it.vpd) + ' = ' + Math.round(total / it.vpd) + ' días' : '');
+        ' · vendés ' + dec(v) + ' u. por día' + (v > (it.vpd || 0) ? ' (promedio de 30 días)' : '') +
+        (v > 0 ? ' → ' + dec(total) + ' ÷ ' + dec(v) + ' = ' + Math.round(total / v) + ' días' : '');
 }
 
 function filaConBarra(it, opciones) {
@@ -1968,7 +1996,7 @@ function renderizarPanelColecta() {
         'Tienen de más (no mandes más por ahora)',
         deMas.map(it => filaConBarra(it, {
             icono: iconoSvg('capas', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
-            derecha: 'Stock suficiente',
+            derecha: etiquetaStockSuficiente(it),
             claseDerecha: 'pc-info',
             dias: it.covered_days_left,
             claseBarra: 'pc-fill-info',
