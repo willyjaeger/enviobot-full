@@ -2155,7 +2155,7 @@ function renderizarResumenPublicaciones() {
     const cont = document.getElementById('resumenPublicaciones');
     if (!cont) return;
     const total = itemsData.length;
-    const pausados = itemsData.filter(it => it.pausado).length;
+    const pausados = itemsData.filter(it => it.pausado || it.pausa_por_quiebre).length;
     const activos = total - pausados;
     let pubs = 0, pubsPausadas = 0, clasica = 0, premium = 0, catalogo = 0;
     itemsData.forEach(it => (it.channels || []).forEach(ch => {
@@ -2167,7 +2167,7 @@ function renderizarResumenPublicaciones() {
     }));
     const unidades = itemsData.reduce((a, it) => a + (it.current_stock || 0), 0);
     const noDisp = itemsData.reduce((a, it) => a + (it.not_available_stock || 0), 0);
-    const sinStockActivos = itemsData.filter(it => !it.pausado && (it.current_stock || 0) <= 0).length;
+    const sinStockActivos = itemsData.filter(it => !it.pausado && !it.pausa_por_quiebre && (it.current_stock || 0) <= 0).length;
     const pausadosConStock = itemsData.filter(it => it.pausado && (it.current_stock || 0) > 0).length;
     const dato = function (valor, texto, filtro, extra) {
         const clic = filtro ? ` onclick="irAEstado('${filtro}')" style="cursor: pointer;"` : '';
@@ -2200,6 +2200,7 @@ function pasaFiltroListado(it, filtro) {
     if (filtro === 'action_required') return it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock';
     if (filtro === 'in_process') return it.status === 'in_preparation' || it.status === 'in_transit' || it.status === 'in_reception';
     if (filtro === 'critical') return !it.pausado && (it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
+    if (filtro === 'paused') return it.status === 'paused' || it.pausa_por_quiebre;
     return it.status === filtro;
 }
 
@@ -2590,10 +2591,13 @@ function renderizarTabla() {
 
         // Estado Sobrio (Texto limpio, sin cajas llamativas)
         let badgeHtml = '';
-        if (it.pausado && (it.in_preparation_stock || 0) > 0) {
+        const pausadaML = it.pausado || it.pausa_por_quiebre;
+        if (pausadaML && (it.in_preparation_stock || 0) > 0) {
             badgeHtml = `<span class="badge badge-pausada" title="Pausada en Mercado Libre, pero tiene ${it.in_preparation_stock} un. en una colecta en preparación">Pausada en preparación</span>`;
-        } else if (it.pausado && ((it.in_transit_stock || 0) + (it.in_process_stock || 0)) > 0) {
+        } else if (pausadaML && ((it.in_transit_stock || 0) + (it.in_process_stock || 0)) > 0) {
             badgeHtml = '<span class="badge badge-pausada" title="Pausada en Mercado Libre, pero tiene mercadería en camino hacia Full">Pausada, en camino</span>';
+        } else if (it.pausa_por_quiebre) {
+            badgeHtml = '<span class="badge badge-danger" title="Mercado Libre la pausó porque se quedó sin stock en Full y no hay colecta que la cubra">Pausada sin stock</span>';
         } else if (it.pausado) {
             badgeHtml = '<span class="badge badge-pausada" title="Esta publicación está pausada en Mercado Libre: no vende, por eso no cuenta como urgencia">Pausada en ML</span>';
         } else if (it.status === 'ok') {
