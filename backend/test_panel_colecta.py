@@ -321,7 +321,8 @@ process.stdout.write(JSON.stringify({ r, html, texto }));
         self.assertEqual(out['r']['totalDelta'], 10)
         self.assertEqual(out['r']['nuevoIngreso'], '2026-11-01')
         self.assertEqual(f['cobertura'], 25)
-        self.assertIn('necesitás 150 u. (+10)', out['html'])
+        self.assertIn('(+10)', out['html'])   # el texto exacto depende del día en que se corre
+        self.assertIn('necesitás', out['html'])
         self.assertIn('1 día más tarde', out['texto'])
 
     def test_mover_antes_baja_lo_que_hace_falta(self):
@@ -424,37 +425,79 @@ process.stdout.write(JSON.stringify(r));
         self.assertEqual((con2['llegadas'][0]['ingresoDia'], con2['llegadas'][0]['dia']), (5, 7))
         self.assertEqual(con2['puntos'][7]['stock'], 30 + 300)
 
-    def test_todos_juntos_tiene_colores_leyenda_ejes_con_nombre_y_zoom(self):
+    def _juntos(self, n_productos, estado='{}', dias=42):
         harness = r"""
 const vm = require('vm');
 const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
 vm.createContext(ctx);
 vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
 vm.runInContext('itemsData = ' + process.argv[2] + '; colectasData = ' + process.argv[3] + ';', ctx);
-const html = vm.runInContext('htmlTodosJuntos(colectasData[0], colectasData, new Date(), 42, 2, {})', ctx);
-const zoom = vm.runInContext('htmlTodosJuntos(colectasData[0], colectasData, new Date(), 14, 2, {1: true})', ctx);
-process.stdout.write(JSON.stringify({ html, zoom }));
+const html = vm.runInContext('htmlTodosJuntos(colectasData[0], colectasData, new Date(), ' + process.argv[5] + ', 2, ' + process.argv[4] + ')', ctx);
+process.stdout.write(html);
 """
-        items = [dict(self.ITEM, sku='A1', title='Dátil'), dict(self.ITEM, sku='B2', title='Nueces', vpd=5)]
-        col = {'id': 4, 'codigo': 'ML-79759779', 'fecha_ingreso': self._col_proy(8, 1)['fecha_ingreso'],
-               'productos': [{'sku': 'A1', 'titulo': 'Dátil', 'unidades': 100}, {'sku': 'B2', 'titulo': 'Nueces', 'unidades': 100}]}
-        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(items), json.dumps([col])], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        items, prods = [], []
+        for i in range(n_productos):
+            sku = 'S%02d' % i
+            items.append(dict(self.ITEM, sku=sku, title='Prod %d' % i, vpd=2 + i, current_stock=20 * (n_productos - i)))
+            prods.append({'sku': sku, 'titulo': 'Prod %d' % i, 'unidades': 100})
+        col = {'id': 4, 'codigo': 'ML-79759779', 'fecha_ingreso': self._col_proy(8, 1)['fecha_ingreso'], 'productos': prods}
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(items), json.dumps([col]), estado, str(dias)],
+                           capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
-        out = json.loads(r.stdout)
-        html = out['html']
+        return r.stdout
+
+    def test_todos_juntos_tiene_leyenda_ejes_con_nombre_zoom_y_tabla(self):
+        html = self._juntos(3)
         self.assertIn('Días de venta que le quedan', html)             # eje Y con nombre
-        self.assertIn('Hora de reponer', html)
+        self.assertIn('Hora de reponer: menos de', html)
         self.assertIn('Tu objetivo', html)
         self.assertIn('en venta el', html)                              # la raya vertical dice qué es
-        self.assertIn('pc-s0', html)
-        self.assertIn('pc-s1', html)                                    # un color por producto
-        self.assertEqual(html.count('class="pc-chip '), 2)              # un botón por producto en la leyenda
-        self.assertIn('Dátil</button>', html)
-        self.assertIn('Nueces</button>', html)
+        self.assertEqual(html.count('class="pc-chip '), 3)              # un botón por producto en la leyenda
+        for i in range(3):
+            self.assertIn('Prod %d</button>' % i, html)
         self.assertIn('cambiarRangoProyeccion(4, 14)', html)            # zoom
-        self.assertIn('2 semanas', html)
-        self.assertIn('pc-chip-off', out['zoom'])                       # el producto oculto se ve apagado
-        self.assertEqual(out['zoom'].count('class="pc-g-serie'), 1)     # y su línea no se dibuja
+        self.assertIn('alternarTabla(4)', html)                         # vista como tabla
+        self.assertIn('class="pc-g-captura"', html)                     # capa para la cruz y el cartelito
+
+    def test_solo_cinco_productos_van_en_color_el_resto_en_gris(self):
+        html = self._juntos(8)
+        self.assertEqual(len(re.findall(r'class="pc-g-serie pc-s[0-4]"', html)), 5)
+        self.assertEqual(len(re.findall(r'class="pc-g-serie pc-g-gris"', html)), 3)
+        self.assertNotIn('pc-s5', html)                                 # nunca un sexto color
+        self.assertEqual(html.count('pc-chip-gris'), 3)
+
+    def test_los_colores_siguen_al_producto_y_se_pueden_cambiar(self):
+        html = self._juntos(8, '{"slots": {"S07": 0, "S00": 3}}')
+        self.assertEqual(len(re.findall(r'class="pc-g-serie pc-s\d"', html)), 2)
+        self.assertRegex(html, r'class="pc-g-serie pc-s0" points="[^"]*" data-k="S07"')
+        self.assertRegex(html, r'class="pc-g-serie pc-s3" points="[^"]*" data-k="S00"')
+        self.assertEqual(len(re.findall(r'class="pc-g-serie pc-g-gris"', self._juntos(8, '{"slots": {}}'))), 8)
+
+    def test_el_trazo_sube_de_golpe_cuando_entra_la_colecta(self):
+        html = self._juntos(1)
+        puntos = re.search(r'class="pc-g-serie pc-s0" points="([^"]+)"', html).group(1).split()
+        xs = [p.split(',')[0] for p in puntos]
+        self.assertTrue(any(xs[i] == xs[i + 1] for i in range(len(xs) - 1)))   # dos puntos con el mismo x: escalón vertical
+
+    def test_la_tabla_dice_lo_mismo_que_el_grafico(self):
+        html = self._juntos(3, '{"tabla": true}')
+        self.assertIn('<table class="pc-table pc-tabla-proy">', html)
+        self.assertIn('Reponer antes del', html)
+        self.assertIn('En 6 semanas', html)
+        self.assertNotIn('<svg', html)
+        self.assertIn('Ver gráfico', html)
+
+    def test_las_referencias_van_en_pildora_y_la_zona_de_reposicion_en_el_detalle(self):
+        html = self._juntos(2)
+        self.assertIn('class="pc-g-pil"', html)
+
+    def test_la_paleta_son_cinco_colores_y_estan_en_ambos_modos(self):
+        css = _leer(os.path.join('css', 'style.css'))
+        self.assertEqual(len(re.findall(r'--serie-\d+:', css)), 10)   # 5 en oscuro + 5 en claro
+        self.assertNotIn('--serie-6', css)
+        for h in ('#3987e5', '#008300', '#d55181', '#9085e9', '#199e70',   # modo oscuro, validado
+                  '#2a78d6', '#e87ba4', '#6250d6', '#1baf7a'):               # modo claro, validado
+            self.assertIn(h, css)
 
     def test_el_detalle_grande_explica_cada_numero(self):
         harness = r"""
@@ -475,7 +518,7 @@ process.stdout.write(creado ? creado.innerHTML : '');
         self.assertEqual(r.returncode, 0, r.stderr)
         html = r.stdout
         self.assertIn('pc-graf-grande', html)
-        for frase in ('Hoy: 100 u.', 'Nivel de reposición: 70 u.', 'quedan en venta el', 'Reponer antes del',
+        for frase in ('Hoy: 100 u.', 'Zona de reposición: menos de 70 u.', '+150 u. en venta el', 'Reponer antes del',
                       'Vendés por día', 'Hoy en Full', 'Tu objetivo', '3 de preparación + 2 de flete + 2 de colchón = 7 días',
                       'Qué le entra', 'Qué hacer', 'Cómo leer el gráfico', 'La franja gris'):
             self.assertIn(frase, html, frase)

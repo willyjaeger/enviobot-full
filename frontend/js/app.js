@@ -1105,15 +1105,16 @@ function irAColecta(id) {
 // Una tarjeta por colecta vigente.
 // ── Cómo se van agotando los productos de una colecta (proyección día a día) ─────────
 const DIAS_PROYECCION = 42;   // seis semanas, igual que el calendario
-const COLORES_SERIE = 10;
+const SLOTS_SERIE = 5;        // colores distintos a la vez; el resto de los productos va en gris
 
 function normalizarSkuPanel(v) {
     const s = String(v || '').trim().toUpperCase();
     return s.replace(/^0+/, '') || s;
 }
 
+// Los cinco colores salieron del validador de paletas (daltonismo y contraste, en modo claro y oscuro), en este orden.
 function claseSerie(i) {
-    return 'pc-s' + (i % COLORES_SERIE);
+    return 'pc-s' + i;
 }
 
 // Días que tarda Mercado Libre, desde que recibe la colecta, en dejar los productos en venta. Se cambia en el gráfico y
@@ -1137,6 +1138,7 @@ function guardarDemoraAcreditacion(valor) {
 // Stock de un producto día a día: baja lo que se vende (vpd) y sube cuando la mercadería queda en venta (entra la colecta
 // más la demora de ML). Nunca baja de cero. El "nivel de reposición" es lo que se vende en el tiempo que lleva preparar y
 // llevar la mercadería (preparación + flete + colchón): si el stock cae por debajo, ya es hora de mandar más.
+// Cada punto trae `antes`: el stock justo antes de que entre una colecta ese día (para dibujar el escalón).
 function proyeccionProducto(it, colectas, hoy, demora) {
     hoy = hoy || new Date();
     demora = demora === undefined ? demoraAcreditacionDias() : demora;
@@ -1154,7 +1156,7 @@ function proyeccionProducto(it, colectas, hoy, demora) {
             const dia = ingresoDia + demora;
             if (dia > DIAS_PROYECCION) return;
             entran[dia] = (entran[dia] || 0) + (Number(p.unidades) || 0);
-            llegadas.push({ dia: dia, ingresoDia: ingresoDia, unidades: Number(p.unidades) || 0, colectaId: c.id });
+            llegadas.push({ dia: dia, ingresoDia: ingresoDia, unidades: Number(p.unidades) || 0, colectaId: c.id, codigo: c.codigo });
         });
     });
     const ultimaLlegada = llegadas.reduce(function (m, l) { return Math.max(m, l.dia); }, 0);
@@ -1164,8 +1166,9 @@ function proyeccionProducto(it, colectas, hoy, demora) {
     let reponerDia = null;
     let quiebreDia = null;
     for (let t = 0; t <= DIAS_PROYECCION; t++) {
+        const antes = stock;
         stock += entran[t] || 0;
-        puntos.push({ dia: t, stock: stock, cobertura: stock / vpd });
+        puntos.push({ dia: t, antes: antes, stock: stock, cobertura: stock / vpd, coberturaAntes: antes / vpd });
         // El día de reponer cuenta lo que ya viaja: es el primer cruce del nivel DESPUÉS de la última colecta que entra.
         if (reponerDia === null && t >= ultimaLlegada && stock <= umbral) reponerDia = t;
         if (quiebreDia === null && stock <= 0) quiebreDia = t;
@@ -1195,7 +1198,10 @@ function textoRiesgoStock(proy, hoy) {
         : 'Se queda sin stock el ' + fechaDeProyeccion(proy.quiebreDia, hoy) + ', antes de que entre la colecta.';
 }
 
-const GRAF = { ml: 44, mr: 10, mt: 18, mb: 24 };
+// ── Piezas de dibujo ──────────────────────────────────────────────────────────────
+const GRAF = { ml: 46, mr: 14, mt: 16, mb: 28 };
+let contadorGraficos = 0;
+let graficosActivos = {};   // id del gráfico -> datos para la cruz y el cartelito
 
 function pasoDeEje(maximo, cuantos) {
     const pasos = [1, 2, 5, 10, 15, 20, 25, 30, 50, 100, 200, 500];
@@ -1212,70 +1218,282 @@ function ejesGrafico(ancho, alto, ymax, hoy, dias) {
     let ticks = '';
     for (let t = 0; t <= dias; t += paso) {
         ticks += '<line class="pc-g-rejilla" x1="' + x(t).toFixed(1) + '" y1="' + GRAF.mt + '" x2="' + x(t).toFixed(1) + '" y2="' + (GRAF.mt + h) + '"/>' +
-            '<text class="pc-g-txt" x="' + x(t).toFixed(1) + '" y="' + (alto - 8) + '" text-anchor="middle">' + escapeHtml(fechaDeProyeccion(t, hoy)) + '</text>';
+            '<text class="pc-g-txt" x="' + x(t).toFixed(1) + '" y="' + (alto - 9) + '" text-anchor="middle">' + escapeHtml(fechaDeProyeccion(t, hoy)) + '</text>';
     }
-    return { x: x, y: y, ticks: ticks, base: GRAF.mt + h, w: w, h: h };
+    return { x: x, y: y, ticks: ticks, base: GRAF.mt + h, w: w, h: h, ancho: ancho, alto: alto, dias: dias };
 }
 
-// Marca de una colecta en el gráfico: raya de cuando entra a Full, y una franja hasta que queda en venta.
-function marcaColectaGrafico(e, dia, ingresoDia, clase, etiqueta, fila) {
+function ejeYGrafico(e, ymax, sufijo, titulo) {
+    const pasoY = pasoDeEje(ymax, 5);
+    let s = '';
+    for (let v = 0; v <= ymax; v += pasoY) {
+        s += '<line class="pc-g-rejilla" x1="' + GRAF.ml + '" y1="' + e.y(v).toFixed(1) + '" x2="' + (e.ancho - GRAF.mr) + '" y2="' + e.y(v).toFixed(1) + '"/>' +
+            '<text class="pc-g-txt" x="' + (GRAF.ml - 8) + '" y="' + (e.y(v) + 3.5).toFixed(1) + '" text-anchor="end">' + escapeHtml(v) + (sufijo || '') + '</text>';
+    }
+    return s + '<text class="pc-g-txt pc-g-titulo-eje" transform="translate(13 ' + (GRAF.mt + e.h / 2).toFixed(1) + ') rotate(-90)" text-anchor="middle">' + escapeHtml(titulo) + '</text>';
+}
+
+// Etiqueta en píldora: texto sobre el color de fondo de la tarjeta, así se lee encima de cualquier línea.
+function pildoraGrafico(e, x, y, texto, ancla) {
+    const ancho = texto.length * 5.35 + 14, alto = 19;
+    let x0 = ancla === 'end' ? x - ancho : (ancla === 'middle' ? x - ancho / 2 : x);
+    x0 = Math.max(GRAF.ml, Math.min(x0, e.ancho - GRAF.mr - ancho));
+    const y0 = Math.max(2, Math.min(y - alto / 2, e.alto - GRAF.mb - alto));
+    return '<g class="pc-g-pil"><rect x="' + x0.toFixed(1) + '" y="' + y0.toFixed(1) + '" width="' + ancho.toFixed(1) + '" height="' + alto + '" rx="9.5"/>' +
+        '<text x="' + (x0 + 7).toFixed(1) + '" y="' + (y0 + 13).toFixed(1) + '">' + escapeHtml(texto) + '</text></g>';
+}
+
+// Línea con escalón: cuando entra una colecta el stock sube de golpe ese día, no en pendiente.
+function trazoProyeccion(e, proy, campo, dias) {
+    const antes = campo === 'cobertura' ? 'coberturaAntes' : 'antes';
+    const pts = [];
+    proy.puntos.filter(function (p) { return p.dia <= dias; }).forEach(function (p) {
+        if (p[antes] !== p[campo]) pts.push(e.x(p.dia).toFixed(1) + ',' + e.y(p[antes]).toFixed(1));
+        pts.push(e.x(p.dia).toFixed(1) + ',' + e.y(p[campo]).toFixed(1));
+    });
+    return pts.join(' ');
+}
+
+// Raya vertical del día en que una colecta queda en venta, con una franja suave por lo que tarda ML en dejarla en venta.
+function marcaColectaGrafico(e, dia, ingresoDia, propia) {
     const xa = e.x(ingresoDia).toFixed(1), xb = e.x(dia).toFixed(1);
     const banda = dia > ingresoDia
         ? '<rect class="pc-g-banda" x="' + xa + '" y="' + GRAF.mt + '" width="' + Math.max(0, e.x(dia) - e.x(ingresoDia)).toFixed(1) + '" height="' + e.h + '"/>' : '';
-    return banda +
-        '<line class="pc-g-llega ' + clase + '" x1="' + xb + '" y1="' + GRAF.mt + '" x2="' + xb + '" y2="' + e.base + '"/>' +
-        (etiqueta ? '<text class="pc-g-txt pc-g-llega-txt" x="' + (e.x(dia) + 3).toFixed(1) + '" y="' + (GRAF.mt + 9 + fila * 10) + '">' + escapeHtml(etiqueta) + '</text>' : '');
+    return banda + '<line class="pc-g-llega' + (propia ? ' pc-g-propia' : '') + '" x1="' + xb + '" y1="' + GRAF.mt + '" x2="' + xb + '" y2="' + e.base + '"/>';
 }
 
-// Un producto: unidades en Full según pasan los días, con la entrada de cada colecta y el día de reponer.
+function marcadorGrafico(cx, cy, clase, titulo, grande) {
+    return '<circle class="pc-g-marca ' + clase + '" cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) + '" r="' + (grande ? 6 : 4.5) + '"><title>' + escapeHtml(titulo) + '</title></circle>';
+}
+
+// Superficie que escucha el mouse para la cruz y el cartelito.
+function capaCruz(e, id) {
+    return '<line class="pc-g-cruz" x1="0" y1="' + GRAF.mt + '" x2="0" y2="' + e.base + '" style="display:none"/>' +
+        '<rect class="pc-g-captura" x="' + GRAF.ml + '" y="' + GRAF.mt + '" width="' + e.w + '" height="' + e.h + '" ' +
+        'onpointermove="moverCruz(event, \'' + id + '\')" onpointerleave="ocultarCruz(\'' + id + '\')"/>';
+}
+
+function envolverGrafico(id, svg) {
+    return '<div class="pc-chart" id="pc-chart-' + id + '">' + svg + '<div class="pc-g-tip" style="display:none"></div></div>';
+}
+
+// ── Un producto: unidades en Full día a día ───────────────────────────────────────
 // Con `detalle` sale grande y con cada marca explicada con palabras (es el que se abre al hacer clic).
-function svgProducto(it, proy, claseColor, hoy, dias, detalle) {
+function svgProducto(it, proy, claseColor, hoy, dias, detalle, idGrafico) {
     dias = dias || DIAS_PROYECCION;
-    const ancho = detalle ? 900 : 330, alto = detalle ? 400 : 140;
+    const ancho = detalle ? 900 : 330, alto = detalle ? 380 : 150;
+    const uid = ++contadorGraficos;
     const visibles = proy.puntos.filter(function (p) { return p.dia <= dias; });
     const maxStock = Math.max.apply(null, visibles.map(function (p) { return p.stock; }));
-    const ymax = Math.max(maxStock, proy.umbral * 1.4, 1) * 1.1;
+    const ymax = Math.max(maxStock, proy.umbral * 1.5, 1) * 1.08;
     const e = ejesGrafico(ancho, alto, ymax, hoy, dias);
-    const linea = visibles.map(function (p) { return e.x(p.dia).toFixed(1) + ',' + e.y(p.stock).toFixed(1); }).join(' ');
-    const area = e.x(0).toFixed(1) + ',' + e.base + ' ' + linea + ' ' + e.x(visibles[visibles.length - 1].dia).toFixed(1) + ',' + e.base;
+    const trazo = trazoProyeccion(e, proy, 'stock', dias);
+    const ultimo = visibles[visibles.length - 1];
+    const area = e.x(0).toFixed(1) + ',' + e.base + ' ' + trazo + ' ' + e.x(ultimo.dia).toFixed(1) + ',' + e.base;
+    const yU = e.y(proy.umbral);
+
     let marcas = '';
     proy.llegadas.filter(function (l) { return l.dia <= dias; }).forEach(function (l, i) {
-        const texto = detalle ? '+' + l.unidades + ' u. quedan en venta el ' + fechaDeProyeccion(l.dia, hoy) : '+' + l.unidades;
-        marcas += marcaColectaGrafico(e, l.dia, l.ingresoDia, '', texto, detalle ? i : 0);
+        marcas += marcaColectaGrafico(e, l.dia, l.ingresoDia, false);
+        if (detalle) marcas += pildoraGrafico(e, e.x(l.dia) + 6, GRAF.mt + 14 + i * 24, '+' + l.unidades + ' u. en venta el ' + fechaDeProyeccion(l.dia, hoy), 'start');
     });
     if (proy.reponerDia !== null && proy.reponerDia <= dias) {
         const p = proy.puntos[proy.reponerDia];
-        marcas += '<circle class="pc-g-repone" cx="' + e.x(p.dia).toFixed(1) + '" cy="' + e.y(p.stock).toFixed(1) + '" r="' + (detalle ? 6 : 4) + '"><title>Día de reponer</title></circle>';
-        if (detalle) marcas += '<text class="pc-g-txt pc-g-nota" x="' + (e.x(p.dia) + 9).toFixed(1) + '" y="' + (e.y(p.stock) - 8).toFixed(1) + '">Reponer antes del ' + escapeHtml(fechaDeProyeccion(p.dia, hoy)) + '</text>';
+        marcas += marcadorGrafico(e.x(p.dia), e.y(p.stock), 'pc-g-repone', 'Día de reponer', detalle);
+        if (detalle) marcas += pildoraGrafico(e, e.x(p.dia), e.y(p.stock) - 22, 'Reponer antes del ' + fechaDeProyeccion(p.dia, hoy), 'middle');
     }
     if (proy.quiebreDia !== null && proy.quiebreDia <= dias) {
-        marcas += '<circle class="pc-g-quiebre" cx="' + e.x(proy.quiebreDia).toFixed(1) + '" cy="' + e.base + '" r="' + (detalle ? 6 : 4) + '"><title>Se queda sin stock</title></circle>';
-        if (detalle) marcas += '<text class="pc-g-txt pc-g-nota" x="' + (e.x(proy.quiebreDia) + 9).toFixed(1) + '" y="' + (e.base - 8) + '">Sin stock el ' + escapeHtml(fechaDeProyeccion(proy.quiebreDia, hoy)) + '</text>';
+        marcas += marcadorGrafico(e.x(proy.quiebreDia), e.base, 'pc-g-quiebre', 'Se queda sin stock', detalle);
+        if (detalle) marcas += pildoraGrafico(e, e.x(proy.quiebreDia), e.base - 24, 'Sin stock el ' + fechaDeProyeccion(proy.quiebreDia, hoy), 'middle');
     }
-    let hoyMarca = '';
-    let ejeY = '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.y(proy.umbral) + 3).toFixed(1) + '" text-anchor="end">' + escapeHtml(Math.round(proy.umbral)) + '</text>' +
-        '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.base + 3) + '" text-anchor="end">0</text>';
     if (detalle) {
-        hoyMarca = '<circle class="pc-g-hoy" cx="' + e.x(0).toFixed(1) + '" cy="' + e.y(proy.puntos[0].stock).toFixed(1) + '" r="5"/>' +
-            '<text class="pc-g-txt pc-g-nota" x="' + (e.x(0) + 9).toFixed(1) + '" y="' + (e.y(proy.puntos[0].stock) - 9).toFixed(1) + '">Hoy: ' + escapeHtml(Math.round(proy.puntos[0].stock)) + ' u.</text>';
-        const pasoY = pasoDeEje(ymax, 6);
-        ejeY = '';
-        for (let v = 0; v <= ymax; v += pasoY) {
-            ejeY += '<line class="pc-g-rejilla" x1="' + GRAF.ml + '" y1="' + e.y(v).toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + e.y(v).toFixed(1) + '"/>' +
-                '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.y(v) + 3).toFixed(1) + '" text-anchor="end">' + escapeHtml(v) + '</text>';
-        }
+        marcas += marcadorGrafico(e.x(0), e.y(proy.puntos[0].stock), 'pc-g-hoy', 'Hoy', true) +
+            pildoraGrafico(e, e.x(0) + 10, e.y(proy.puntos[0].stock) - 20, 'Hoy: ' + Math.round(proy.puntos[0].stock) + ' u.', 'start');
     }
-    const etiquetaUmbral = detalle
-        ? '<text class="pc-g-txt" x="' + (ancho - GRAF.mr - 2) + '" y="' + (e.y(proy.umbral) + 15).toFixed(1) + '" text-anchor="end">Nivel de reposición: ' + escapeHtml(Math.round(proy.umbral)) + ' u. (lo que vendés en ' + escapeHtml(Math.round(proy.avance)) + ' días)</text>' : '';
-    return '<svg class="pc-graf ' + claseColor + (detalle ? ' pc-graf-grande' : '') + '" viewBox="0 0 ' + ancho + ' ' + alto + '" role="img" aria-label="' + escapeHtml('Proyección de ' + it.title) + '">' +
-        e.ticks +
-        '<text class="pc-g-txt" transform="translate(' + (detalle ? 12 : 9) + ' ' + (GRAF.mt + e.h / 2).toFixed(1) + ') rotate(-90)" text-anchor="middle">Unidades en Full</text>' +
-        '<line class="pc-g-umbral" x1="' + GRAF.ml + '" y1="' + e.y(proy.umbral).toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + e.y(proy.umbral).toFixed(1) + '"/>' +
-        ejeY + etiquetaUmbral +
-        '<polygon class="pc-g-area" points="' + area + '"/>' +
-        '<polyline class="pc-g-linea" points="' + linea + '"/>' + marcas + hoyMarca + '</svg>';
+    const zona = '<rect class="pc-g-zona" x="' + GRAF.ml + '" y="' + yU.toFixed(1) + '" width="' + e.w + '" height="' + (e.base - yU).toFixed(1) + '"/>' +
+        '<line class="pc-g-umbral" x1="' + GRAF.ml + '" y1="' + yU.toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + yU.toFixed(1) + '"/>';
+    const etiquetaZona = detalle
+        ? pildoraGrafico(e, ancho - GRAF.mr - 4, yU + 18, 'Zona de reposición: menos de ' + Math.round(proy.umbral) + ' u. (' + Math.round(proy.avance) + ' días de venta)', 'end') : '';
+    const ejeY = detalle ? ejeYGrafico(e, ymax, '', 'Unidades en Full')
+        : '<text class="pc-g-txt" x="' + (GRAF.ml - 8) + '" y="' + (yU + 3.5).toFixed(1) + '" text-anchor="end">' + escapeHtml(Math.round(proy.umbral)) + '</text>' +
+          '<text class="pc-g-txt" x="' + (GRAF.ml - 8) + '" y="' + (e.base + 3.5) + '" text-anchor="end">0</text>';
+    if (detalle && idGrafico) {
+        graficosActivos[idGrafico] = {
+            ancho: ancho, dias: dias, ml: GRAF.ml, w: e.w, hoy: hoy,
+            filas: function (dia) {
+                const p = proy.puntos[dia];
+                const llega = proy.llegadas.filter(function (l) { return l.dia === dia; });
+                const filas = [{ clave: 'Unidades en Full', valor: Math.round(p.stock) + ' u.', slot: null, color: true },
+                               { clave: 'Días de venta', valor: Math.round(p.cobertura) + ' días', slot: null, color: false }];
+                llega.forEach(function (l) { filas.push({ clave: 'Queda en venta la colecta ' + numeroCorto(l.codigo), valor: '+' + l.unidades + ' u.', slot: null, color: false }); });
+                return filas;
+            }
+        };
+    }
+    const svg = '<svg class="pc-graf ' + claseColor + (detalle ? ' pc-graf-grande' : '') + '" viewBox="0 0 ' + ancho + ' ' + alto + '" role="img" aria-label="' + escapeHtml('Proyección de ' + it.title) + '">' +
+        '<defs><linearGradient id="pcg-' + uid + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: var(--c); stop-opacity: 0.28"/><stop offset="1" style="stop-color: var(--c); stop-opacity: 0.02"/></linearGradient></defs>' +
+        e.ticks + ejeY + zona + etiquetaZona +
+        '<polygon class="pc-g-area" style="fill: url(#pcg-' + uid + ')" points="' + area + '"/>' +
+        '<polyline class="pc-g-linea" points="' + trazo + '"/>' + marcas +
+        (detalle && idGrafico ? capaCruz(e, idGrafico) : '') + '</svg>';
+    return detalle && idGrafico ? envolverGrafico(idGrafico, svg) : svg;
 }
 
+function htmlProyeccionProductos(c, colectas, hoy, dias, demora) {
+    const filas = (c.productos || []).map(function (p) {
+        const it = buscarItemPorSku(p.sku);
+        const proy = it ? proyeccionProducto(it, colectas, hoy, demora) : null;
+        return { p: p, it: it, proy: proy };
+    });
+    filas.sort(function (a, b) {
+        const ra = a.proy && a.proy.reponerDia !== null ? a.proy.reponerDia : 999;
+        const rb = b.proy && b.proy.reponerDia !== null ? b.proy.reponerDia : 999;
+        const sa = a.proy && a.proy.sinStockAntes ? 0 : 1, sb = b.proy && b.proy.sinStockAntes ? 0 : 1;
+        return sa - sb || ra - rb;
+    });
+    return '<div class="pc-fila-nota pc-graf-leyenda">Cada gráfico muestra las unidades que quedan en Full día a día. Tocá uno para agrandarlo y ver el detalle.</div>' +
+        '<div class="pc-graf-grilla">' + filas.map(function (f) {
+        const titulo = f.it ? f.it.title : f.p.titulo;
+        const cuerpo = f.proy ? svgProducto(f.it, f.proy, claseColorColecta(c), hoy, dias, false) : '';
+        const clase = f.proy && f.proy.reponerDia !== null && f.proy.reponerDia <= 7 ? 'pc-cmp-aviso' : 'pc-fila-nota';
+        const abre = f.proy ? ' data-sku="' + escapeHtml(f.p.sku) + '" onclick="abrirDetalleProducto(' + Number(c.id) + ', this.dataset.sku)" title="Tocá para agrandar" role="button" tabindex="0"' : '';
+        return '<div class="pc-graf-item' + (f.proy ? ' pc-graf-click' : '') + '"' + abre + '><div class="pc-graf-titulo">' + escapeHtml(titulo) + '</div>' + cuerpo +
+            '<div class="' + clase + '">' + escapeHtml(textoReponer(f.proy, hoy)) + '</div>' +
+            (textoRiesgoStock(f.proy, hoy) ? '<div class="pc-cmp-aviso">' + escapeHtml(textoRiesgoStock(f.proy, hoy)) + '</div>' : '') + '</div>';
+    }).join('') + '</div>';
+}
+
+// ── Todos juntos ──────────────────────────────────────────────────────────────────
+function seriesDeColecta(c, colectas, hoy, demora) {
+    const series = [];
+    (c.productos || []).forEach(function (p) {
+        const it = buscarItemPorSku(p.sku);
+        const proy = it ? proyeccionProducto(it, colectas, hoy, demora) : null;
+        if (proy) series.push({ it: it, proy: proy, sku: p.sku, clave: normalizarSkuPanel(p.sku) });
+    });
+    return series;
+}
+
+function urgenciaSerie(s) {
+    return (s.proy.sinStockAntes ? 0 : 1000) + (s.proy.reponerDia === null ? 999 : s.proy.reponerDia);
+}
+
+// Qué productos van en color: por defecto los 5 que antes hay que reponer; el resto queda en gris.
+function resaltadosPorDefecto(series) {
+    const slots = {};
+    series.slice().sort(function (a, b) { return urgenciaSerie(a) - urgenciaSerie(b); }).slice(0, SLOTS_SERIE)
+        .forEach(function (s, i) { slots[s.clave] = i; });
+    return slots;
+}
+
+// Todos los productos de la colecta en un mismo gráfico: días de venta que le quedan a cada uno, así se pueden comparar.
+function htmlTodosJuntos(c, colectas, hoy, dias, demora, estado) {
+    estado = estado || {};
+    const series = seriesDeColecta(c, colectas, hoy, demora);
+    if (!series.length) return '<div class="pc-fila-nota">No tengo ventas de estos productos para proyectar.</div>';
+    const slots = estado.slots || resaltadosPorDefecto(series);
+    const idG = 'juntos-' + Number(c.id);
+    const avance = Math.max.apply(null, series.map(function (s) { return s.proy.avance; }));
+    const objetivo = Math.max.apply(null, series.map(function (s) { return Number(s.it.target_stock_days) || 0; }));
+    const enColor = series.filter(function (s) { return slots[s.clave] !== undefined; });
+    const maxEnfocado = Math.max.apply(null, (enColor.length ? enColor : series).map(function (s) {
+        return Math.max.apply(null, s.proy.puntos.filter(function (p) { return p.dia <= dias; }).map(function (p) { return p.cobertura; }));
+    }));
+    const tope = Math.max(objetivo * 3, 60);
+    const ymax = Math.min(Math.max(maxEnfocado * 1.08, objetivo * 1.4, avance * 1.6, 10), tope);
+    const ancho = 760, alto = 300;
+    const e = ejesGrafico(ancho, alto, ymax, hoy, dias);
+    const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+
+    let colectasMarcas = '';
+    let pildoras = '';
+    let fila = 0;
+    (colectas || []).forEach(function (col) {
+        const ingresoDia = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(col.fecha_ingreso)));
+        const dia = ingresoDia + demora;
+        if (dia > dias) return;
+        colectasMarcas += marcaColectaGrafico(e, dia, ingresoDia, Number(col.id) === Number(c.id));
+        pildoras += pildoraGrafico(e, e.x(dia) + 6, GRAF.mt + 14 + (fila++) * 24, 'Colecta ' + numeroCorto(col.codigo) + ' en venta el ' + fechaDeProyeccion(dia, hoy), 'start');
+    });
+
+    const grises = series.filter(function (s) { return slots[s.clave] === undefined; });
+    const trazarSerie = function (s) {
+        const slot = slots[s.clave];
+        const pts = trazoProyeccion(e, s.proy, 'cobertura', dias);
+        const clase = slot === undefined ? 'pc-g-gris' : claseSerie(slot);
+        return '<polyline class="pc-g-hit" points="' + pts + '" data-k="' + escapeHtml(s.clave) + '" onmouseenter="resaltarSerie(' + Number(c.id) + ', this.dataset.k)" onmouseleave="resaltarSerie(' + Number(c.id) + ', null)"><title>' + escapeHtml(s.it.title) + '</title></polyline>' +
+            '<polyline class="pc-g-serie ' + clase + '" points="' + pts + '" data-k="' + escapeHtml(s.clave) + '"/>';
+    };
+    const lineas = grises.map(trazarSerie).join('') + enColor.map(trazarSerie).join('');
+
+    const lineaRef = function (valor, clase, texto, desplaza) {
+        return '<line class="' + clase + '" x1="' + GRAF.ml + '" y1="' + e.y(valor).toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + e.y(valor).toFixed(1) + '"/>' +
+            pildoraGrafico(e, ancho - GRAF.mr - 4, e.y(valor) + desplaza, texto, 'end');
+    };
+    const referencias = lineaRef(avance, 'pc-g-umbral', 'Hora de reponer: menos de ' + Math.round(avance) + ' días', 14) +
+        lineaRef(objetivo, 'pc-g-objetivo', 'Tu objetivo: ' + Math.round(objetivo) + ' días', -14);
+
+    graficosActivos[idG] = {
+        ancho: ancho, dias: dias, ml: GRAF.ml, w: e.w, hoy: hoy,
+        filas: function (dia) {
+            const filas = enColor.map(function (s) {
+                return { clave: s.it.title, valor: Math.round(s.proy.puntos[dia].cobertura) + ' días', slot: slots[s.clave], color: true, orden: s.proy.puntos[dia].cobertura };
+            }).sort(function (a, b) { return a.orden - b.orden; });
+            if (grises.length) filas.push({ clave: '+ ' + grises.length + (grises.length === 1 ? ' producto en gris' : ' productos en gris') + ' (pasá el mouse por la línea)', valor: '', slot: null, color: false });
+            return filas;
+        }
+    };
+
+    const svg = '<svg class="pc-graf pc-graf-ancho" viewBox="0 0 ' + ancho + ' ' + alto + '" role="img" aria-label="Días de venta que le quedan a cada producto de la colecta">' +
+        e.ticks + ejeYGrafico(e, ymax, '', 'Días de venta que le quedan') + referencias + colectasMarcas + lineas + pildoras + capaCruz(e, idG) + '</svg>';
+
+    const chips = series.slice().sort(function (a, b) { return urgenciaSerie(a) - urgenciaSerie(b); }).map(function (s) {
+        const slot = slots[s.clave];
+        const clase = slot === undefined ? 'pc-chip pc-chip-gris' : 'pc-chip ' + claseSerie(slot);
+        return '<button type="button" class="' + clase + '" data-k="' + escapeHtml(s.clave) + '" onclick="alternarSerie(' + Number(c.id) + ', this.dataset.k)" ' +
+            'onmouseenter="resaltarSerie(' + Number(c.id) + ', this.dataset.k)" onmouseleave="resaltarSerie(' + Number(c.id) + ', null)" ' +
+            'title="' + escapeHtml(textoReponer(s.proy, hoy) + (slot === undefined ? ' · Tocá para resaltarlo' : ' · Tocá para sacarle el color')) + '"><span class="pc-chip-punto"></span>' + escapeHtml(s.it.title) + '</button>';
+    }).join('');
+
+    const rangos = [14, 28, 42].map(function (d) {
+        return '<button type="button" class="pc-tab' + (d === dias ? ' pc-tab-activo' : '') + '" onclick="cambiarRangoProyeccion(' + Number(c.id) + ', ' + d + ')">' + (d / 7) + ' semanas</button>';
+    }).join('');
+    const cuando = series.filter(function (s) { return s.proy.reponerDia !== null; })
+        .sort(function (a, b) { return a.proy.reponerDia - b.proy.reponerDia; }).slice(0, 5)
+        .map(function (s) {
+            const slot = slots[s.clave];
+            return '<button type="button" class="pc-chip-mini ' + (slot === undefined ? 'pc-s-gris' : claseSerie(slot)) + '" data-sku="' + escapeHtml(s.sku) + '" onclick="abrirDetalleProducto(' + Number(c.id) + ', this.dataset.sku)" title="Tocá para ver el detalle"><span class="pc-chip-punto"></span>' + escapeHtml(s.it.title) + ': ' + escapeHtml(textoReponer(s.proy, hoy)) + '</button>';
+        }).join('');
+
+    const vistaTabla = !!estado.tabla;
+    return '<div class="pc-zoom"><span class="pc-fila-nota">Acercar:</span>' + rangos +
+        '<button type="button" class="pc-tab" onclick="restablecerResaltados(' + Number(c.id) + ')">Los 5 más urgentes</button>' +
+        '<button type="button" class="pc-tab" onclick="quitarResaltados(' + Number(c.id) + ')">Sin colores</button>' +
+        '<button type="button" class="pc-tab' + (vistaTabla ? ' pc-tab-activo' : '') + '" onclick="alternarTabla(' + Number(c.id) + ')">' + (vistaTabla ? 'Ver gráfico' : 'Ver como tabla') + '</button></div>' +
+        (vistaTabla ? htmlTablaProyeccion(series, hoy, slots)
+            : '<div class="pc-chips">' + chips + '</div>' + envolverGrafico(idG, svg)) +
+        '<div class="pc-fila-nota pc-graf-pie">Cada línea es un producto: cuántos días de venta le quedan. Resaltamos en color los 5 que antes hay que reponer; el resto va en gris. ' +
+        'Tocá un producto de arriba para sumarle o sacarle el color, y pasá el mouse por el gráfico para ver los valores de cada día. ' +
+        'La raya vertical es el día en que una colecta queda en venta; la franja gris antes es lo que tarda Mercado Libre en dejarla en venta.</div>' +
+        (cuando ? '<div class="pc-imp-cabecera" style="margin-top:8px;">Cuándo reponer (los primeros)</div><div class="pc-chips">' + cuando + '</div>' : '');
+}
+
+// La misma información que el gráfico, en números (para leerla sin depender del color).
+function htmlTablaProyeccion(series, hoy, slots) {
+    const fila = function (s) {
+        const dias = function (d) { return Math.round(s.proy.puntos[d].cobertura) + ' d'; };
+        const slot = slots ? slots[s.clave] : undefined;
+        return '<tr><td><span class="pc-chip-punto ' + (slot === undefined ? 'pc-s-gris' : claseSerie(slot)) + '"></span> ' + escapeHtml(s.it.title) + '</td>' +
+            '<td class="pc-num">' + dias(0) + '</td><td class="pc-num">' + dias(Math.min(14, DIAS_PROYECCION)) + '</td><td class="pc-num">' + dias(Math.min(28, DIAS_PROYECCION)) + '</td>' +
+            '<td class="pc-num">' + dias(DIAS_PROYECCION) + '</td><td>' + escapeHtml(s.proy.reponerDia === null ? 'No hace falta' : fechaDeProyeccion(s.proy.reponerDia, hoy)) + '</td>' +
+            '<td>' + escapeHtml(s.proy.quiebreDia === null ? '-' : fechaDeProyeccion(s.proy.quiebreDia, hoy)) + '</td></tr>';
+    };
+    return '<table class="pc-table pc-tabla-proy"><thead><tr><th>Producto</th><th class="pc-num">Hoy</th><th class="pc-num">En 2 semanas</th><th class="pc-num">En 4 semanas</th><th class="pc-num">En 6 semanas</th><th>Reponer antes del</th><th>Sin stock el</th></tr></thead><tbody>' +
+        series.slice().sort(function (a, b) { return urgenciaSerie(a) - urgenciaSerie(b); }).map(fila).join('') + '</tbody></table>' +
+        '<div class="pc-fila-nota">Días de venta que le quedan a cada producto (d = días), contando lo que ya viaja en las colectas.</div>';
+}
+
+// ── Detalle de un producto (ventana) ──────────────────────────────────────────────
 // Los números detrás del gráfico, en palabras: qué se vende, qué hay, qué viene y cuándo reponer.
 function htmlDatosProducto(it, proy, colectas, hoy, demora) {
     const dec = function (n) { return (Math.round(n * 10) / 10).toLocaleString('es-AR'); };
@@ -1296,9 +1514,9 @@ function htmlDatosProducto(it, proy, colectas, hoy, demora) {
         '<div class="pc-imp-cabecera">Qué le entra</div><ul class="pc-lista-datos">' + llegadas + '</ul>' +
         '<div class="pc-imp-cabecera">Qué hacer</div><div class="' + (proy.reponerDia !== null && proy.reponerDia <= 7 ? 'pc-cmp-aviso' : 'pc-fila-nota') + '">' + escapeHtml(textoReponer(proy, hoy)) + '</div>' +
         (riesgo ? '<div class="pc-cmp-aviso">' + escapeHtml(riesgo) + '</div>' : '') +
-        '<div class="pc-fila-nota" style="margin-top:10px;">Cómo leer el gráfico: la línea son las unidades que quedan en Full cada día. Baja lo que vendés y sube cuando una colecta queda en venta. ' +
-        'La raya naranja punteada es el nivel de reposición: cuando la línea baja de ahí, hay que mandar más. El punto naranja es ese día. El punto rojo, el día en que se queda sin stock. ' +
-        'La franja gris es lo que tarda Mercado Libre en dejar en venta lo que recibe.</div>';
+        '<div class="pc-fila-nota" style="margin-top:10px;">Cómo leer el gráfico: la línea son las unidades que quedan en Full cada día. Baja lo que vendés y sube de golpe cuando una colecta queda en venta. ' +
+        'La zona naranja es la de reposición: cuando la línea entra ahí, hay que mandar más. El punto naranja es ese día. El punto rojo, el día en que se queda sin stock. ' +
+        'La franja gris es lo que tarda Mercado Libre en dejar en venta lo que recibe. Pasá el mouse por el gráfico para ver cada día.</div>';
 }
 
 function cerrarDetalleProducto() {
@@ -1323,7 +1541,7 @@ function abrirDetalleProducto(colectaId, sku) {
         '<div class="pc-modal-cab"><div><div class="pc-hero-titulo">' + escapeHtml(it.title) + '</div>' +
         '<div class="pc-hero-sub">Cómo se va agotando en las próximas 6 semanas</div></div>' +
         '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarDetalleProducto()">Cerrar</button></div>' +
-        svgProducto(it, proy, claseColorColecta(c), hoy, DIAS_PROYECCION, true) +
+        svgProducto(it, proy, claseColorColecta(c), hoy, DIAS_PROYECCION, true, 'detalle-' + Number(colectaId)) +
         htmlDatosProducto(it, proy, colectas, hoy, demora) + '</div>';
     document.body.appendChild(modal);
 }
@@ -1334,124 +1552,70 @@ if (typeof document !== 'undefined' && document.addEventListener) {
     });
 }
 
-function htmlProyeccionProductos(c, colectas, hoy, dias, demora) {
-    const filas = (c.productos || []).map(function (p) {
-        const it = buscarItemPorSku(p.sku);
-        const proy = it ? proyeccionProducto(it, colectas, hoy, demora) : null;
-        return { p: p, it: it, proy: proy };
-    });
-    filas.sort(function (a, b) {
-        const ra = a.proy && a.proy.reponerDia !== null ? a.proy.reponerDia : 999;
-        const rb = b.proy && b.proy.reponerDia !== null ? b.proy.reponerDia : 999;
-        const sa = a.proy && a.proy.sinStockAntes ? 0 : 1, sb = b.proy && b.proy.sinStockAntes ? 0 : 1;
-        return sa - sb || ra - rb;
-    });
-    const leyenda = '<div class="pc-fila-nota pc-graf-leyenda">Línea: unidades en Full día a día. Raya naranja punteada: nivel de reposición. Punto naranja: día de reponer. Punto rojo: se queda sin stock. ' +
-        'Raya vertical: queda en venta una colecta (franja gris: lo que tarda ML en dejarla en venta).</div>';
-    return leyenda + '<div class="pc-graf-grilla">' + filas.map(function (f) {
-        const titulo = f.it ? f.it.title : f.p.titulo;
-        const cuerpo = f.proy ? svgProducto(f.it, f.proy, claseColorColecta(c), hoy, dias) : '';
-        const clase = f.proy && f.proy.reponerDia !== null && f.proy.reponerDia <= 7 ? 'pc-cmp-aviso' : 'pc-fila-nota';
-        const abre = f.proy ? ' data-sku="' + escapeHtml(f.p.sku) + '" onclick="abrirDetalleProducto(' + Number(c.id) + ', this.dataset.sku)" title="Tocá para agrandar" role="button" tabindex="0"' : '';
-        return '<div class="pc-graf-item' + (f.proy ? ' pc-graf-click' : '') + '"' + abre + '><div class="pc-graf-titulo">' + escapeHtml(titulo) + '</div>' + cuerpo +
-            '<div class="' + clase + '">' + escapeHtml(textoReponer(f.proy, hoy)) + '</div>' +
-            (textoRiesgoStock(f.proy, hoy) ? '<div class="pc-cmp-aviso">' + escapeHtml(textoRiesgoStock(f.proy, hoy)) + '</div>' : '') +
-            (f.proy ? '<div class="pc-graf-agrandar">Tocá para agrandar y ver el detalle</div>' : '') + '</div>';
-    }).join('') + '</div>';
+// ── Cruz y cartelito al pasar el mouse ────────────────────────────────────────────
+// La cruz se pega al día más cercano; el cartelito lista el valor de cada producto en ese día.
+// Los nombres vienen de afuera: van con textContent, nunca con innerHTML.
+function diaBajoElMouse(ev, g) {
+    const svg = ev.currentTarget.ownerSVGElement;
+    const caja = svg.getBoundingClientRect();
+    const px = (ev.clientX - caja.left) * (g.ancho / caja.width);
+    return Math.max(0, Math.min(g.dias, Math.round(((px - g.ml) / g.w) * g.dias)));
 }
 
-// Todos los productos de la colecta en un mismo gráfico: días de venta que le quedan a cada uno, así se pueden comparar.
-// Cada producto tiene su color y su botón en la leyenda; el botón lo muestra u oculta.
-function htmlTodosJuntos(c, colectas, hoy, dias, demora, ocultos) {
-    ocultos = ocultos || {};
-    const series = [];
-    (c.productos || []).forEach(function (p) {
-        const it = buscarItemPorSku(p.sku);
-        const proy = it ? proyeccionProducto(it, colectas, hoy, demora) : null;
-        if (proy) series.push({ it: it, proy: proy, idx: series.length });
+function moverCruz(ev, id) {
+    const g = graficosActivos[id];
+    const cont = document.getElementById('pc-chart-' + id);
+    if (!g || !cont) return;
+    const dia = diaBajoElMouse(ev, g);
+    const svg = ev.currentTarget.ownerSVGElement;
+    const cruz = svg.querySelector('.pc-g-cruz');
+    const x = g.ml + (dia / g.dias) * g.w;
+    cruz.setAttribute('x1', x); cruz.setAttribute('x2', x); cruz.style.display = '';
+    const tip = cont.querySelector('.pc-g-tip');
+    tip.textContent = '';
+    const cab = document.createElement('div');
+    cab.className = 'pc-g-tip-fecha';
+    cab.textContent = fechaDeProyeccion(dia, g.hoy);
+    tip.appendChild(cab);
+    g.filas(dia).forEach(function (f) {
+        const fila = document.createElement('div');
+        fila.className = 'pc-g-tip-fila';
+        if (f.color) {
+            const llave = document.createElement('span');
+            llave.className = 'pc-g-tip-llave' + (f.slot === null || f.slot === undefined ? '' : ' ' + claseSerie(f.slot));
+            fila.appendChild(llave);
+        }
+        const valor = document.createElement('b');
+        valor.textContent = f.valor;
+        const nombre = document.createElement('span');
+        nombre.textContent = f.clave;
+        if (f.valor) fila.appendChild(valor);
+        fila.appendChild(nombre);
+        tip.appendChild(fila);
     });
-    if (!series.length) return '<div class="pc-fila-nota">No tengo ventas de estos productos para proyectar.</div>';
-    const visibles = series.filter(function (s) { return !ocultos[s.idx]; });
-    const avance = Math.max.apply(null, series.map(function (s) { return s.proy.avance; }));
-    const objetivo = Math.max.apply(null, series.map(function (s) { return Number(s.it.target_stock_days) || 0; }));
-    const maxVisible = visibles.length
-        ? Math.max.apply(null, visibles.map(function (s) { return Math.max.apply(null, s.proy.puntos.filter(function (p) { return p.dia <= dias; }).map(function (p) { return p.cobertura; })); }))
-        : 0;
-    const tope = Math.max(objetivo * 3, 60);
-    const ymax = Math.min(Math.max(maxVisible * 1.08, objetivo * 1.3, avance * 1.5, 10), tope);
-    const ancho = 680, alto = 260;
-    const e = ejesGrafico(ancho, alto, ymax, hoy, dias);
-    const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-
-    // Ejes: días de venta que le quedan a cada producto
-    const pasoY = pasoDeEje(ymax, 5);
-    let ejeY = '';
-    for (let v = 0; v <= ymax; v += pasoY) {
-        ejeY += '<line class="pc-g-rejilla" x1="' + GRAF.ml + '" y1="' + e.y(v).toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + e.y(v).toFixed(1) + '"/>' +
-            '<text class="pc-g-txt" x="' + (GRAF.ml - 4) + '" y="' + (e.y(v) + 3).toFixed(1) + '" text-anchor="end">' + escapeHtml(v) + '</text>';
-    }
-    ejeY += '<text class="pc-g-txt" transform="translate(10 ' + (GRAF.mt + e.h / 2).toFixed(1) + ') rotate(-90)" text-anchor="middle">Días de venta que le quedan</text>';
-
-    // Una raya por cada colecta que entra (la de esta tarjeta, marcada; las demás, de contexto)
-    let colectasMarcas = '';
-    let fila = 0;
-    (colectas || []).forEach(function (col) {
-        const ingresoDia = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(col.fecha_ingreso)));
-        const dia = ingresoDia + demora;
-        if (dia > dias) return;
-        const propia = Number(col.id) === Number(c.id);
-        colectasMarcas += marcaColectaGrafico(e, dia, ingresoDia, propia ? 'pc-g-propia' : '',
-            'Colecta ' + numeroCorto(col.codigo) + ' en venta el ' + fechaDeProyeccion(dia, hoy), fila++);
-    });
-
-    const lineas = series.filter(function (s) { return !ocultos[s.idx]; }).map(function (s) {
-        const pts = s.proy.puntos.filter(function (p) { return p.dia <= dias; })
-            .map(function (p) { return e.x(p.dia).toFixed(1) + ',' + e.y(p.cobertura).toFixed(1); }).join(' ');
-        const a = 'data-i="' + s.idx + '" onmouseenter="resaltarSerie(' + Number(c.id) + ', ' + s.idx + ')" onmouseleave="resaltarSerie(' + Number(c.id) + ', -1)"';
-        return '<polyline class="pc-g-hit" points="' + pts + '" ' + a + '><title>' + escapeHtml(s.it.title) + '</title></polyline>' +
-            '<polyline class="pc-g-serie ' + claseSerie(s.idx) + '" points="' + pts + '" data-i="' + s.idx + '"/>';
-    }).join('');
-
-    const chips = series.map(function (s) {
-        const off = ocultos[s.idx] ? ' pc-chip-off' : '';
-        return '<button type="button" class="pc-chip ' + claseSerie(s.idx) + off + '" onclick="alternarSerie(' + Number(c.id) + ', ' + s.idx + ')" ' +
-            'onmouseenter="resaltarSerie(' + Number(c.id) + ', ' + s.idx + ')" onmouseleave="resaltarSerie(' + Number(c.id) + ', -1)" ' +
-            'title="' + escapeHtml(textoReponer(s.proy, hoy)) + '"><span class="pc-chip-punto"></span>' + escapeHtml(s.it.title) + '</button>';
-    }).join('');
-
-    const svg = '<svg class="pc-graf pc-graf-ancho" viewBox="0 0 ' + ancho + ' ' + alto + '" role="img" aria-label="Días de venta que le quedan a cada producto de la colecta">' +
-        e.ticks + ejeY +
-        '<line class="pc-g-umbral" x1="' + GRAF.ml + '" y1="' + e.y(avance).toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + e.y(avance).toFixed(1) + '"/>' +
-        '<text class="pc-g-txt" x="' + (ancho - GRAF.mr - 2) + '" y="' + (e.y(avance) - 3).toFixed(1) + '" text-anchor="end">Hora de reponer: menos de ' + escapeHtml(Math.round(avance)) + ' días</text>' +
-        '<line class="pc-g-objetivo" x1="' + GRAF.ml + '" y1="' + e.y(objetivo).toFixed(1) + '" x2="' + (ancho - GRAF.mr) + '" y2="' + e.y(objetivo).toFixed(1) + '"/>' +
-        '<text class="pc-g-txt" x="' + (ancho - GRAF.mr - 2) + '" y="' + (e.y(objetivo) - 3).toFixed(1) + '" text-anchor="end">Tu objetivo: ' + escapeHtml(Math.round(objetivo)) + ' días</text>' +
-        colectasMarcas + lineas + '</svg>';
-
-    const lista = series.filter(function (s) { return s.proy.reponerDia !== null; })
-        .sort(function (a, b) { return a.proy.reponerDia - b.proy.reponerDia; }).slice(0, 5)
-        .map(function (s) {
-            const sku = (c.productos || []).map(function (p) { return p.sku; }).find(function (k) { return normalizarSkuPanel(k) === normalizarSkuPanel(s.it.sku); }) || s.it.sku;
-            return '<button type="button" class="pc-chip-mini ' + claseSerie(s.idx) + '" data-sku="' + escapeHtml(sku) + '" onclick="abrirDetalleProducto(' + Number(c.id) + ', this.dataset.sku)" title="Tocá para ver el detalle"><span class="pc-chip-punto"></span>' + escapeHtml(s.it.title) + ': ' + escapeHtml(textoReponer(s.proy, hoy)) + '</button>';
-        }).join('');
-    const rangos = [14, 28, 42].map(function (d) {
-        return '<button type="button" class="pc-tab' + (d === dias ? ' pc-tab-activo' : '') + '" onclick="cambiarRangoProyeccion(' + Number(c.id) + ', ' + d + ')">' + (d / 7) + ' semanas</button>';
-    }).join('');
-    return '<div class="pc-zoom"><span class="pc-fila-nota">Acercar:</span>' + rangos +
-        '<button type="button" class="pc-tab" onclick="mostrarSeries(' + Number(c.id) + ', true)">Mostrar todos</button>' +
-        '<button type="button" class="pc-tab" onclick="mostrarSeries(' + Number(c.id) + ', false)">Ocultar todos</button></div>' +
-        '<div class="pc-chips">' + chips + '</div>' + svg +
-        '<div class="pc-fila-nota">Cada línea es un producto (mismo color que su botón): cuántos días de venta le quedan. Pasá el mouse por una línea o un botón para resaltarlo; ' +
-        'tocá un botón para ocultarlo o mostrarlo. La raya vertical es el día en que la colecta queda en venta; la franja gris antes de ella es lo que tarda Mercado Libre en dejarla en venta.</div>' +
-        (lista ? '<div class="pc-imp-cabecera" style="margin-top:8px;">Cuándo reponer (los primeros)</div><div class="pc-chips">' + lista + '</div>' : '') +
-        '';
+    tip.style.display = 'block';
+    const caja = svg.getBoundingClientRect();
+    const izq = (x / g.ancho) * caja.width;
+    tip.style.left = (izq > caja.width * 0.6 ? izq - tip.offsetWidth - 12 : izq + 12) + 'px';
+    tip.style.top = '8px';
 }
 
+function ocultarCruz(id) {
+    const cont = document.getElementById('pc-chart-' + id);
+    if (!cont) return;
+    const cruz = cont.querySelector('.pc-g-cruz');
+    if (cruz) cruz.style.display = 'none';
+    const tip = cont.querySelector('.pc-g-tip');
+    if (tip) tip.style.display = 'none';
+}
+
+// ── Estado de cada tarjeta (el panel se redibuja solo: hay que recordar qué estaba abierto y cómo) ──
 function htmlProyeccionColecta(c, hoy) {
     hoy = hoy || new Date();
     const colectas = colectasEfectivas();
     const ef = colectas.find(x => Number(x.id) === Number(c.id)) || c;
     if (!(ef.productos || []).length) return '';
-    const estado = Object.assign({ abierta: false, vista: 'juntos', rango: DIAS_PROYECCION, ocultos: {} }, estadoProyeccion[c.id]);
+    const estado = Object.assign({ abierta: false, vista: 'juntos', rango: DIAS_PROYECCION }, estadoProyeccion[c.id]);
     const demora = demoraAcreditacionDias();
     return `<details class="pc-detalle"${estado.abierta ? ' open' : ''} ontoggle="recordarProyeccion(${Number(c.id)}, this.open)"><summary>Ver cómo se van agotando los productos</summary>
         <div class="pc-proy" id="pc-proy-${Number(c.id)}" data-vista="${escapeHtml(estado.vista)}">
@@ -1461,11 +1625,11 @@ function htmlProyeccionColecta(c, hoy) {
                 <label class="pc-demora">Mercado Libre tarda <input type="number" min="0" max="14" value="${demora}" onchange="guardarDemoraAcreditacion(this.value)"> días en dejar en venta lo que recibe</label>
             </div>
             <div class="pc-proy-productos">${htmlProyeccionProductos(ef, colectas, hoy, estado.rango, demora)}</div>
-            <div class="pc-proy-juntos">${htmlTodosJuntos(ef, colectas, hoy, estado.rango, demora, estado.ocultos)}</div>
+            <div class="pc-proy-juntos">${htmlTodosJuntos(ef, colectas, hoy, estado.rango, demora, estado)}</div>
         </div></details>`;
 }
 
-let estadoProyeccion = {};   // id de colecta -> { abierta, vista, rango, ocultos }
+let estadoProyeccion = {};   // id de colecta -> { abierta, vista, rango, slots, tabla }
 
 function recordarProyeccion(id, abierta) {
     estadoProyeccion[id] = Object.assign({ vista: 'juntos' }, estadoProyeccion[id], { abierta: abierta });
@@ -1482,30 +1646,55 @@ function cambiarRangoProyeccion(id, dias) {
     renderizarPanelColecta();
 }
 
-function alternarSerie(id, idx) {
-    const est = Object.assign({ abierta: true, vista: 'juntos', ocultos: {} }, estadoProyeccion[id]);
-    const ocultos = Object.assign({}, est.ocultos);
-    if (ocultos[idx]) delete ocultos[idx]; else ocultos[idx] = true;
-    estadoProyeccion[id] = Object.assign(est, { ocultos: ocultos, vista: 'juntos' });
+function alternarTabla(id) {
+    const est = Object.assign({ abierta: true, vista: 'juntos' }, estadoProyeccion[id]);
+    estadoProyeccion[id] = Object.assign(est, { tabla: !est.tabla });
     renderizarPanelColecta();
 }
 
-function mostrarSeries(id, todas) {
-    const c = (colectasData || []).find(x => Number(x.id) === Number(id));
-    const ocultos = {};
-    if (!todas && c) (c.productos || []).forEach(function (p, i) { ocultos[i] = true; });
-    estadoProyeccion[id] = Object.assign({ abierta: true }, estadoProyeccion[id], { ocultos: ocultos, vista: 'juntos' });
+// Resaltar o sacar el color a un producto. Cada uno conserva su color mientras siga resaltado.
+function alternarSerie(id, clave) {
+    const c = colectasEfectivas().find(x => Number(x.id) === Number(id));
+    if (!c) return;
+    const series = seriesDeColecta(c, colectasEfectivas(), new Date(), demoraAcreditacionDias());
+    const est = Object.assign({ abierta: true, vista: 'juntos' }, estadoProyeccion[id]);
+    const slots = Object.assign({}, est.slots || resaltadosPorDefecto(series));
+    if (slots[clave] !== undefined) {
+        delete slots[clave];
+    } else {
+        const usados = Object.keys(slots).map(function (k) { return slots[k]; });
+        let libre = -1;
+        for (let i = 0; i < SLOTS_SERIE; i++) if (usados.indexOf(i) < 0) { libre = i; break; }
+        if (libre < 0) {
+            if (typeof showToast === 'function') showToast('Podés resaltar hasta ' + SLOTS_SERIE + ' productos a la vez. Sacale el color a uno primero.', 'info');
+            return;
+        }
+        slots[clave] = libre;
+    }
+    estadoProyeccion[id] = Object.assign(est, { slots: slots, vista: 'juntos', tabla: false });
+    renderizarPanelColecta();
+}
+
+function restablecerResaltados(id) {
+    const est = Object.assign({ abierta: true }, estadoProyeccion[id]);
+    delete est.slots;
+    estadoProyeccion[id] = Object.assign(est, { vista: 'juntos', tabla: false });
+    renderizarPanelColecta();
+}
+
+function quitarResaltados(id) {
+    estadoProyeccion[id] = Object.assign({ abierta: true }, estadoProyeccion[id], { slots: {}, vista: 'juntos', tabla: false });
     renderizarPanelColecta();
 }
 
 // Al pasar el mouse por una línea o un botón: se resalta ese producto y se apagan los demás.
-function resaltarSerie(id, idx) {
+function resaltarSerie(id, clave) {
     const raiz = document.getElementById('pc-proy-' + id);
     if (!raiz) return;
     raiz.querySelectorAll('.pc-g-serie').forEach(function (l) {
-        const propia = idx < 0 || Number(l.getAttribute('data-i')) === idx;
-        l.style.opacity = propia ? '' : '0.12';
-        l.style.strokeWidth = (idx >= 0 && propia) ? '3' : '';
+        const propia = clave === null || clave === undefined || l.getAttribute('data-k') === clave;
+        l.style.opacity = propia ? '' : '0.15';
+        l.style.strokeWidth = (clave !== null && clave !== undefined && propia) ? '3.2' : '';
     });
 }
 
