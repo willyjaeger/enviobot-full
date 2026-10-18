@@ -633,7 +633,7 @@ function etiquetaStockSuficiente(it) {
     const dias = diasStockReales(it);
     const excede = dias === null || dias > UMBRAL_EXCEDENTE_ML_DIAS;
     const txt = dias === null ? 'Stock estimado: sin ventas en los últimos 30 días.' : 'Stock estimado para ' + Math.round(dias).toLocaleString('es-AR') + ' días.';
-    const aviso = 'Atención: supera los ' + UMBRAL_EXCEDENTE_ML_DIAS + ' días de almacenamiento. EnvioBot estima que Mercado Libre podría cobrarte por stock excedente.';
+    const aviso = 'Atención: supera los ' + UMBRAL_EXCEDENTE_ML_DIAS + ' días de almacenamiento. Mercado Libre no lo informa explícitamente por API, pero podría generarte cargos por exceso de stock almacenado.';
     return '<span class="pc-stock-suf">' +
         '<span class="pc-alerta-exc"' + (excede ? ' title="' + escapeHtml(aviso) + '"' : ' aria-hidden="true"') + '>' + (excede ? iconoSvg('alerta', 14).replace('margin-right: 4px;', '') : '') + '</span>' +
         '<span title="' + escapeHtml(txt) + '">Stock suficiente</span></span>';

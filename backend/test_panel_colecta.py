@@ -132,7 +132,7 @@ class TestPanelJS(unittest.TestCase):
         self.assertNotIn('400 días', chico)
         mucho = fila(current_stock=300, vpd=1, ventas_30d=30)     # 300 días de venta
         self.assertIn('title="Stock estimado para 300 días."', mucho)
-        self.assertIn('title="Atención: supera los 60 días de almacenamiento. EnvioBot estima que Mercado Libre podría cobrarte por stock excedente."', mucho)
+        self.assertIn('title="Atención: supera los 60 días de almacenamiento. Mercado Libre no lo informa explícitamente por API, pero podría generarte cargos por exceso de stock almacenado."', mucho)
         sano = fila(current_stock=30, vpd=1, ventas_30d=30)      # 30 días: sin alerta
         self.assertIn('title="Stock estimado para 30 días."', sano)
         sin_ventas = fila(current_stock=5, vpd=0, ventas_30d=0)
