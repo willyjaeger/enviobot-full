@@ -2204,19 +2204,13 @@ def trigger_alerts_now():
 @app.route("/api/full/avisos", methods=["GET"])
 @jwt_required()
 def listar_avisos():
-    """Ventana de Avisos: cambios notorios en el ritmo de venta detectados por cambio_tasa.py (últimos 30 días)."""
+    """Ventana de Avisos (cambio_tasa.py): la última semana, más los avisos que siguen abiertos."""
     import cambio_tasa
     user_id = int(get_jwt_identity())
     conn = get_db()
     try:
         account_id = get_account_user_id(user_id, conn)
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT item_id, message, sent_at FROM alert_logs
-                WHERE user_id=%s AND alert_type=%s AND channel='panel' AND sent_at >= %s
-                ORDER BY sent_at DESC LIMIT 100
-            """, (account_id, cambio_tasa.TIPO_ALERTA, datetime.utcnow() - timedelta(days=30)))
-            filas = cur.fetchall()
+        filas = cambio_tasa.avisos_visibles(conn, account_id)
     finally:
         conn.close()
     avisos = []

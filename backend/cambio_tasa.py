@@ -47,6 +47,7 @@ UMBRAL_SUBA = 0.50        # la venta por día sube 50 % o más (y además tiene 
 MIN_UNIDADES = 5          # menos que esto en una semana es ruido, no tendencia
 REPETIR_DIAS = 60         # cuánto tiempo se sigue un aviso: mientras siga abierto no se repite ni en el panel ni por WhatsApp
 MAX_PRODUCTOS_WA = 8
+VISIBLE_DIAS = 7          # la ventana de Avisos muestra la última semana; lo cerrado más viejo se borra
 ESPERA_MAX_DIAS = 5       # un aviso que no pudo salir en 5 días (fin de semana largo incluido) ya es viejo
 
 
@@ -331,9 +332,39 @@ def _activos(filas):
     return abiertos
 
 
+def avisos_visibles(conn, user_id):
+    """Lo que muestra la ventana de Avisos, lo más nuevo primero: los últimos VISIBLE_DIAS días, más los
+    avisos que siguen abiertos aunque sean más viejos (son un problema que todavía existe)."""
+    filas = _filas_panel(conn, user_id)
+    abiertos = {f["id"] for f in _activos(filas).values()}
+    limite = datetime.utcnow() - timedelta(days=VISIBLE_DIAS)
+    return [f for f in reversed(filas) if f["id"] in abiertos or f["sent_at"] >= limite]
+
+
+def limpiar(conn, user_id):
+    """Borra los avisos viejos: más de VISIBLE_DIAS días y ya cerrados (revertidos o reemplazados).
+    Los que siguen abiertos se conservan, porque con ellos se sabe que ya se avisó y no se repite.
+    Los registros de WhatsApp se borran pasado el período de seguimiento."""
+    filas = _filas_panel(conn, user_id)
+    abiertos = {f["id"] for f in _activos(filas).values()}
+    limite = datetime.utcnow() - timedelta(days=VISIBLE_DIAS)
+    viejos = [f["id"] for f in filas if f["id"] not in abiertos and f["sent_at"] < limite]
+    with conn.cursor() as cur:
+        if viejos:
+            cur.execute("DELETE FROM alert_logs WHERE user_id=%s AND id IN (" + ",".join(["%s"] * len(viejos)) + ")",
+                        [user_id] + viejos)
+        cur.execute("DELETE FROM alert_logs WHERE user_id=%s AND alert_type=%s AND sent_at < %s",
+                    (user_id, TIPO_ALERTA, datetime.utcnow() - timedelta(days=REPETIR_DIAS + 1)))
+    return len(viejos)
+
+
 def procesar_usuario(conn, user_id, ahora=None):
     ahora = ahora or datetime.now(proyeccion.HORA_BA)
     res = {"user_id": user_id, "detectados": 0, "avisos_panel": 0, "revertidos": 0, "mensajes_whatsapp": 0}
+    try:
+        limpiar(conn, user_id)
+    except Exception as e:  # limpiar es secundario: no debe frenar los avisos
+        logger.warning(f"[Cambio de ritmo] user_id={user_id}: no se pudieron borrar avisos viejos: {e}")
     cambios, medibles = detectar(conn, user_id)
     res["detectados"] = len(cambios)
     actuales = {_clave(c): c for c in cambios}

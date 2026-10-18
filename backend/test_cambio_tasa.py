@@ -121,5 +121,53 @@ class TestTextos(unittest.TestCase):
         self.assertIsNone(c.texto_panel("no es json"))
 
 
+class _Cur:
+    def __init__(self, filas):
+        self.filas, self.borrados = filas, []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=()):
+        self.sql = sql
+        if sql.strip().startswith("DELETE") and "id IN" in sql:
+            self.borrados += list(params[1:])
+
+    def fetchall(self):
+        return self.filas
+
+
+class _Conn:
+    def __init__(self, filas):
+        self.cur = _Cur(filas)
+
+    def cursor(self):
+        return self.cur
+
+
+class TestLimpieza(unittest.TestCase):
+    def setUp(self):
+        from datetime import datetime, timedelta
+        ahora = datetime.utcnow()
+        f = lambda i, k, dias: {"id": i, "item_id": k, "message": "{}", "sent_at": ahora - timedelta(days=dias)}
+        self.filas = [
+            f(1, "g1:suba", 20), f(2, "g1:rev-suba", 15),   # cerrado y viejo: se borra
+            f(3, "g2:suba", 20),                              # sigue abierto aunque es viejo: se conserva
+            f(4, "g3:suba", 3), f(5, "g3:rev-suba", 2),      # cerrado pero reciente: se ve y se conserva
+        ]
+
+    def test_se_borra_solo_lo_cerrado_y_viejo(self):
+        conn = _Conn(self.filas)
+        self.assertEqual(c.limpiar(conn, 1), 2)
+        self.assertEqual(sorted(conn.cur.borrados), [1, 2])
+
+    def test_la_ventana_muestra_la_ultima_semana_y_lo_que_sigue_abierto(self):
+        ids = [f["id"] for f in c.avisos_visibles(_Conn(self.filas), 1)]
+        self.assertEqual(ids, [5, 4, 3])  # lo más nuevo primero
+
+
 if __name__ == "__main__":
     unittest.main()
