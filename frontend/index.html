@@ -46,7 +46,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261018_5">
+    <link rel="stylesheet" href="css/style.css?v=20261018_6">
 </head>
 <body>
 
@@ -281,9 +281,12 @@
 
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
                         <h2 style="margin: 0;">Todos tus productos</h2>
+                        <span class="contador-listado" id="contadorListado"></span>
                     </div>
 
                     <div class="resumen-publicaciones" id="resumenPublicaciones" aria-label="Resumen de publicaciones en Full"></div>
+
+                    <div class="filtros-listado" id="filtrosListado"></div>
 
                     <!-- Filtros -->
                     <div class="filter-bar">
@@ -294,6 +297,7 @@
                         <select class="filter-select" id="filterStatusSelect" onchange="onFilterChange(this.value)">
                             <option value="all">Todos los estados</option>
                             <option value="action_required">Requieren Colecta Hoy</option>
+                            <option value="in_process">En camino o preparación</option>
                             <option value="in_preparation">En preparación</option>
                             <option value="in_transit">En tránsito</option>
                             <option value="in_reception">En recepción</option>
@@ -1855,6 +1859,6 @@
     <script src="js/teclado-formularios.js?v=20261017_2"></script>
     <script src="js/theme.js?v=20261013_4"></script>
     <script src="js/notifications.js?v=20261013_4"></script>
-    <script src="js/app.js?v=20261018_5"></script>
+    <script src="js/app.js?v=20261018_6"></script>
 </body>
 </html>

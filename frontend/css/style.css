@@ -1888,3 +1888,12 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .badge-pausada { background: transparent; color: var(--text2); border: 1px dashed var(--text2); white-space: nowrap; }
 .fila-pausada { opacity: 0.6; }
 .tag-pausada { font-size: 10.5px; font-weight: 700; color: var(--text2); border: 1px dashed var(--text2); border-radius: 4px; padding: 0 4px; }
+
+.contador-listado { font-size: 13px; color: var(--text2); }
+.contador-listado a { color: var(--accent); font-weight: 600; }
+.filtros-listado { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.chip-filtro { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 16px; padding: 4px 12px; font-size: 13px; cursor: pointer; }
+.chip-filtro b { margin-left: 4px; }
+.chip-filtro:hover { border-color: var(--text2); }
+.chip-filtro-activo { border-color: var(--text); font-weight: 700; }
+.stock-table tbody tr { cursor: pointer; }

@@ -601,6 +601,26 @@ process.stdout.write(creado ? creado.innerHTML : '');
                       'Qué le entra', 'Qué hacer', 'Cómo leer el gráfico', 'La franja gris'):
             self.assertIn(frase, html, frase)
 
+    def test_el_grafico_se_abre_desde_el_listado_aunque_no_haya_colecta(self):
+        harness = r"""
+const vm = require('vm');
+let creado = null;
+const doc = { getElementById: () => null, body: { appendChild: el => { creado = el; } },
+              createElement: () => ({ setAttribute() {}, remove() {} }), addEventListener() {} };
+const ctx = { document: doc, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('itemsData = ' + process.argv[2] + '; colectasData = [];', ctx);
+vm.runInContext('abrirGraficoDeProducto(1)', ctx);
+process.stdout.write(creado ? creado.innerHTML : '');
+"""
+        for item, esperado in ((dict(self.ITEM, id=1), 'pc-graf-grande'),
+                               (dict(self.ITEM, id=1, vpd=0), 'no vendió en los últimos 30 días'),
+                               (dict(self.ITEM, id=1, pausado=True), 'Pausada en Mercado Libre')):
+            r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps([item])], capture_output=True, text=True, encoding='utf-8', timeout=30)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn(esperado, r.stdout)
+
     def test_sin_ventas_no_se_proyecta(self):
         item = dict(self.ITEM, vpd=0)
         self.assertIsNone(self._proy('proyeccionProducto(itemsData[0], colectasData, new Date(), 0)', item, []))

@@ -1536,24 +1536,34 @@ function cerrarDetalleProducto() {
 }
 
 function abrirDetalleProducto(colectaId, sku) {
+    const c = colectasEfectivas().find(x => Number(x.id) === Number(colectaId));
+    mostrarGraficoProducto(buscarItemPorSku(sku), c || null);
+}
+
+// Gráfico de un producto desde el listado: no hace falta que esté en una colecta.
+function abrirGraficoDeProducto(id) {
+    mostrarGraficoProducto((itemsData || []).find(x => Number(x.id) === Number(id)) || null, null);
+}
+
+function mostrarGraficoProducto(it, c) {
     const hoy = new Date();
     const demora = demoraAcreditacionDias();
     const colectas = colectasEfectivas();
-    const c = colectas.find(x => Number(x.id) === Number(colectaId));
-    const it = buscarItemPorSku(sku);
-    const proy = it ? proyeccionProducto(it, colectas, hoy, demora) : null;
     cerrarDetalleProducto();
-    if (!c || !it || !proy) return;
+    if (!it) return;
+    const proy = proyeccionProducto(it, colectas, hoy, demora);
     const modal = document.createElement('div');
     modal.id = 'pc-modal-producto';
     modal.className = 'pc-modal-fondo';
     modal.setAttribute('onclick', 'cerrarDetalleProducto()');
-    modal.innerHTML = '<div class="pc-modal-caja" role="dialog" aria-modal="true" onclick="event.stopPropagation()">' +
-        '<div class="pc-modal-cab"><div><div class="pc-hero-titulo">' + escapeHtml(it.title) + '</div>' +
-        '<div class="pc-hero-sub">Cómo se va agotando en las próximas 6 semanas</div></div>' +
-        '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarDetalleProducto()">Cerrar</button></div>' +
-        svgProducto(it, proy, claseColorColecta(c), hoy, DIAS_PROYECCION, true, 'detalle-' + Number(colectaId)) +
-        htmlDatosProducto(it, proy, colectas, hoy, demora) + '</div>';
+    const cabecera = '<div class="pc-modal-cab"><div><div class="pc-hero-titulo">' + escapeHtml(it.title) + '</div>' +
+        '<div class="pc-hero-sub">' + (it.pausado ? 'Pausada en Mercado Libre. ' : '') + (proy ? 'Cómo se va agotando en las próximas 6 semanas' : 'Sin ventas registradas: no puedo proyectar') + '</div></div>' +
+        '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarDetalleProducto()">Cerrar</button></div>';
+    const cuerpo = proy
+        ? svgProducto(it, proy, c ? claseColorColecta(c) : 'pc-c0', hoy, DIAS_PROYECCION, true, 'detalle-' + (c ? Number(c.id) : 'p' + Number(it.id))) +
+          htmlDatosProducto(it, proy, colectas, hoy, demora)
+        : '<div class="pc-vacio">Este producto no vendió en los últimos 30 días, así que no hay curva para dibujar. Hoy tiene ' + escapeHtml(it.current_stock) + ' u. en Full.</div>';
+    modal.innerHTML = '<div class="pc-modal-caja" role="dialog" aria-modal="true" onclick="event.stopPropagation()">' + cabecera + cuerpo + '</div>';
     document.body.appendChild(modal);
 }
 
@@ -2070,6 +2080,33 @@ function renderizarResumenPublicaciones() {
         (pausadosConStock > 0 ? dato(pausadosConStock, 'pausados con stock parado en Full', 'paused') : '');
 }
 
+// Filtros del listado, con cuántos productos hay en cada uno.
+const FILTROS_LISTADO = [
+    { clave: 'all', texto: 'Todos' },
+    { clave: 'action_required', texto: 'Requieren colecta' },
+    { clave: 'in_process', texto: 'En camino o preparación' },
+    { clave: 'ok', texto: 'Stock óptimo' },
+    { clave: 'paused', texto: 'Pausados en ML' }
+];
+
+function pasaFiltroListado(it, filtro) {
+    if (filtro === 'all') return true;
+    if (filtro === 'action_required') return it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock';
+    if (filtro === 'in_process') return it.status === 'in_preparation' || it.status === 'in_transit' || it.status === 'in_reception';
+    if (filtro === 'critical') return !it.pausado && (it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
+    return it.status === filtro;
+}
+
+function renderizarFiltrosListado() {
+    const cont = document.getElementById('filtrosListado');
+    if (!cont) return;
+    cont.innerHTML = FILTROS_LISTADO.map(function (f) {
+        const n = itemsData.filter(it => pasaFiltroListado(it, f.clave)).length;
+        return '<button type="button" class="chip-filtro' + (currentFilter === f.clave ? ' chip-filtro-activo' : '') + '" onclick="onFilterChange(\'' + f.clave + '\')">' +
+            escapeHtml(f.texto) + ' <b>' + n + '</b></button>';
+    }).join('');
+}
+
 function actualizarMetricas() {
     let ok = 0, warn = 0, crit = 0, inProcess = 0, totalUnits = 0;
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
@@ -2353,22 +2390,20 @@ function renderizarTabla() {
     tbody.innerHTML = '';
 
     const filtrados = itemsData.filter(it => {
-        const matchSearch = !currentSearch || 
-            it.title.toLowerCase().includes(currentSearch) || 
+        const matchSearch = !currentSearch ||
+            it.title.toLowerCase().includes(currentSearch) ||
             (it.sku && it.sku.toLowerCase().includes(currentSearch)) ||
             it.item_id.toLowerCase().includes(currentSearch);
-
-        let matchStatus = true;
-        if (currentFilter === 'action_required') {
-            matchStatus = it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock';
-        } else if (currentFilter === 'critical') {
-            matchStatus = !it.pausado && (it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
-        } else if (currentFilter !== 'all') {
-            matchStatus = it.status === currentFilter;
-        }
-
-        return matchSearch && matchStatus;
+        return matchSearch && pasaFiltroListado(it, currentFilter);
     });
+
+    renderizarFiltrosListado();
+    const contador = document.getElementById('contadorListado');
+    if (contador) {
+        contador.innerHTML = filtrados.length === itemsData.length
+            ? 'Mostrando los ' + itemsData.length + ' productos'
+            : 'Mostrando ' + filtrados.length + ' de ' + itemsData.length + ' productos. <a href="#" onclick="event.preventDefault(); verTodosLosProductos();">Ver todos</a>';
+    }
 
     if (filtrados.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--text2);">No hay publicaciones con los filtros seleccionados.</td></tr>';
@@ -2428,6 +2463,7 @@ function renderizarTabla() {
         tr.onclick = (e) => {
             if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'A' && e.target.tagName !== 'BUTTON') {
                 seleccionarProducto(it);
+                abrirGraficoDeProducto(it.id);
             }
         };
 
@@ -2707,8 +2743,17 @@ function onSearchChange(val) {
     renderizarTabla();
 }
 
+function verTodosLosProductos() {
+    currentSearch = '';
+    const buscador = document.getElementById('searchInput');
+    if (buscador) buscador.value = '';
+    onFilterChange('all');
+}
+
 function onFilterChange(val) {
     currentFilter = val;
+    const selector = document.getElementById('filterStatusSelect');
+    if (selector) selector.value = val;
     const cardMap = {
         'all': 'statCardTotal',
         'ok': 'statCardOk',
