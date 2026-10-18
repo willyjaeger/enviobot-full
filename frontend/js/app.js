@@ -391,6 +391,7 @@ function adaptarItemDesdeBackend(raw) {
         vpd: raw.vpd_weighted || 0,
         channels: raw.channels || [],
         pausado: !!raw.pausado,
+        pausa_por_quiebre: !!raw.pausa_por_quiebre,
         ventas_30d: raw.sales_last_30d || 0,
         canales_pausados: raw.canales_pausados || 0,
         account_nickname: raw.account_nickname || "",
@@ -1660,7 +1661,7 @@ function mostrarGraficoProducto(it, c) {
     modal.className = 'pc-modal-fondo';
     modal.setAttribute('onclick', 'cerrarDetalleProducto()');
     const cabecera = '<div class="pc-modal-cab"><div><div class="pc-hero-titulo">' + escapeHtml(it.title) + '</div>' +
-        '<div class="pc-hero-sub">' + (it.pausado ? 'Pausada en Mercado Libre. ' : '') + (proy ? 'Cómo se va agotando en las próximas 6 semanas' : 'Sin ventas registradas: no puedo proyectar') + '</div></div>' +
+        '<div class="pc-hero-sub">' + (it.pausado ? 'Pausada en Mercado Libre. ' : (it.pausa_por_quiebre ? 'Pausada por Mercado Libre al quedarse sin stock. ' : '')) + (proy ? 'Cómo se va agotando en las próximas 6 semanas' : 'Sin ventas registradas: no puedo proyectar') + '</div></div>' +
         '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarDetalleProducto()">Cerrar</button></div>';
     const cuerpo = proy
         ? svgProducto(it, proy, c ? claseColorColecta(c) : 'pc-c0', hoy, DIAS_PROYECCION, true, 'detalle-' + (c ? Number(c.id) : 'p' + Number(it.id))) +

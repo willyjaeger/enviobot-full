@@ -146,6 +146,7 @@ def fetch_full_publications(access_token, meli_user_id):
                             item_id = body.get("id")
                             title = body.get("title", "")
                             status = body.get("status", "active")
+                            sub_status = ",".join(body.get("sub_status") or [])
                             listing_type = body.get("listing_type_id") or "gold_special"
                             is_catalog = bool(body.get("catalog_listing"))
                             thumbnail = body.get("thumbnail")
@@ -196,6 +197,7 @@ def fetch_full_publications(access_token, meli_user_id):
                                         "listing_type_id": listing_type,
                                         "is_catalog": is_catalog,
                                         "status": status,
+                                        "sub_status": sub_status,
                                         "declared_stock": var_declared_stock
                                     })
                             else:
@@ -211,6 +213,7 @@ def fetch_full_publications(access_token, meli_user_id):
                                     "listing_type_id": listing_type,
                                     "is_catalog": is_catalog,
                                     "status": status,
+                                    "sub_status": sub_status,
                                     "declared_stock": body.get("available_quantity", 0)
                                 })
 
@@ -394,6 +397,10 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
                         last_synced_at = NOW()
                 """, (user_id, cred_id, item_id, var_id, var_name, inv_id, sku, title, thumbnail, permalink,
                       listing_type_id, is_catalog, status, stock_real, not_available))
+                # Motivo de la pausa (migración 002): si la columna todavía no existe, se omite.
+                if esquema.tiene_columna(cur, "full_items", "sub_status"):
+                    cur.execute("UPDATE full_items SET sub_status = %s WHERE user_id=%s AND item_id=%s AND variation_id=%s",
+                                (it.get("sub_status") or None, user_id, item_id, var_id))
 
                 # Leer overrides específicos si existen
                 cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s AND variation_id=%s", (user_id, item_id, var_id))

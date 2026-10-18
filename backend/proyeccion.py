@@ -219,3 +219,16 @@ def en_ventana_de_aviso(fecha_retiro, ahora=None, hora=None, minutos_antes=MINUT
     """True si falta `minutos_antes` o menos para el límite y todavía no pasó."""
     r = cuenta_regresiva(fecha_retiro, ahora, hora)
     return r["abierta"] and r["segundos_restantes"] <= minutos_antes * 60
+
+
+def pausa_por_quiebre(canales, stock):
+    """True si el producto está pausado en ML (todas sus publicaciones) porque se quedó sin stock en Full.
+
+    Una pausa por otro motivo (el vendedor lo pausó, suspensión, revisión) no es un quiebre y no se avisa.
+    Sin el motivo guardado (migración 002 sin aplicar) no se puede saber, y se asume que no es por stock.
+    """
+    if not canales or stock > 0:
+        return False
+    if any((ch.get("status") or "active") == "active" for ch in canales):
+        return False
+    return any("out_of_stock" in (ch.get("sub_status") or "") for ch in canales)

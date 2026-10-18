@@ -258,5 +258,26 @@ class TestCalcularCambioFechas(unittest.TestCase):
         self.assertEqual(r['ingreso'], date(2026, 11, 1))
 
 
+class TestPausaPorQuiebre(unittest.TestCase):
+    def _ch(self, status, sub=''):
+        return {'status': status, 'sub_status': sub}
+
+    def test_pausada_por_falta_de_stock_es_quiebre(self):
+        self.assertTrue(p.pausa_por_quiebre([self._ch('paused', 'out_of_stock')], 0))
+
+    def test_pausada_por_el_vendedor_no_es_quiebre(self):
+        self.assertFalse(p.pausa_por_quiebre([self._ch('paused', '')], 0))
+        self.assertFalse(p.pausa_por_quiebre([self._ch('paused', 'suspended')], 0))
+
+    def test_sin_el_motivo_guardado_no_se_asume_quiebre(self):
+        self.assertFalse(p.pausa_por_quiebre([self._ch('paused')], 0))
+
+    def test_si_otra_publicacion_sigue_activa_no_es_pausa(self):
+        self.assertFalse(p.pausa_por_quiebre([self._ch('paused', 'out_of_stock'), self._ch('active')], 0))
+
+    def test_con_stock_en_full_no_es_quiebre(self):
+        self.assertFalse(p.pausa_por_quiebre([self._ch('paused', 'out_of_stock')], 5))
+
+
 if __name__ == '__main__':
     unittest.main()

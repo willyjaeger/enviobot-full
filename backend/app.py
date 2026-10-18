@@ -1279,6 +1279,8 @@ def get_full_items():
             LEFT JOIN ml_credentials c ON c.id = i.ml_credential_id
             WHERE i.user_id = %s AND i.is_monitored = 1
         """
+        if _esquema.tiene_columna(cur, "full_items", "sub_status"):   # migración 002
+            query = query.replace("i.status AS item_status,", "i.status AS item_status, i.sub_status AS item_sub_status,")
         default_lt = settings.get("default_lead_time_days", 5)
         default_ss = settings.get("default_safety_stock_days", 2)
         params = [default_lt, default_ss, account_id]
@@ -1330,6 +1332,7 @@ def get_full_items():
                 "type_label": type_label,
                 "is_catalog": is_cat,
                 "status": row.get("item_status") or "active",
+                "sub_status": row.get("item_sub_status") or "",
                 "permalink": row.get("permalink") or "#"
             }
 
@@ -1537,6 +1540,11 @@ def get_full_items():
             canales = c_item.get("channels") or []
             c_item["canales_pausados"] = sum(1 for ch in canales if (ch.get("status") or "active") != "active")
             c_item["pausado"] = bool(canales) and c_item["canales_pausados"] == len(canales)
+            # Pausada porque se quedó sin stock: es un quiebre real, no una pausa del vendedor. Se trata
+            # como producto activo sin stock (rojo si no hay colecta que lo cubra).
+            c_item["pausa_por_quiebre"] = c_item["pausado"] and _proy.pausa_por_quiebre(canales, stock)
+            if c_item["pausa_por_quiebre"]:
+                c_item["pausado"] = False
             if c_item["pausado"]:
                 c_item["status_calculado"] = c_item["status"]
                 c_item["status"] = "paused"
