@@ -1968,7 +1968,7 @@ function renderizarPanelColecta() {
         'Tienen de más (no mandes más por ahora)',
         deMas.map(it => filaConBarra(it, {
             icono: iconoSvg('capas', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
-            derecha: `Stock suficiente: ${(it.covered_days_left || 0) > 90 ? 'más de 90 días' : 'para ' + Math.round(it.covered_days_left || 0) + ' días'}`,
+            derecha: 'Stock suficiente',
             claseDerecha: 'pc-info',
             dias: it.covered_days_left,
             claseBarra: 'pc-fill-info',

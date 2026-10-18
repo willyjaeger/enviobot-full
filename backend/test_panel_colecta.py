@@ -707,7 +707,8 @@ process.stdout.write(creado ? creado.innerHTML : '');
         self.assertIn('Tienen de más (no mandes más por ahora)', out['html'])
         seccion = out['html'].split('Tienen de más (no mandes más por ahora)')[1]
         self.assertIn('Sobra mucho', seccion)
-        self.assertIn('Stock suficiente: más de 90 días', seccion)
+        self.assertIn('Stock suficiente<', seccion)
+        self.assertNotIn('Stock suficiente:', seccion)
         self.assertNotIn('Normal', seccion)
 
     # ── barras ──
