@@ -3286,7 +3286,7 @@ async function cargarAvisos(soloContador = false) {
             const baja = a.sentido === 'baja';
             const color = a.revertido ? 'var(--text2)' : (baja ? 'var(--red, #e5484d)' : 'var(--green, #30a46c)');
             const titulo = a.revertido ? 'Se revirtió: el ritmo de venta volvió a la normalidad'
-                : (baja ? 'Bajó el ritmo de venta' : 'Subió el ritmo de venta');
+                : (baja ? 'Bajó el ritmo de venta (aviso anterior)' : 'Se aceleró la venta: puede faltar stock');
             const fecha = a.fecha ? new Date(a.fecha) : null;
             const cuando = fecha ? fecha.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
             const nuevo = a.fecha && Date.parse(a.fecha) > _avisosVistosHasta;
@@ -3304,7 +3304,7 @@ async function cargarAvisos(soloContador = false) {
                     ${a.revertido ? '' : '<div style="font-size: 12px; color: var(--text2); margin-top: 6px;">Te recomendamos verificar qué sucede y si tenés stock suficiente para la próxima colecta.</div>'}
                 </div>
             </details>`;
-        }).join('') : `<div style="text-align: center; padding: 40px; color: var(--text2);">No hay avisos. Cuando el ritmo de venta de un producto con stock cambie de forma notoria, vas a verlo acá.</div>`;
+        }).join('') : `<div style="text-align: center; padding: 40px; color: var(--text2);">No hay avisos. Cuando se acelere la venta de un producto y pueda faltarte stock antes de reponer, vas a verlo acá.</div>`;
 
         _avisosVistosHasta = Date.now();
         try { localStorage.setItem('avisosVistosHasta', String(_avisosVistosHasta)); } catch (e) { /* sin almacenamiento */ }

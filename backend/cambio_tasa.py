@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Aviso de cambio notorio en el ritmo de venta de un producto que tiene stock.
+"""Aviso de que se aceleró la venta de un producto y el stock puede no alcanzar.
 
-Compara las ventas por día de la última semana contra las de los 23 días anteriores (descontando
-los días en que el producto estuvo sin stock). Si bajó o subió de forma notoria avisa:
+Solo avisa si se cumplen las dos cosas:
+  1. las ventas por día de la última semana superan en 50 % o más a las de los 23 días anteriores
+     (descontando los días sin stock) y hay al menos 5 unidades vendidas en la semana;
+  2. con el ritmo de antes el stock y lo que viene en camino alcanzaban hasta poder reponer, y con el
+     ritmo actual ya no (se queda sin stock antes de que entre la colecta, o la colecta no alcanza a
+     cubrir hasta la reposición siguiente).
+Una baja de ventas no se avisa: no hay riesgo de quiebre. Una suba que igual alcanza, tampoco.
+Avisa:
   - en el panel (ventana "Avisos"), siempre, apenas se detecta;
   - por WhatsApp, solo dentro del horario de cada destinatario: si se detecta fuera de horario no se
     manda ni se anota como enviado. Cuando llega el horario se VUELVE A CONTROLAR antes de mandar:
@@ -37,8 +43,7 @@ DIAS_RECIENTE = 7
 DIAS_BASE = 23            # los 30 días menos la última semana
 MIN_DIAS_RECIENTE = 4     # días con stock en la última semana para confiar en el ritmo reciente
 MIN_DIAS_BASE = 10        # idem para el período de comparación
-UMBRAL_BAJA = 0.40        # cae 40 % o más
-UMBRAL_SUBA = 0.50        # sube 50 % o más
+UMBRAL_SUBA = 0.50        # la venta por día sube 50 % o más (y además tiene que poner en riesgo el stock)
 MIN_UNIDADES = 5          # menos que esto en una semana es ruido, no tendencia
 REPETIR_DIAS = 60         # cuánto tiempo se sigue un aviso: mientras siga abierto no se repite ni en el panel ni por WhatsApp
 MAX_PRODUCTOS_WA = 8
@@ -58,8 +63,9 @@ def ritmos(v7, v30, sin7=0, sin30=0, stock=1):
 
 
 def evaluar(v7, v30, sin7=0, sin30=0, stock=1):
-    """Devuelve None si el ritmo es normal, o un dict con sentido ('baja'/'suba'), ritmo de antes
-    ('antes'), ritmo actual ('ahora', unidades por día) y variación en % ('pct', None si antes era 0)."""
+    """Primer filtro: ¿se aceleró la venta de forma notoria? Devuelve None si no, o un dict con ritmo de
+    antes ('antes'), ritmo actual ('ahora', unidades por día) y variación en % ('pct', None si antes era 0).
+    Una BAJA de ventas no se avisa: no hay riesgo de quedarse sin stock (el exceso lo muestra el panel)."""
     r = ritmos(v7, v30, sin7, sin30, stock)
     if not r:
         return None
@@ -69,13 +75,34 @@ def evaluar(v7, v30, sin7=0, sin30=0, stock=1):
             return {"sentido": "suba", "antes": 0.0, "ahora": round(ahora, 1), "pct": None}
         return None
     cambio = ahora / antes - 1
-    if cambio <= -UMBRAL_BAJA and antes * DIAS_RECIENTE >= MIN_UNIDADES:
-        sentido = "baja"
-    elif cambio >= UMBRAL_SUBA and v7 >= MIN_UNIDADES:
-        sentido = "suba"
-    else:
+    if cambio >= UMBRAL_SUBA and v7 >= MIN_UNIDADES:
+        return {"sentido": "suba", "antes": round(antes, 1), "ahora": round(ahora, 1), "pct": int(round(cambio * 100))}
+    return None
+
+
+def riesgo(stock, antes, ahora, entrante, dias_ingreso, margen):
+    """Segundo filtro, el que importa: ¿la suba de ventas rompe lo previsto? Solo avisa si CON el ritmo de
+    antes todo alcanzaba y CON el actual ya no:
+      - 'quiebre': el stock se acaba antes de que llegue la reposición (la colecta en camino, o el tiempo
+        que lleva pedir y recibir una si no hay ninguna);
+      - 'colecta_corta': llega a tiempo pero con lo que trae no alcanza a cubrir hasta poder reponer de nuevo.
+    `margen` = días que lleva reponer (preparación + colchón + flete). Si ya estaba mal antes del cambio,
+    lo dicen las alertas de stock de siempre, no esta."""
+    if ahora <= 0:
         return None
-    return {"sentido": sentido, "antes": round(antes, 1), "ahora": round(ahora, 1), "pct": int(round(cambio * 100))}
+    horizonte = dias_ingreso if entrante > 0 else margen
+    dias_ahora = stock / ahora
+    dias_antes = stock / antes if antes > 0 else float("inf")
+    if dias_ahora < horizonte <= dias_antes:
+        return {"causa": "quiebre", "dias_stock": round(dias_ahora, 1), "dias_ingreso": int(horizonte), "entrante": int(entrante)}
+    if entrante > 0 and dias_ahora >= horizonte:
+        def cobertura(r):
+            return (max(0.0, stock - r * dias_ingreso) + entrante) / r
+        cob_antes = cobertura(antes) if antes > 0 else float("inf")
+        cob_ahora = cobertura(ahora)
+        if cob_ahora < margen <= cob_antes:
+            return {"causa": "colecta_corta", "dias_stock": round(cob_ahora, 1), "dias_ingreso": int(dias_ingreso), "entrante": int(entrante)}
+    return None
 
 
 def _clave_producto(f):
@@ -96,6 +123,7 @@ def detectar(conn, user_id, hoy=None):
     with conn.cursor() as cur:
         cur.execute("""
             SELECT i.item_id, i.variation_id, i.sku, i.inventory_id, i.title, i.current_stock_full,
+                   i.not_available_stock_full, i.lead_time_override, i.safety_stock_override,
                    f.sales_last_7d, f.sales_last_30d
             FROM full_items i
             JOIN forecasts f ON f.user_id = i.user_id AND f.item_id = i.item_id
@@ -103,6 +131,23 @@ def detectar(conn, user_id, hoy=None):
             WHERE i.user_id = %s AND i.is_monitored = 1
         """, (user_id,))
         filas = cur.fetchall()
+        # Tiempos de reposición (mismos valores que usa el panel)
+        cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
+        ajustes = cur.fetchone() or {}
+        lt_def = ajustes.get("default_lead_time_days") if ajustes.get("default_lead_time_days") is not None else 7
+        ss_def = ajustes.get("default_safety_stock_days") if ajustes.get("default_safety_stock_days") is not None else 3
+        cur.execute("SELECT transit_days FROM warehouses WHERE user_id=%s AND is_active=1 ORDER BY id ASC LIMIT 1", (user_id,))
+        wh = cur.fetchone()
+        transito = wh["transit_days"] if wh and wh.get("transit_days") is not None else 5
+        # Lo que viene en camino: colectas en preparación y despachadas, con su fecha de llegada
+        cur.execute("""
+            SELECT s.status, isi.item_id, isi.inventory_id, isi.sku, SUM(isi.units_to_send) AS unidades,
+                   MIN(COALESCE(s.estimated_arrival_date, DATE_ADD(s.pickup_date, INTERVAL COALESCE(s.transit_days, 0) DAY))) AS llegada
+            FROM inbound_shipment_items isi JOIN inbound_shipments s ON s.id = isi.shipment_id
+            WHERE s.user_id = %s AND s.status IN ('scheduled', 'in_transit')
+            GROUP BY s.status, isi.item_id, isi.inventory_id, isi.sku
+        """, (user_id,))
+        envios = cur.fetchall()
         sin = {}
         if filas and esquema.tiene_tabla(cur, "stock_daily"):
             cur.execute("""
@@ -125,6 +170,17 @@ def detectar(conn, user_id, hoy=None):
             g["sin"] = sin.get((f["item_id"], f.get("variation_id") or ""), (0, 0))
         g["stock"] = max(g["stock"], int(f.get("current_stock_full") or 0))  # mismo inventario, mismo stock
 
+    # Lo que hay en camino de cada producto, por inventory_id, SKU o publicación (como en el panel)
+    prep, transito_u, llegadas = {}, {}, {}
+    for e in envios:
+        u = int(e.get("unidades") or 0)
+        destino = prep if e["status"] == "scheduled" else transito_u
+        for k in ((e.get("inventory_id") or "").strip(), (e.get("sku") or "").strip().upper(), (e.get("item_id") or "").strip()):
+            if k:
+                destino[k] = destino.get(k, 0) + u
+                if e["status"] == "scheduled" and e.get("llegada") and (k not in llegadas or e["llegada"] < llegadas[k]):
+                    llegadas[k] = e["llegada"]
+
     cambios, medibles = [], {}
     for clave_prod, g in grupos.items():
         r = ritmos(g["v7"], g["v30"], g["sin"][0], g["sin"][1], g["stock"])
@@ -136,13 +192,33 @@ def detectar(conn, user_id, hoy=None):
         if not ev:
             continue
         p = g["principal"]
+        claves = ((p.get("inventory_id") or "").strip(), (p.get("sku") or "").strip().upper(), (p.get("item_id") or "").strip())
+        en_prep = next((prep[k] for k in claves if k and prep.get(k)), 0)
+        en_transito = next((transito_u[k] for k in claves if k and transito_u.get(k)), 0)
+        en_muelle = int(p.get("not_available_stock_full") or 0)
+        entrante = en_muelle + en_prep + (max(0, en_transito - en_muelle) if en_transito else 0)
+        lt = p["lead_time_override"] if p.get("lead_time_override") is not None else lt_def
+        ss = p["safety_stock_override"] if p.get("safety_stock_override") is not None else ss_def
+        margen = lt + ss + transito
+        llegada = next((llegadas[k] for k in claves if k and k in llegadas), None)
+        dias_ingreso = proyeccion.dias_hasta_ingreso(None, hoy, None, lt, transito)
+        if en_prep:
+            dias_ingreso = max(0, proyeccion.dias_hasta_ingreso("scheduled", hoy, llegada, lt, transito))
+        if en_transito:
+            dias_ingreso = max(dias_ingreso if en_prep else 0, proyeccion.dias_hasta_ingreso("in_transit", hoy, None, lt, transito))
+        if en_muelle and not en_prep and not en_transito:
+            dias_ingreso = proyeccion.dias_hasta_ingreso("in_reception", hoy)
+        rg = riesgo(g["stock"], r[0], r[1], entrante, dias_ingreso, margen)
+        if not rg:
+            continue  # se aceleró la venta, pero el stock y lo que viene en camino alcanzan: no hay nada que hacer
+        ev.update(rg)
         ev.update({
             "gk": gk, "item_id": p["item_id"], "variation_id": p.get("variation_id") or "",
             "sku": (p.get("sku") or "").strip(), "titulo": (p.get("title") or "").strip(), "stock": g["stock"],
         })
         cambios.append(ev)
-    # primero las bajas (lo que más hay que mirar) y, dentro de cada sentido, las más fuertes
-    cambios.sort(key=lambda c: (c["sentido"] != "baja", -abs(c["pct"] if c["pct"] is not None else 999)))
+    # primero lo más urgente: el que antes se queda sin stock
+    cambios.sort(key=lambda c: c["dias_stock"])
     return cambios, medibles
 
 
@@ -163,13 +239,22 @@ def _ritmo(x):
     return f"{x:.1f}".replace(".", ",")
 
 
+def _frase_riesgo(causa, dias_stock, dias_ingreso, entrante):
+    ds, di = _ritmo(dias_stock), int(dias_ingreso)
+    if causa == "colecta_corta":
+        return (f"Las {entrante} unidades que vienen en camino te alcanzan para {ds} días desde que entren, "
+                f"menos de lo que lleva reponer.")
+    if entrante > 0:
+        return f"Con ese ritmo el stock en Full dura {ds} días y la colecta en camino ({entrante} unidades) llega en {di}: te quedás sin stock antes."
+    return f"Con ese ritmo el stock en Full dura {ds} días y reponer lleva unos {di}: te quedás sin stock antes."
+
+
 def texto_whatsapp(cambios, app_url=""):
     n = len(cambios)
-    lineas = [f"EnvioBot Full: detectamos un cambio notorio en el ritmo de venta de {n} producto{'s' if n != 1 else ''} que tienen stock."]
+    lineas = [f"EnvioBot Full: se aceleró la venta de {n} producto{'s' if n != 1 else ''} y el stock puede no alcanzar."]
     for c in cambios[:MAX_PRODUCTOS_WA]:
-        verbo = "bajó" if c["sentido"] == "baja" else "subió"
-        pct = f" ({c['pct']:+d} %)" if c["pct"] is not None else ""
-        lineas.append(f"- {_etiqueta(c)}: {verbo} de {_ritmo(c['antes'])} a {_ritmo(c['ahora'])} unidades por día{pct}.")
+        lineas.append(f"- {_etiqueta(c)}: ahora vende {_ritmo(c['ahora'])} por día (antes {_ritmo(c['antes'])}). "
+                      + _frase_riesgo(c["causa"], c["dias_stock"], c["dias_ingreso"], c["entrante"]))
     if n > MAX_PRODUCTOS_WA:
         lineas.append(f"- y {n - MAX_PRODUCTOS_WA} más, en el panel.")
     lineas.append("Te recomendamos verificar qué sucede y si tenés stock suficiente para la próxima colecta"
@@ -180,7 +265,8 @@ def texto_whatsapp(cambios, app_url=""):
 def _registro_panel(c, revertido=False):
     """Lo que se guarda para la ventana de Avisos (alert_logs.message es corto, por eso va compacto)."""
     d = {"s": c["sentido"], "a": c["antes"], "n": c["ahora"], "p": c["pct"], "sku": c["sku"],
-         "st": c["stock"], "t": c["titulo"][:70], "i": c["item_id"]}
+         "st": c["stock"], "t": c["titulo"][:70], "i": c["item_id"],
+         "c": c.get("causa", ""), "ds": c.get("dias_stock", 0), "di": c.get("dias_ingreso", 0), "u": c.get("entrante", 0)}
     if revertido:
         d["r"] = 1
     return json.dumps(d, ensure_ascii=False, separators=(",", ":"))
@@ -193,12 +279,14 @@ def texto_panel(registro):
         base = {"sentido": d["s"], "producto": d.get("t", ""), "sku": d.get("sku", ""), "stock": d.get("st"),
                 "item_id": d.get("i", ""), "revertido": bool(d.get("r"))}
         if d.get("r"):
-            base["detalle"] = (f"La situación se revirtió: el ritmo de venta volvió a la normalidad "
-                               f"({_ritmo(d['n'])} unidades por día; antes del aviso era {_ritmo(d['a'])}). No hace falta hacer nada.")
-        else:
-            verbo = "bajó" if d["s"] == "baja" else "subió"
+            base["detalle"] = "La situación se revirtió: ya no hay riesgo de quedarte sin stock antes de reponer. No hace falta hacer nada."
+        elif d.get("c"):
             pct = f" ({d['p']:+d} %)" if d.get("p") is not None else ""
-            base["detalle"] = f"El ritmo de venta {verbo} de {_ritmo(d['a'])} a {_ritmo(d['n'])} unidades por día{pct}."
+            base["detalle"] = (f"Ahora vende {_ritmo(d['n'])} por día (antes {_ritmo(d['a'])}{pct}). "
+                               + _frase_riesgo(d["c"], d["ds"], d["di"], d["u"]))
+        else:  # avisos del primer formato (cambio de ritmo sin evaluar riesgo)
+            verbo = "bajó" if d["s"] == "baja" else "subió"
+            base["detalle"] = f"El ritmo de venta {verbo} de {_ritmo(d['a'])} a {_ritmo(d['n'])} unidades por día."
         return base
     except (ValueError, KeyError, TypeError):
         return None
@@ -210,7 +298,8 @@ def _desde_registro(clave, registro):
         d = json.loads(registro)
         return {"sentido": d["s"], "antes": d["a"], "ahora": d["n"], "pct": d.get("p"), "item_id": d.get("i", ""),
                 "variation_id": "", "gk": clave.split(":", 1)[0], "sku": d.get("sku", ""),
-                "titulo": d.get("t", ""), "stock": d.get("st")}
+                "titulo": d.get("t", ""), "stock": d.get("st"), "causa": d.get("c", ""),
+                "dias_stock": d.get("ds", 0), "dias_ingreso": d.get("di", 0), "entrante": d.get("u", 0)}
     except (ValueError, KeyError, TypeError):
         return None
 
