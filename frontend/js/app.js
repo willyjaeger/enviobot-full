@@ -611,7 +611,7 @@ function identificacionItem(it) {
         (pubs.length ? '<span>' + pubs.join(' · ') + '</span>' : '');
 }
 
-// De dónde sale "Tenés para N días": unidades hoy en Full, lo que viaja y cuánto se vende por día.
+// De dónde sale el número de días: unidades hoy en Full, lo que viaja y cuánto se vende por día.
 function cuentaDeDias(it) {
     const dec = function (n) { return (Math.round(n * 100) / 100).toLocaleString('es-AR'); };
     const viaja = (it.in_process_stock || 0) + (it.in_transit_stock || 0) + (it.in_preparation_stock || 0);
@@ -1968,7 +1968,7 @@ function renderizarPanelColecta() {
         'Tienen de más (no mandes más por ahora)',
         deMas.map(it => filaConBarra(it, {
             icono: iconoSvg('capas', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
-            derecha: `Tenés para ${Math.round(it.covered_days_left || 0)} días`,
+            derecha: `Stock suficiente: ${(it.covered_days_left || 0) > 90 ? 'más de 90 días' : 'para ' + Math.round(it.covered_days_left || 0) + ' días'}`,
             claseDerecha: 'pc-info',
             dias: it.covered_days_left,
             claseBarra: 'pc-fill-info',
