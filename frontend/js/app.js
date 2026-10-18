@@ -2589,7 +2589,11 @@ function renderizarTabla() {
 
         // Estado Sobrio (Texto limpio, sin cajas llamativas)
         let badgeHtml = '';
-        if (it.pausado) {
+        if (it.pausado && (it.in_preparation_stock || 0) > 0) {
+            badgeHtml = `<span class="badge badge-pausada" title="Pausada en Mercado Libre, pero tiene ${it.in_preparation_stock} un. en una colecta en preparación">Pausada en preparación</span>`;
+        } else if (it.pausado && ((it.in_transit_stock || 0) + (it.in_process_stock || 0)) > 0) {
+            badgeHtml = '<span class="badge badge-pausada" title="Pausada en Mercado Libre, pero tiene mercadería en camino hacia Full">Pausada, en camino</span>';
+        } else if (it.pausado) {
             badgeHtml = '<span class="badge badge-pausada" title="Esta publicación está pausada en Mercado Libre: no vende, por eso no cuenta como urgencia">Pausada en ML</span>';
         } else if (it.status === 'ok') {
             badgeHtml = '<span class="badge badge-ok">Óptimo</span>';
@@ -2653,11 +2657,11 @@ function renderizarTabla() {
             const roundedDays = Math.max(1, Math.round(daysToDeadline));
 
             if (it.current_stock <= 0 || it.status === 'out_of_stock') {
-                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;"><span style="color: var(--danger); font-weight: 700;">Pedir hoy</span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Abrir colecta con este artículo incluido">+ Colecta</button></div>`;
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--danger); font-weight: 700;">Pedir hoy</span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Abrir colecta con este artículo incluido">+ Colecta</button></div>`;
             } else if (daysToDeadline <= 0 || it.status === 'critical') {
-                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;"><span style="color: var(--accent); font-weight: 700;">Pedir hoy</span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Abrir colecta con este artículo incluido">+ Colecta</button></div>`;
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--accent); font-weight: 700;">Pedir hoy</span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Abrir colecta con este artículo incluido">+ Colecta</button></div>`;
             } else if (daysToDeadline <= 3 || it.status === 'warning') {
-                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;"><span style="color: var(--text); font-weight: 600;">El ${formatearFecha(it.reorder_deadline_date)} <span style="color: var(--text2); font-weight: 400;">(${roundedDays}d)</span></span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Planificar colecta para este artículo">+ Colecta</button></div>`;
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--text); font-weight: 600;">El ${formatearFecha(it.reorder_deadline_date)} <span style="color: var(--text2); font-weight: 400;">(${roundedDays}d)</span></span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Planificar colecta para este artículo">+ Colecta</button></div>`;
             } else {
                 fechaColectaHtml = `<span style="color: var(--text2);">El ${formatearFecha(it.reorder_deadline_date)} <span style="font-weight: 400;">(${roundedDays}d)</span></span>`;
             }
