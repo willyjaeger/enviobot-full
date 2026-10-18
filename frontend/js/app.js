@@ -1323,9 +1323,9 @@ function svgProducto(it, proy, claseColor, hoy, dias, detalle, idGrafico) {
             filas: function (dia) {
                 const p = proy.puntos[dia];
                 const llega = proy.llegadas.filter(function (l) { return l.dia === dia; });
-                const filas = [{ clave: 'Unidades en Full', valor: Math.round(p.stock) + ' u.', slot: null, color: true },
-                               { clave: 'Días de venta', valor: Math.round(p.cobertura) + ' días', slot: null, color: false }];
-                llega.forEach(function (l) { filas.push({ clave: 'Queda en venta la colecta ' + numeroCorto(l.codigo), valor: '+' + l.unidades + ' u.', slot: null, color: false }); });
+                const filas = [{ clave: 'en Full ese día', valor: Math.round(p.stock) + ' u.', slot: null, color: true },
+                               { clave: 'de venta le quedan', valor: Math.round(p.cobertura) + ' días', slot: null, color: false }];
+                llega.forEach(function (l) { filas.push({ clave: 'entran: queda en venta la colecta ' + numeroCorto(l.codigo), valor: '+' + l.unidades + ' u.', slot: null, color: false }); });
                 return filas;
             }
         };
@@ -1421,7 +1421,9 @@ function htmlTodosJuntos(c, colectas, hoy, dias, demora, estado) {
         const slot = slots[s.clave];
         const pts = trazoProyeccion(e, s.proy, 'cobertura', dias);
         const clase = slot === undefined ? 'pc-g-gris' : claseSerie(slot);
-        return '<polyline class="pc-g-hit" points="' + pts + '" data-k="' + escapeHtml(s.clave) + '" onmouseenter="resaltarSerie(' + Number(c.id) + ', this.dataset.k)" onmouseleave="resaltarSerie(' + Number(c.id) + ', null)"><title>' + escapeHtml(s.it.title) + '</title></polyline>' +
+        return '<polyline class="pc-g-hit" points="' + pts + '" data-k="' + escapeHtml(s.clave) + '" data-sku="' + escapeHtml(s.sku) + '" ' +
+            'onpointermove="moverSobreSerie(event, \'' + idG + '\', this.dataset.k)" onpointerleave="salirDeSerie(\'' + idG + '\', ' + Number(c.id) + ')" ' +
+            'onclick="abrirDetalleProducto(' + Number(c.id) + ', this.dataset.sku)"></polyline>' +
             '<polyline class="pc-g-serie ' + clase + '" points="' + pts + '" data-k="' + escapeHtml(s.clave) + '"/>';
     };
     const lineas = grises.map(trazarSerie).join('') + enColor.map(trazarSerie).join('');
@@ -1433,19 +1435,12 @@ function htmlTodosJuntos(c, colectas, hoy, dias, demora, estado) {
     const referencias = lineaRef(avance, 'pc-g-umbral', 'Hora de reponer: menos de ' + Math.round(avance) + ' días', 14) +
         lineaRef(objetivo, 'pc-g-objetivo', 'Tu objetivo: ' + Math.round(objetivo) + ' días', -14);
 
-    graficosActivos[idG] = {
-        ancho: ancho, dias: dias, ml: GRAF.ml, w: e.w, hoy: hoy,
-        filas: function (dia) {
-            const filas = enColor.map(function (s) {
-                return { clave: s.it.title, valor: Math.round(s.proy.puntos[dia].cobertura) + ' días', slot: slots[s.clave], color: true, orden: s.proy.puntos[dia].cobertura };
-            }).sort(function (a, b) { return a.orden - b.orden; });
-            if (grises.length) filas.push({ clave: '+ ' + grises.length + (grises.length === 1 ? ' producto en gris' : ' productos en gris') + ' (pasá el mouse por la línea)', valor: '', slot: null, color: false });
-            return filas;
-        }
-    };
+    const porClave = {};
+    series.forEach(function (s2) { porClave[s2.clave] = { serie: s2, slot: slots[s2.clave] }; });
+    graficosActivos[idG] = { tipo: 'juntos', ancho: ancho, alto: alto, dias: dias, ml: GRAF.ml, w: e.w, hoy: hoy, x: e.x, y: e.y, porClave: porClave };
 
     const svg = '<svg class="pc-graf pc-graf-ancho" viewBox="0 0 ' + ancho + ' ' + alto + '" role="img" aria-label="Días de venta que le quedan a cada producto de la colecta">' +
-        e.ticks + ejeYGrafico(e, ymax, '', 'Días de venta que le quedan') + referencias + colectasMarcas + lineas + pildoras + capaCruz(e, idG) + '</svg>';
+        e.ticks + ejeYGrafico(e, ymax, '', 'Días de venta que le quedan') + referencias + colectasMarcas + lineas + pildoras + '<circle class="pc-g-hover" r="5.5" style="display:none"/></svg>';
 
     const chips = series.slice().sort(function (a, b) { return urgenciaSerie(a) - urgenciaSerie(b); }).map(function (s) {
         const slot = slots[s.clave];
@@ -1473,7 +1468,7 @@ function htmlTodosJuntos(c, colectas, hoy, dias, demora, estado) {
         (vistaTabla ? htmlTablaProyeccion(series, hoy, slots)
             : '<div class="pc-chips">' + chips + '</div>' + envolverGrafico(idG, svg)) +
         '<div class="pc-fila-nota pc-graf-pie">Cada línea es un producto: cuántos días de venta le quedan. Resaltamos en color los 5 que antes hay que reponer; el resto va en gris. ' +
-        'Tocá un producto de arriba para sumarle o sacarle el color, y pasá el mouse por el gráfico para ver los valores de cada día. ' +
+        'Tocá un producto de arriba para sumarle o sacarle el color. Pasá el mouse por una línea para resaltarla y ver sus números; tocala para abrir el detalle. ' +
         'La raya vertical es el día en que una colecta queda en venta; la franja gris antes es lo que tarda Mercado Libre en dejarla en venta.</div>' +
         (cuando ? '<div class="pc-imp-cabecera" style="margin-top:8px;">Cuándo reponer (los primeros)</div><div class="pc-chips">' + cuando + '</div>' : '');
 }
@@ -1598,6 +1593,81 @@ function moverCruz(ev, id) {
     const izq = (x / g.ancho) * caja.width;
     tip.style.left = (izq > caja.width * 0.6 ? izq - tip.offsetWidth - 12 : izq + 12) + 'px';
     tip.style.top = '8px';
+}
+
+// Lo que dice el cartelito de UN producto en un día: sus números, no los de todos.
+function filasTooltipSerie(s, dia, hoy) {
+    const p = s.proy.puntos[dia];
+    const dec = function (n) { return (Math.round(n * 10) / 10).toLocaleString('es-AR'); };
+    const filas = [
+        { valor: Math.round(p.cobertura) + ' días', clave: 'de venta le quedan' },
+        { valor: dec(p.stock) + ' u.', clave: 'en Full el ' + fechaDeProyeccion(dia, hoy) },
+        { valor: dec(s.proy.vpd) + ' u.', clave: 'vendés por día' }
+    ];
+    return { titulo: s.it.title, filas: filas, nota: textoReponer(s.proy, hoy), riesgo: textoRiesgoStock(s.proy, hoy) };
+}
+
+// Pasar el mouse por una línea: se resalta ese producto, aparece un punto en el día señalado y un cartelito con sus números.
+function moverSobreSerie(ev, id, clave) {
+    const g = graficosActivos[id];
+    const cont = document.getElementById('pc-chart-' + id);
+    if (!g || !cont || !g.porClave[clave]) return;
+    const info = g.porClave[clave];
+    const svg = ev.currentTarget.ownerSVGElement;
+    const caja = svg.getBoundingClientRect();
+    const px = (ev.clientX - caja.left) * (g.ancho / caja.width);
+    const dia = Math.max(0, Math.min(g.dias, Math.round(((px - g.ml) / g.w) * g.dias)));
+    const idColecta = Number(String(id).replace('juntos-', ''));
+    resaltarSerie(idColecta, clave);
+    const punto = svg.querySelector('.pc-g-hover');
+    const p = info.serie.proy.puntos[dia];
+    punto.setAttribute('cx', g.x(dia));
+    punto.setAttribute('cy', g.y(p.cobertura));
+    punto.setAttribute('class', 'pc-g-hover ' + (info.slot === undefined ? 'pc-s-gris' : claseSerie(info.slot)));
+    punto.style.display = '';
+    const datos = filasTooltipSerie(info.serie, dia, g.hoy);
+    const tip = cont.querySelector('.pc-g-tip');
+    tip.textContent = '';
+    const titulo = document.createElement('div');
+    titulo.className = 'pc-g-tip-titulo';
+    titulo.textContent = datos.titulo;
+    tip.appendChild(titulo);
+    datos.filas.forEach(function (f) {
+        const fila = document.createElement('div');
+        fila.className = 'pc-g-tip-fila';
+        const valor = document.createElement('b');
+        valor.textContent = f.valor;
+        const texto = document.createElement('span');
+        texto.textContent = f.clave;
+        fila.appendChild(valor);
+        fila.appendChild(texto);
+        tip.appendChild(fila);
+    });
+    [datos.nota, datos.riesgo].forEach(function (t, i) {
+        if (!t) return;
+        const n = document.createElement('div');
+        n.className = i === 1 ? 'pc-g-tip-aviso' : 'pc-g-tip-nota';
+        n.textContent = t;
+        tip.appendChild(n);
+    });
+    const pie = document.createElement('div');
+    pie.className = 'pc-g-tip-pie';
+    pie.textContent = 'Tocá la línea para ver el detalle';
+    tip.appendChild(pie);
+    tip.style.display = 'block';
+    const x = ev.clientX - caja.left, y = ev.clientY - caja.top;
+    tip.style.left = (x > caja.width * 0.6 ? x - tip.offsetWidth - 14 : x + 14) + 'px';
+    tip.style.top = Math.max(4, Math.min(y + 14, caja.height - tip.offsetHeight - 4)) + 'px';
+}
+
+function salirDeSerie(id, idColecta) {
+    resaltarSerie(idColecta, null);
+    const cont = document.getElementById('pc-chart-' + id);
+    if (!cont) return;
+    const punto = cont.querySelector('.pc-g-hover');
+    if (punto) punto.style.display = 'none';
+    const tip = cont.querySelector('.pc-g-tip');
+    if (tip) tip.style.display = 'none';
 }
 
 function ocultarCruz(id) {

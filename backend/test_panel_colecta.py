@@ -457,7 +457,40 @@ process.stdout.write(html);
             self.assertIn('Prod %d</button>' % i, html)
         self.assertIn('cambiarRangoProyeccion(4, 14)', html)            # zoom
         self.assertIn('alternarTabla(4)', html)                         # vista como tabla
-        self.assertIn('class="pc-g-captura"', html)                     # capa para la cruz y el cartelito
+        # el mouse lo recibe la línea de cada producto (no una capa encima de todo): resalta, muestra SUS números y abre el detalle
+        self.assertNotIn('class="pc-g-captura"', html)
+        self.assertEqual(html.count('class="pc-g-hit"'), 3)
+        self.assertIn('moverSobreSerie(event,', html)
+        self.assertIn('salirDeSerie(', html)
+        self.assertIn('abrirDetalleProducto(4, this.dataset.sku)', html)
+        self.assertIn('class="pc-g-hover"', html)
+
+    def test_el_cartelito_de_una_linea_muestra_solo_los_numeros_de_ese_producto(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('itemsData = ' + process.argv[2] + '; colectasData = ' + process.argv[3] + ';', ctx);
+const r = vm.runInContext(`(function () {
+  const hoy = new Date();
+  const s = seriesDeColecta(colectasData[0], colectasData, hoy, 2)[0];
+  return filasTooltipSerie(s, 5, hoy);
+})()`, ctx);
+process.stdout.write(JSON.stringify(r));
+"""
+        item = dict(self.ITEM, title='Dátil', vpd=10, current_stock=100)
+        col = {'id': 4, 'codigo': 'ML-1', 'fecha_ingreso': self._col_proy(3, 1)['fecha_ingreso'],
+               'productos': [{'sku': '12072', 'titulo': 'Dátil', 'unidades': 200}]}
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps([item]), json.dumps([col])], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertEqual(d['titulo'], 'Dátil')
+        self.assertEqual([f['clave'].split(' el ')[0] for f in d['filas']], ['de venta le quedan', 'en Full', 'vendés por día'])
+        self.assertEqual(d['filas'][0]['valor'], '25 días')      # día 5: 100 - 50 + 200 (entra el día 5) = 250 u. / 10 por día
+        self.assertTrue(d['filas'][1]['valor'].startswith('250'))
+        self.assertEqual(d['filas'][2]['valor'], '10 u.')
+        self.assertTrue(d['nota'])
 
     def test_solo_cinco_productos_van_en_color_el_resto_en_gris(self):
         html = self._juntos(8)
