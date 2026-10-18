@@ -740,7 +740,7 @@ process.stdout.write(creado ? creado.innerHTML : '');
     def test_sin_jerga_vieja_en_la_pantalla(self):
         out = self._correr([_item(status='critical', sugerido_al_ingreso=5, title='A'),
                             _item(sobrestock=True, covered_days_left=99, title='B')], self._prox())
-        for jerga in ('Por planificar', 'exceso de stock', 'Pronóstico', 'Radar'):
+        for jerga in ('Por planificar', 'Con exceso de stock', 'Pronóstico', 'Radar'):
             self.assertNotIn(jerga, out['html'])
 
     # ── seguridad ──
