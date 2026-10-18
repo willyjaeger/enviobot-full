@@ -672,7 +672,9 @@ function tarjetaEstadoGeneral(g, total) {
         titulo = `Todo bajo control: tus ${total} productos tienen stock suficiente`;
         sub = g.enColecta.length > 0 ? 'Contando lo que ya viaja en tu colecta.' : 'No hace falta armar ninguna colecta por ahora.';
     }
-    grupoBarraPanel = g;
+    // Lo que tiene de más no es una novedad de la que haya que ocuparse: cuenta entre los tranquilos (su detalle queda más abajo).
+    const tranquilosTodos = g.tranquilos.concat(g.deMas);
+    grupoBarraPanel = Object.assign({}, g, { tranquilos: tranquilosTodos });
     const seg = (n, color, grupo, estado) => n > 0
         ? `<div class="pc-seg${estado ? ' pc-click' : ''}" data-grupo="${grupo}" style="flex: ${n}; background: var(${color});"${estado ? ` onclick="irAEstado('${estado}')"` : ''} onmouseenter="mostrarDetalleSegmento(event, '${grupo}')" onmousemove="moverDetalleSegmento(event)" onmouseleave="ocultarDetalleSegmento()"></div>` : '';
     const dato = (n, color, texto, estado) => n > 0
@@ -680,12 +682,11 @@ function tarjetaEstadoGeneral(g, total) {
     return `<div class="pc-hero ${clase}">
         <div class="pc-hero-top"><span class="pc-hero-icono">${icono.replace('margin-right: 4px;', '')}</span>
             <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub}</div></div></div>
-        <div class="pc-segmentos">${seg(g.tranquilos.length, '--good', 'tranquilos', 'ok')}${seg(g.pronto.length, '--warn', 'pronto', 'warning')}${seg(g.urgentes.length, '--danger', 'urgentes', 'critical')}${seg(g.deMas.length, '--info', 'deMas', '')}</div>
+        <div class="pc-segmentos">${seg(tranquilosTodos.length, '--good', 'tranquilos', 'ok')}${seg(g.pronto.length, '--warn', 'pronto', 'warning')}${seg(g.urgentes.length, '--danger', 'urgentes', 'critical')}</div>
         <div class="pc-leyenda">
-            ${dato(g.tranquilos.length, '--good', `${g.tranquilos.length} tranquilos`, 'ok')}
+            ${dato(tranquilosTodos.length, '--good', `${tranquilosTodos.length} tranquilos`, 'ok')}
             ${dato(g.pronto.length, '--warn', `${g.pronto.length} conviene mandar pronto`, 'warning')}
             ${dato(g.urgentes.length, '--danger', `${g.urgentes.length} urgentes`, 'critical')}
-            ${dato(g.deMas.length, '--info', `${g.deMas.length} tienen de más`, '')}
         </div></div>`;
 }
 

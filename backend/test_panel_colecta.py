@@ -116,8 +116,11 @@ class TestPanelJS(unittest.TestCase):
     def test_el_conteo_de_la_leyenda_cierra_con_el_total(self):
         out = self._correr([_item(), _item(), _item(status='critical', sugerido_al_ingreso=1),
                             _item(status='warning', sugerido_al_ingreso=1), _item(sobrestock=True, covered_days_left=99)])
-        for texto in ('2 tranquilos', '1 conviene mandar pronto', '1 urgentes', '1 tienen de más'):
+        for texto in ('3 tranquilos', '1 conviene mandar pronto', '1 urgentes'):   # los que tienen de más cuentan entre los tranquilos
             self.assertIn(texto, out['html'])
+        hero = out['html'].split('Qué hacer hoy')[0]
+        self.assertNotIn('tienen de más', hero)                                   # ya no es una franja de la información principal
+        self.assertNotIn('data-grupo="deMas"', hero)
 
     # ── colecta ──
     def test_tarjeta_de_colecta_cerrada_dice_que_ya_no_se_puede_cambiar(self):
