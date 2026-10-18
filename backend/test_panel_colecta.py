@@ -138,6 +138,33 @@ class TestPanelJS(unittest.TestCase):
         sin_ventas = fila(current_stock=5, vpd=0, ventas_30d=0)
         self.assertIn('Stock estimado: sin ventas en los últimos 30 días.', sin_ventas)
 
+    def test_el_listado_muestra_en_que_colectas_esta_cada_producto(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('colectasData = ' + process.argv[2] + ';', ctx);
+const it = { sku: '07011' };
+process.stdout.write(JSON.stringify({
+  html: vm.runInContext('htmlColectasDeItem(' + JSON.stringify(it) + ')', ctx), n: vm.runInContext('colectasDeItem(' + JSON.stringify(it) + ').length', ctx),
+  otro: vm.runInContext('colectasDeItem({ sku: "999" }).length', ctx),
+  num: vm.runInContext('[numeroColecta({codigo:"ML-79759779"}), numeroColecta({codigo:"COL-FULL-20261012-002"})]', ctx)
+}));
+"""
+        cols = [{'id': 1, 'codigo': 'ML-78889570', 'fecha_retiro': '2026-10-19', 'productos': [{'sku': '07011', 'unidades': 40}]},
+                {'id': 2, 'codigo': 'ML-79759779', 'fecha_retiro': '2026-10-26', 'productos': [{'sku': '07011', 'unidades': 10}, {'sku': '5', 'unidades': 3}]},
+                {'id': 3, 'codigo': 'COL-X', 'fecha_retiro': '2026-11-02', 'productos': [{'sku': '5', 'unidades': 3}]}]
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(cols)], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertEqual(d['n'], 2)
+        self.assertEqual(d['otro'], 0)
+        self.assertIn('<b>#78889570</b> <span>+40 u.</span>', d['html'])
+        self.assertIn('<b>#79759779</b> <span>+10 u.</span>', d['html'])
+        self.assertNotIn('COL-X', d['html'])
+        self.assertEqual(d['num'], ['#79759779', 'COL-FULL-20261012-002'])
+
     def test_cada_fila_se_puede_identificar_y_abre_su_grafico(self):
         it = _item(id=7, title='Granola', sku='06032', sobrestock=True, covered_days_left=667, current_stock=4000, vpd=6,
                    inventory_id='RCUM58244', item_id='MLA1', channels=[{'item_id': 'MLA1', 'listing_type': 'gold_pro', 'status': 'active'},

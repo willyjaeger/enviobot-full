@@ -577,6 +577,32 @@ function barraCobertura(dias, objetivo, clase) {
     return `<div class="pc-bar"><div class="pc-bar-fill ${clase}" style="width: ${pct.toFixed(1)}%"></div><div class="pc-bar-meta"></div></div>`;
 }
 
+// ── Colectas de cada producto (para el listado) ───────────────────────────────────
+// Número que ve el usuario: el de Mercado Libre (#79759779); las que armó EnvioBot llevan su código.
+function numeroColecta(c) {
+    const cod = String(c && c.codigo || '');
+    return /^ML-/.test(cod) ? '#' + cod.replace(/^ML-/, '') : cod;
+}
+
+// Colectas vigentes que llevan este producto, con las unidades de cada una.
+function colectasDeItem(it) {
+    const sku = normalizarSkuPanel(it && it.sku);
+    if (!sku) return [];
+    const salida = [];
+    (colectasData || []).forEach(function (c) {
+        const unidades = (c.productos || []).filter(p => normalizarSkuPanel(p.sku) === sku).reduce((a, p) => a + (Number(p.unidades) || 0), 0);
+        if (unidades > 0) salida.push({ colecta: c, unidades: unidades });
+    });
+    return salida;
+}
+
+function htmlColectasDeItem(it) {
+    return colectasDeItem(it).map(function (x) {
+        return '<div class="lista-colecta" title="Colecta ' + escapeHtml(numeroColecta(x.colecta)) + ': retiro el ' + escapeHtml(formatearFechaCorta(x.colecta.fecha_retiro)) + '">' +
+            '<b>' + escapeHtml(numeroColecta(x.colecta)) + '</b> <span>+' + escapeHtml(x.unidades) + ' u.</span></div>';
+    }).join('');
+}
+
 // Un dato que se copia con un toque (SKU, código de Full). No abre el gráfico de la fila.
 function copiarTexto(ev, el) {
     if (ev) { ev.stopPropagation(); ev.preventDefault(); }
@@ -2168,6 +2194,7 @@ const FILTROS_LISTADO = [
 
 function pasaFiltroListado(it, filtro) {
     if (filtro === 'all') return true;
+    if (String(filtro).indexOf('col:') === 0) return colectasDeItem(it).some(x => String(x.colecta.id) === String(filtro).slice(4));
     if (filtro === 'action_required') return it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock';
     if (filtro === 'in_process') return it.status === 'in_preparation' || it.status === 'in_transit' || it.status === 'in_reception';
     if (filtro === 'critical') return !it.pausado && (it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
@@ -2177,7 +2204,22 @@ function pasaFiltroListado(it, filtro) {
 function renderizarFiltrosListado() {
     const cont = document.getElementById('filtrosListado');
     if (!cont) return;
-    cont.innerHTML = FILTROS_LISTADO.map(function (f) {
+    const filtros = FILTROS_LISTADO.concat((colectasData || []).map(function (c) {
+        return { clave: 'col:' + c.id, texto: 'Colecta ' + numeroColecta(c) };
+    }));
+    const selector = document.getElementById('filterStatusSelect');
+    if (selector) {
+        Array.prototype.slice.call(selector.querySelectorAll('option[data-colecta]')).forEach(o => o.remove());
+        (colectasData || []).forEach(function (c) {
+            const o = document.createElement('option');
+            o.value = 'col:' + c.id;
+            o.setAttribute('data-colecta', '1');
+            o.textContent = 'Colecta ' + numeroColecta(c);
+            selector.appendChild(o);
+        });
+        selector.value = currentFilter;
+    }
+    cont.innerHTML = filtros.map(function (f) {
         const n = itemsData.filter(it => pasaFiltroListado(it, f.clave)).length;
         return '<button type="button" class="chip-filtro' + (currentFilter === f.clave ? ' chip-filtro-activo' : '') + '" onclick="onFilterChange(\'' + f.clave + '\')">' +
             escapeHtml(f.texto) + ' <b>' + n + '</b></button>';
@@ -2594,7 +2636,10 @@ function renderizarTabla() {
 
         // CUÁNDO PEDIR COLECTA EN MELI (Limpio y directo, con botón de acción)
         let fechaColectaHtml = '—';
-        if (it.pausado) {
+        const colectasHtml = htmlColectasDeItem(it);
+        if (colectasHtml) {
+            fechaColectaHtml = colectasHtml;
+        } else if (it.pausado) {
             fechaColectaHtml = '<span style="color: var(--text2);">No hace falta mientras esté pausada</span>';
         } else if (it.status === 'in_preparation') {
             fechaColectaHtml = `<span style="color: #64b5f6; font-weight: 600;" title="Colecta generada, pendiente de retiro">+${it.in_preparation_stock} un. en preparación</span>`;
