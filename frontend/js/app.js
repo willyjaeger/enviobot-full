@@ -313,6 +313,7 @@ async function cargarDatos() {
             cargarMonitorEventosLogisticos();
             if (data.items && data.items.length > 0) {
                 itemsData = data.items.map(it => adaptarItemDesdeBackend(it));
+                mostrarUltimaSincronizacion(data.ultima_sincronizacion);
                 proximaColecta = data.proxima_colecta || null;
                 colectasData = data.colectas || [];
                 recalcularTodo();
@@ -2849,8 +2850,6 @@ async function sincronizarAhora() {
     if (syncIcon) syncIcon.style.animation = 'none';
     if (syncText) syncText.textContent = 'Stock Actualizado';
     if (headerSyncBtn) headerSyncBtn.textContent = 'Actualizado';
-    const lastSync = document.getElementById('lastSyncText');
-    if (lastSync) lastSync.textContent = 'Recién';
 
     setTimeout(() => {
         if (syncText) syncText.textContent = 'Chequear Stock Actual';
@@ -2862,6 +2861,17 @@ async function sincronizarAhora() {
     }, 2500);
 
     cargarDatos();
+    setTimeout(cargarDatos, 30000);   // la sincronización corre en segundo plano y tarda unos 30 s
+}
+
+// Fecha y hora de la última vez que se trajo el stock y las ventas desde Mercado Libre.
+function mostrarUltimaSincronizacion(iso) {
+    const el = document.getElementById('lastSyncText');
+    if (!el) return;
+    if (!iso) { el.textContent = ''; return; }
+    const [f, h] = String(iso).split(' ');
+    const [a, m, d] = f.split('-');
+    el.textContent = `· Últ. sincronización: ${d}/${m} ${h}`;
 }
 
 // ── Filtros y Búsqueda ─────────────────────────────────────────────

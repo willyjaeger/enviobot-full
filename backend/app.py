@@ -1265,7 +1265,7 @@ def get_full_items():
             SELECT 
                 i.id, i.item_id, i.variation_id, i.variation_name, i.inventory_id,
                 i.sku, i.title, i.thumbnail, i.permalink, i.listing_type_id, i.is_catalog,
-                i.status AS item_status, i.current_stock_full, i.not_available_stock_full,
+                i.status AS item_status, i.last_synced_at, i.current_stock_full, i.not_available_stock_full,
                 i.ml_credential_id, i.units_per_box,
                 c.ml_nickname AS account_nickname,
                 COALESCE(i.lead_time_override, %s) AS effective_lead_time,
@@ -1649,9 +1649,11 @@ def get_full_items():
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()
 
+    sincronizados = [r["last_synced_at"] for r in raw_items if r.get("last_synced_at")]
     return jsonify({
         "ok": True,
         "items": output_items,
+        "ultima_sincronizacion": max(sincronizados).strftime("%Y-%m-%d %H:%M") if sincronizados else None,
         "summary": summary,
         "proxima_colecta": proxima_colecta,
         "colectas": colectas,
