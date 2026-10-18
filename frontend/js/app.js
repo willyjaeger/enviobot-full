@@ -627,15 +627,16 @@ function diasStockReales(it) {
     return v > 0 ? total / v : null;
 }
 
-// "Stock suficiente" con su tooltip; el ícono de alerta aparece cuando el stock pasa los días que Mercado Libre recomienda
-// (más allá puede cobrar almacenamiento). Es una estimación nuestra: hasta donde se, ML no avisa esto por API.
+// "Stock suficiente" a la derecha; el ícono de alerta va a su izquierda y aparece cuando el stock pasa los días que Mercado Libre
+// recomienda (más allá podría cobrar almacenamiento). Es una estimación nuestra: hasta donde sé, ML no avisa esto por API.
 function etiquetaStockSuficiente(it) {
     const dias = diasStockReales(it);
     const excede = dias === null || dias > UMBRAL_EXCEDENTE_ML_DIAS;
-    const txt = (dias === null ? 'Sin ventas en los últimos 30 días.' : 'Stock para ' + Math.round(dias).toLocaleString('es-AR') + ' días.') +
-        (excede ? ' Atención: pasa los ' + UMBRAL_EXCEDENTE_ML_DIAS + ' días de venta que recomienda Mercado Libre, y podría cobrarte almacenamiento por stock excedente. Es una estimación de EnvioBot: Mercado Libre no lo informa por API.' : '');
-    return '<span title="' + escapeHtml(txt) + '">Stock suficiente' +
-        (excede ? ' <span class="pc-alerta-exc">' + iconoSvg('alerta', 14).replace('margin-right: 4px;', 'margin-left: 2px;') + '</span>' : '') + '</span>';
+    const txt = dias === null ? 'Stock estimado: sin ventas en los últimos 30 días.' : 'Stock estimado para ' + Math.round(dias).toLocaleString('es-AR') + ' días.';
+    const aviso = 'Atención: supera los ' + UMBRAL_EXCEDENTE_ML_DIAS + ' días de almacenamiento. EnvioBot estima que Mercado Libre podría cobrarte por stock excedente.';
+    return '<span class="pc-stock-suf">' +
+        '<span class="pc-alerta-exc"' + (excede ? ' title="' + escapeHtml(aviso) + '"' : ' aria-hidden="true"') + '>' + (excede ? iconoSvg('alerta', 14).replace('margin-right: 4px;', '') : '') + '</span>' +
+        '<span title="' + escapeHtml(txt) + '">Stock suficiente</span></span>';
 }
 
 // De dónde sale el número de días: unidades hoy en Full, lo que viaja y cuánto se vende por día.

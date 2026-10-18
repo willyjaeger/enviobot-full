@@ -126,19 +126,17 @@ class TestPanelJS(unittest.TestCase):
             base.update(kw)
             return self._correr([_item(**base), _item(id=9, sku='Z', sobrestock=True)])['html']
         chico = fila()                       # 4 u. con 2 ventas en 30 días: 60 días reales, no 400
-        self.assertIn('title="Stock para 60 días.', chico)
+        self.assertIn('title="Stock estimado para 60 días."', chico)
         self.assertIn('promedio de 30 días', chico)
         self.assertIn('4 ÷ 0,07 = 60 días', chico)
         self.assertNotIn('400 días', chico)
         mucho = fila(current_stock=300, vpd=1, ventas_30d=30)     # 300 días de venta
-        self.assertIn('Stock para 300 días. Atención', mucho)
-        self.assertIn('pc-alerta-exc', mucho)
-        self.assertIn('Mercado Libre no lo informa por API', mucho)
-        sano = fila(current_stock=30, vpd=1, ventas_30d=30)      # 30 días: sin alerta en esa fila
-        self.assertIn('Stock para 30 días.', sano)
-        self.assertNotIn('Stock para 30 días. Atención', sano)
+        self.assertIn('title="Stock estimado para 300 días."', mucho)
+        self.assertIn('title="Atención: supera los 60 días de almacenamiento. EnvioBot estima que Mercado Libre podría cobrarte por stock excedente."', mucho)
+        sano = fila(current_stock=30, vpd=1, ventas_30d=30)      # 30 días: sin alerta
+        self.assertIn('title="Stock estimado para 30 días."', sano)
         sin_ventas = fila(current_stock=5, vpd=0, ventas_30d=0)
-        self.assertIn('Sin ventas en los últimos 30 días. Atención', sin_ventas)
+        self.assertIn('Stock estimado: sin ventas en los últimos 30 días.', sin_ventas)
 
     def test_cada_fila_se_puede_identificar_y_abre_su_grafico(self):
         it = _item(id=7, title='Granola', sku='06032', sobrestock=True, covered_days_left=667, current_stock=4000, vpd=6,
