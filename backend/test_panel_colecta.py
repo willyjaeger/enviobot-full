@@ -120,6 +120,15 @@ class TestPanelJS(unittest.TestCase):
         self.assertNotIn('Atención', out['html'])
         self.assertNotIn('Pausado', out['html'])
 
+    def test_cada_fila_se_puede_identificar_y_abre_su_grafico(self):
+        it = _item(id=7, title='Granola', sku='06032', sobrestock=True, covered_days_left=667, current_stock=4000, vpd=6,
+                   inventory_id='RCUM58244', item_id='MLA1', channels=[{'item_id': 'MLA1', 'listing_type': 'gold_pro', 'status': 'active'},
+                                                                      {'item_id': 'MLA2', 'is_catalog': True, 'status': 'paused'}])
+        html = self._correr([it, _item(id=8, sku='X', sobrestock=True, covered_days_left=100)])['html']
+        for frase in ('SKU <b>06032</b>', 'Cód. Full <b>RCUM58244</b>', 'MLA1 Premium', 'MLA2 Catálogo (pausada)',
+                      'abrirGraficoDeProducto(7)', 'En Full 4.000 u.', 'vendés 6 u. por día', '4.000 ÷ 6 = 667 días'):
+            self.assertIn(frase, html, frase)
+
     def test_la_barra_explica_que_es_cada_color_solo_de_los_que_aparecen(self):
         todo = self._correr([_item(), _item(status='critical', sugerido_al_ingreso=1), _item(status='warning', sugerido_al_ingreso=1)])['html']
         self.assertIn('<b>Tranquilos:</b> tienen stock suficiente, o ya hay una colecta en camino que los cubre y solo falta esperar que entre.', todo)

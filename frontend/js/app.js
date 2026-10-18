@@ -576,14 +576,39 @@ function barraCobertura(dias, objetivo, clase) {
     return `<div class="pc-bar"><div class="pc-bar-fill ${clase}" style="width: ${pct.toFixed(1)}%"></div><div class="pc-bar-meta"></div></div>`;
 }
 
+// Para reconocer el producto en Mercado Libre: SKU, código de Full y número de cada publicación.
+function identificacionItem(it) {
+    const pubs = (it.channels && it.channels.length ? it.channels : (it.item_id ? [{ item_id: it.item_id }] : [])).map(function (ch) {
+        const tipo = ch.is_catalog ? 'Catálogo' : (ch.type_label || (ch.listing_type === 'gold_pro' ? 'Premium' : (ch.listing_type ? 'Clásica' : '')));
+        const pausada = (ch.status || 'active') !== 'active' ? ' (pausada)' : '';
+        return escapeHtml(ch.item_id) + (tipo ? ' ' + escapeHtml(tipo) : '') + pausada;
+    });
+    return '<span>SKU <b>' + escapeHtml(it.sku || 'sin SKU') + '</b></span>' +
+        (it.inventory_id ? '<span>Cód. Full <b>' + escapeHtml(it.inventory_id) + '</b></span>' : '') +
+        (pubs.length ? '<span>' + pubs.join(' · ') + '</span>' : '');
+}
+
+// De dónde sale "Tenés para N días": unidades hoy en Full, lo que viaja y cuánto se vende por día.
+function cuentaDeDias(it) {
+    const dec = function (n) { return (Math.round(n * 100) / 100).toLocaleString('es-AR'); };
+    const viaja = (it.in_process_stock || 0) + (it.in_transit_stock || 0) + (it.in_preparation_stock || 0);
+    const total = (it.current_stock || 0) + viaja;
+    return 'En Full ' + dec(it.current_stock || 0) + ' u.' + (viaja ? ' + ' + dec(viaja) + ' u. en camino' : '') +
+        (it.not_available_stock ? ' (y ' + dec(it.not_available_stock) + ' u. no disponibles)' : '') +
+        ' · vendés ' + dec(it.vpd || 0) + ' u. por día' +
+        (it.vpd > 0 ? ' → ' + dec(total) + ' ÷ ' + dec(it.vpd) + ' = ' + Math.round(total / it.vpd) + ' días' : '');
+}
+
 function filaConBarra(it, opciones) {
-    return `<div class="pc-fila">
+    return `<div class="pc-fila pc-fila-clic" onclick="abrirGraficoDeProducto(${Number(it.id)})" title="Tocá para ver el gráfico">
         <div class="pc-fila-top">
             <span class="pc-fila-nombre">${opciones.icono}${escapeHtml(it.title)}${it.variation_name ? ` (${escapeHtml(it.variation_name)})` : ''}</span>
             <span class="${opciones.claseDerecha || 'pc-accion'}">${opciones.derecha}</span>
         </div>
+        <div class="pc-fila-ident">${identificacionItem(it)}</div>
         ${barraCobertura(opciones.dias, it.target_stock_days, opciones.claseBarra)}
         <div class="pc-fila-nota">${opciones.nota}</div>
+        <div class="pc-fila-nota pc-fila-cuenta">${escapeHtml(cuentaDeDias(it))}</div>
     </div>`;
 }
 
@@ -1918,14 +1943,14 @@ function renderizarPanelColecta() {
     const deMas = g.deMas.slice().sort((a, b) => (b.covered_days_left || 0) - (a.covered_days_left || 0));
     const htmlDeMas = deMas.length === 0 ? '' : seccionPanel(
         'Tienen de más (no mandes más por ahora)',
-        deMas.slice(0, 6).map(it => filaConBarra(it, {
+        deMas.map(it => filaConBarra(it, {
             icono: iconoSvg('capas', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
             derecha: `Tenés para ${Math.round(it.covered_days_left || 0)} días`,
             claseDerecha: 'pc-info',
             dias: it.covered_days_left,
             claseBarra: 'pc-fill-info',
             nota: `Objetivo: ${escapeHtml(it.target_stock_days)} días.`
-        })).join('') + (deMas.length > 6 ? `<div class="pc-mas">Y ${deMas.length - 6} más.</div>` : ''));
+        })).join(''));
 
     cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)
         + (hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta))
