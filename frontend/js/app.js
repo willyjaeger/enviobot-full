@@ -1994,7 +1994,7 @@ function renderizarPanelColecta() {
     // Tienen de más
     const deMas = g.deMas.slice().sort((a, b) => (b.covered_days_left || 0) - (a.covered_days_left || 0));
     const htmlDeMas = deMas.length === 0 ? '' : seccionPanel(
-        'Tienen de más (no mandes más por ahora)',
+        'Artículos con stock suficiente',
         deMas.map(it => filaConBarra(it, {
             icono: iconoSvg('capas', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
             derecha: etiquetaStockSuficiente(it),

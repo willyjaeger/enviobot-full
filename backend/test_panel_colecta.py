@@ -722,8 +722,8 @@ process.stdout.write(creado ? creado.innerHTML : '');
     # ── tienen de más ──
     def test_tienen_de_mas_lista_solo_los_marcados(self):
         out = self._correr([_item(title='Sobra mucho', sobrestock=True, covered_days_left=267), _item(title='Normal')])
-        self.assertIn('Tienen de más (no mandes más por ahora)', out['html'])
-        seccion = out['html'].split('Tienen de más (no mandes más por ahora)')[1]
+        self.assertIn('Artículos con stock suficiente', out['html'])
+        seccion = out['html'].split('Artículos con stock suficiente')[1]
         self.assertIn('Sobra mucho', seccion)
         self.assertIn('Stock suficiente', seccion)
         self.assertNotIn('Stock suficiente:', seccion)
