@@ -125,7 +125,7 @@ class TestPanelJS(unittest.TestCase):
                    inventory_id='RCUM58244', item_id='MLA1', channels=[{'item_id': 'MLA1', 'listing_type': 'gold_pro', 'status': 'active'},
                                                                       {'item_id': 'MLA2', 'is_catalog': True, 'status': 'paused'}])
         html = self._correr([it, _item(id=8, sku='X', sobrestock=True, covered_days_left=100)])['html']
-        for frase in ('SKU <b>06032</b>', 'Cód. Full <b>RCUM58244</b>', 'MLA1 Premium', 'MLA2 Catálogo (pausada)',
+        for frase in ('data-copiar="06032"', 'data-copiar="RCUM58244"', '>MLA1</a> Premium', '>MLA2</a> Catálogo (pausada)', 'https://articulo.mercadolibre.com.ar/MLA1',
                       'abrirGraficoDeProducto(7)', 'En Full 4.000 u.', 'vendés 6 u. por día', '4.000 ÷ 6 = 667 días'):
             self.assertIn(frase, html, frase)
 
@@ -730,7 +730,8 @@ process.stdout.write(creado ? creado.innerHTML : '');
                                   sugerido_al_ingreso=5, variation_name='<i>x</i>')])
         self.assertNotIn('<img', out['html'])
         propio = out['html'].replace('<div class="pc-leyenda-expl"><b>', '')   # la leyenda de la barra usa <b> a propósito
-        self.assertNotIn('"><b>', propio)   # el SKU malicioso no se cuela
+        self.assertIn('&quot;&gt;&lt;b&gt;', propio)   # el SKU malicioso queda escapado
+        self.assertNotIn('data-copiar=""><b>', propio)
         self.assertNotIn('<i>x', out['html'])
         self.assertIn('&lt;img', out['html'])
 

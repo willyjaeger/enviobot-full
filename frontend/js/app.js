@@ -576,15 +576,38 @@ function barraCobertura(dias, objetivo, clase) {
     return `<div class="pc-bar"><div class="pc-bar-fill ${clase}" style="width: ${pct.toFixed(1)}%"></div><div class="pc-bar-meta"></div></div>`;
 }
 
-// Para reconocer el producto en Mercado Libre: SKU, código de Full y número de cada publicación.
+// Un dato que se copia con un toque (SKU, código de Full). No abre el gráfico de la fila.
+function copiarTexto(ev, el) {
+    if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+    const texto = el.getAttribute('data-copiar') || '';
+    const listo = function () { if (typeof showToast === 'function') showToast('Copiado: ' + texto, 'success', 1800); };
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(texto).then(listo, function () {}); return; }
+    } catch (e) { /* sin portapapeles: queda el texto para seleccionar */ }
+    const t = document.createElement('textarea');
+    t.value = texto;
+    document.body.appendChild(t);
+    t.select();
+    try { document.execCommand('copy'); listo(); } catch (e) { /* nada */ }
+    t.remove();
+}
+
+function datoCopiable(valor, negrita) {
+    const v = escapeHtml(valor);
+    return '<span class="copiable" data-copiar="' + v + '" onclick="copiarTexto(event, this)" title="Tocá para copiar">' + (negrita ? '<b>' + v + '</b>' : v) + '</span>';
+}
+
+// Para reconocer el producto en Mercado Libre: SKU y código de Full se copian; cada publicación es un link a Mercado Libre.
 function identificacionItem(it) {
-    const pubs = (it.channels && it.channels.length ? it.channels : (it.item_id ? [{ item_id: it.item_id }] : [])).map(function (ch) {
+    const pubs = (it.channels && it.channels.length ? it.channels : (it.item_id ? [{ item_id: it.item_id, permalink: it.permalink }] : [])).map(function (ch) {
         const tipo = ch.is_catalog ? 'Catálogo' : (ch.type_label || (ch.listing_type === 'gold_pro' ? 'Premium' : (ch.listing_type ? 'Clásica' : '')));
         const pausada = (ch.status || 'active') !== 'active' ? ' (pausada)' : '';
-        return escapeHtml(ch.item_id) + (tipo ? ' ' + escapeHtml(tipo) : '') + pausada;
+        const url = /^https?:\/\//.test(ch.permalink || '') ? ch.permalink : 'https://articulo.mercadolibre.com.ar/' + encodeURIComponent(ch.item_id);
+        return '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Abrir la publicación en Mercado Libre">' + escapeHtml(ch.item_id) + '</a>' +
+            (tipo ? ' ' + escapeHtml(tipo) : '') + pausada;
     });
-    return '<span>SKU <b>' + escapeHtml(it.sku || 'sin SKU') + '</b></span>' +
-        (it.inventory_id ? '<span>Cód. Full <b>' + escapeHtml(it.inventory_id) + '</b></span>' : '') +
+    return '<span>SKU ' + datoCopiable(it.sku || 'sin SKU', true) + '</span>' +
+        (it.inventory_id ? '<span>Cód. Full ' + datoCopiable(it.inventory_id, true) + '</span>' : '') +
         (pubs.length ? '<span>' + pubs.join(' · ') + '</span>' : '');
 }
 
@@ -2580,7 +2603,7 @@ function renderizarTabla() {
             channelsHtml = `<a href="${it.permalink}" target="_blank" class="channel-pill" onclick="event.stopPropagation();">${it.item_id}</a>`;
         }
 
-        const meliCodeText = it.inventory_id ? `<span>·</span> <span>Cód: ${it.inventory_id}</span>` : '';
+        const meliCodeText = it.inventory_id ? `<span>·</span> <span>Cód: ${datoCopiable(it.inventory_id, false)}</span>` : '';
         const meliItemLink = (it.item_id && (!it.channels || it.channels.length === 0)) ? '' : (it.item_id ? `<span>·</span> <a href="${it.permalink || `https://articulo.mercadolibre.com.ar/${it.item_id}`}" target="_blank" class="channel-pill" onclick="event.stopPropagation();">${it.item_id}</a>` : '');
 
         let incomingSummary = '';
@@ -2598,7 +2621,7 @@ function renderizarTabla() {
                             <span>${it.title}</span>${it.variation_name ? ` · <span style="color: var(--text2); font-weight: 400;">${it.variation_name}</span>` : ''}
                         </div>
                         <div class="product-meta">
-                            <span>SKU: <strong>${it.sku || 'Sin SKU'}</strong></span>
+                            <span>SKU: ${datoCopiable(it.sku || 'Sin SKU', true)}</span>
                             ${meliCodeText}
                             ${meliItemLink}
                             ${channelsHtml ? `<span>·</span> ${channelsHtml}` : ''}

@@ -1903,3 +1903,8 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .pc-fila-ident { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text2); margin: 2px 0 6px; }
 .pc-fila-ident b { color: var(--text); }
 .pc-fila-cuenta { margin-top: 2px; }
+
+.copiable { cursor: copy; border-radius: 3px; }
+.copiable:hover { background: var(--bg); outline: 1px dashed var(--text2); }
+.pc-fila-ident a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.pc-fila-ident a:hover { text-decoration: underline; }
