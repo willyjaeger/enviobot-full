@@ -2093,6 +2093,56 @@ def guardar_horario_destinatario(recipient_id):
     conn.close()
     return jsonify({"ok": True}), 200
 
+_RE_EMAIL = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
+
+
+@app.route("/api/full/settings/colecta-mail", methods=["GET", "PUT"])
+@jwt_required()
+@_equipo.requiere_rol('admin')
+def colecta_mail():
+    """Mail donde Mercado Libre le avisa a este cliente de sus colectas (código de autorización, horario).
+    El cliente lo reenvía a la casilla de EnvioBot y correo_colectas.py reparte el aviso por WhatsApp a su agenda."""
+    user_id = int(get_jwt_identity())
+    buzon = os.getenv("COLECTAS_IMAP_USER", "colectas@enviobot.com.ar")
+    conn = get_db()
+    with conn.cursor() as cur:
+        editable = _esquema.tiene_columna(cur, "user_settings", "colecta_email")   # migración 004
+        if request.method == "GET":
+            actual = ""
+            if editable:
+                cur.execute("SELECT colecta_email FROM user_settings WHERE user_id=%s", (user_id,))
+                fila = cur.fetchone()
+                actual = (fila or {}).get("colecta_email") or ""
+            conn.close()
+            return jsonify({"ok": True, "editable": editable, "emails": actual, "buzon": buzon}), 200
+        if not editable:
+            conn.close()
+            return jsonify({"ok": False, "error": "Todavía no está habilitado: falta aplicar la actualización de la base (migración 004)."}), 409
+        crudo = str((request.get_json() or {}).get("emails") or "")
+        direcciones = []
+        for d in re.split(r"[,;\s]+", crudo.lower()):
+            if not d:
+                continue
+            if not _RE_EMAIL.match(d):
+                conn.close()
+                return jsonify({"ok": False, "error": f"\"{d}\" no es un mail válido."}), 400
+            if d not in direcciones:
+                direcciones.append(d)
+        if len(direcciones) > 3:
+            conn.close()
+            return jsonify({"ok": False, "error": "Hasta 3 direcciones."}), 400
+        if buzon.lower() in direcciones:
+            conn.close()
+            return jsonify({"ok": False, "error": "Ahí va la dirección donde Mercado Libre te escribe, no la casilla de EnvioBot."}), 400
+        cur.execute("SELECT user_id FROM user_settings WHERE user_id=%s", (user_id,))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({"ok": False, "error": "Guardá primero la configuración de alertas."}), 404
+        cur.execute("UPDATE user_settings SET colecta_email=%s WHERE user_id=%s", (",".join(direcciones) or None, user_id))
+    conn.close()
+    return jsonify({"ok": True, "emails": ",".join(direcciones)}), 200
+
+
 @app.route("/api/full/recipients/<int:recipient_id>/avisos", methods=["PUT"])
 @jwt_required()
 @_equipo.requiere_rol('admin')

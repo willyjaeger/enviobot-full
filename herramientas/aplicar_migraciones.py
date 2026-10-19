@@ -1,9 +1,10 @@
-"""Corre EN EL SERVIDOR (se manda por ssh). Aplica las migraciones 001, 002 y 003 de EnvioBot Full de una vez (cada una revisa si ya esta hecha: se puede correr de nuevo).
+"""Corre EN EL SERVIDOR (se manda por ssh). Aplica las migraciones 001, 002, 003 y 004 de EnvioBot Full de una vez (cada una revisa si ya esta hecha: se puede correr de nuevo).
 
 001: umbral de sobrestock (user_settings), hora limite de colecta (warehouses), estado del galpon
      (inbound_shipment_items) y tabla nueva stock_daily (foto diaria del stock).
 002: columna full_items.sub_status (motivo de pausa de cada publicacion).
 003: columna alert_recipients.avisos (que avisos recibe cada destinatario).
+004: columna user_settings.colecta_email (mail donde cada cliente recibe los avisos de colecta de ML).
 Solo agrega columnas y una tabla nueva, todas de Full. No toca Pedidos.
 1) Respaldo de las tablas afectadas en /var/www/enviobot-full/backups/.
 2) Apaga enviobot-full, aplica los SQL, vuelve a prender.
@@ -22,6 +23,7 @@ MIGRACIONES = [
     ("001", RAIZ + "/backend/migration_001_colecta_ajustes.sql", "inbound_shipment_items", "prep_status"),
     ("002", RAIZ + "/backend/migration_002_motivo_pausa.sql", "full_items", "sub_status"),
     ("003", RAIZ + "/backend/migration_003_avisos_por_destinatario.sql", "alert_recipients", "avisos"),
+    ("004", RAIZ + "/backend/migration_004_mail_colectas.sql", "user_settings", "colecta_email"),
 ]
 
 
@@ -97,7 +99,7 @@ def main():
         print("El servicio no responde. Estado:")
         print(sh(["systemctl", "status", SERVICIO, "--no-pager", "-n", "8"]).stdout[-600:])
         return 1
-    print("Servicio funcionando." + (" REVISAR: alguna migracion fallo." if fallo else " Migraciones 001, 002 y 003 aplicadas."))
+    print("Servicio funcionando." + (" REVISAR: alguna migracion fallo." if fallo else " Migraciones 001 a 004 aplicadas."))
     return 1 if fallo else 0
 
 

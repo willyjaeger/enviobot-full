@@ -1369,6 +1369,21 @@
                             <button type="button" class="btn btn-secondary btn-sm" id="btnCambiarHorarioDueno" onclick="editarHorarioWA(null)" style="font-size: 11px; padding: 5px 12px; white-space: nowrap;">Cambiar</button>
                         </div>
 
+                        <!-- Mail donde Mercado Libre avisa de las colectas de ESTA cuenta -->
+                        <div id="cardColectaMail" style="background: var(--surf2); padding: 12px; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 12px;">
+                            <div style="font-size: 12px; font-weight: 700; color: var(--text);">Avisos de colecta por mail</div>
+                            <div style="font-size: 11px; color: var(--text2); margin: 2px 0 8px;">
+                                Mercado Libre te escribe a un mail cuando programa una colecta (código de autorización y horario). Escribí acá ese mail y reenviá lo de Mercado Libre a
+                                <strong id="colectaMailBuzon" style="color: var(--text);">colectas@enviobot.com.ar</strong>:
+                                avisamos por WhatsApp a los números de abajo que tengan marcado <em>Mails de ML</em> en su menú de Avisos.
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <input type="text" id="colectaMailInput" class="filter-input" style="flex: 1; min-width: 240px;" placeholder="mail@tuempresa.com (hasta 3, separados por coma)" autocomplete="off">
+                                <button type="button" class="btn btn-secondary btn-sm" id="btnGuardarColectaMail" onclick="guardarColectaMail()" style="font-size: 11px; padding: 6px 14px;">Guardar</button>
+                            </div>
+                            <div id="colectaMailEstado" style="font-size: 11px; color: var(--text2); min-height: 14px; margin-top: 6px;"></div>
+                        </div>
+
                         <!-- Tabla de Destinatarios de WhatsApp -->
                         <table class="recipients-table">
                             <thead>
@@ -1873,6 +1888,6 @@
     <script src="js/teclado-formularios.js?v=20261017_2"></script>
     <script src="js/theme.js?v=20261013_4"></script>
     <script src="js/notifications.js?v=20261013_4"></script>
-    <script src="js/app.js?v=20261019_1"></script>
+    <script src="js/app.js?v=20261019_2"></script>
 </body>
 </html>

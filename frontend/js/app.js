@@ -4811,6 +4811,7 @@ async function cargarDestinatariosBackend() {
             if (data.owner_schedule) horarioDuenoWA = data.owner_schedule;
             invitarAppHabilitado = !!data.app_invite_enabled;
             puedeEditarDestinatarios = data.can_edit !== false;
+            cargarColectaMail();
             tiposAvisoWA = Array.isArray(data.tipos_aviso) ? data.tipos_aviso : [];
             avisosEditablesWA = !!data.avisos_editables;
             renderizarDestinatariosWA();
@@ -5774,6 +5775,44 @@ function editarHorarioWA(id) {
     });
     const her = document.getElementById('hwaHeredar');
     if (her) her.onclick = () => enviar({ inherit: true });
+}
+
+// Mail donde Mercado Libre avisa de las colectas de esta cuenta (migración 004).
+async function cargarColectaMail() {
+    const input = document.getElementById('colectaMailInput');
+    if (!input || !getToken()) return;
+    try {
+        const resp = await fetch(`${API_BASE}/full/settings/colecta-mail`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
+        const data = await resp.json();
+        if (!data.ok) return;
+        input.value = (data.emails || '').split(',').join(', ');
+        const buzon = document.getElementById('colectaMailBuzon');
+        if (buzon && data.buzon) buzon.textContent = data.buzon;
+        const editable = !!data.editable && puedeEditarDestinatarios;
+        input.disabled = !editable;
+        document.getElementById('btnGuardarColectaMail').disabled = !editable;
+        document.getElementById('colectaMailEstado').textContent = data.editable ? '' : 'Se habilita al aplicar la actualización de la base.';
+    } catch (e) { console.error('No se pudo leer el mail de colectas', e); }
+}
+
+async function guardarColectaMail() {
+    const estado = document.getElementById('colectaMailEstado');
+    estado.style.color = 'var(--text2)';
+    estado.textContent = 'Guardando...';
+    try {
+        const resp = await fetch(`${API_BASE}/full/settings/colecta-mail`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+            body: JSON.stringify({ emails: document.getElementById('colectaMailInput').value })
+        });
+        const data = await resp.json();
+        if (!data.ok) { estado.style.color = '#ff7676'; estado.textContent = data.error || 'No se pudo guardar.'; return; }
+        document.getElementById('colectaMailInput').value = (data.emails || '').split(',').join(', ');
+        estado.textContent = data.emails ? 'Guardado. Falta reenviar los mails de Mercado Libre a la casilla de arriba.' : 'Guardado: no se reenvía nada.';
+    } catch (e) {
+        estado.style.color = '#ff7676';
+        estado.textContent = 'Error de conexión. Probá de nuevo.';
+    }
 }
 
 // Menú de avisos: qué tipos de aviso recibe cada número de la agenda.
