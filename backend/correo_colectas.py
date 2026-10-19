@@ -34,6 +34,12 @@ from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
 
+try:  # cron no carga el .env: se lee el de esta carpeta (el mismo que usa la app)
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
+except ImportError:  # pragma: no cover
+    pass
+
 import pausa_avisos
 import proyeccion
 from horario_whatsapp import horario_defecto, whatsapp_permitido
