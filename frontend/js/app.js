@@ -1969,6 +1969,18 @@ function tarjetaColecta(enColecta) {
     </div>`;
 }
 
+// Las flechas de subir/bajar solo aparecen si la página es más larga que la pantalla.
+(function () {
+    try {
+        const nav = document.getElementById('scrollNav');
+        if (!nav) return;
+        const actualizar = () => { nav.style.display = document.documentElement.scrollHeight > window.innerHeight + 200 ? 'flex' : 'none'; };
+        window.addEventListener('resize', actualizar);
+        new ResizeObserver(actualizar).observe(document.body);
+        actualizar();
+    } catch (e) { /* sin página (tests) */ }
+})();
+
 // Pestañas del panel: la página queda corta y cada cosa en su lugar.
 const PESTANAS_PANEL = ['resumen', 'colectas', 'productos'];
 function mostrarPestana(nombre, guardar) {

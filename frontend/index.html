@@ -46,7 +46,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261018_16">
+    <link rel="stylesheet" href="css/style.css?v=20261018_17">
 </head>
 <body>
 
@@ -263,9 +263,9 @@
                 </div>
 
                 <div class="tabs-panel" id="tabsPanel" role="tablist" aria-label="Secciones del panel">
-                    <button type="button" class="tab-panel-btn" role="tab" data-tab="resumen" onclick="mostrarPestana('resumen')">Resumen</button>
-                    <button type="button" class="tab-panel-btn" role="tab" data-tab="colectas" onclick="mostrarPestana('colectas')">Colectas <span class="tab-panel-cont" id="tabContColectas"></span></button>
-                    <button type="button" class="tab-panel-btn" role="tab" data-tab="productos" onclick="mostrarPestana('productos')">Productos <span class="tab-panel-cont" id="tabContProductos"></span></button>
+                    <button type="button" class="tab-panel-btn" role="tab" data-tab="resumen" onclick="mostrarPestana('resumen')"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Resumen</button>
+                    <button type="button" class="tab-panel-btn" role="tab" data-tab="colectas" onclick="mostrarPestana('colectas')"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Colectas <span class="tab-panel-cont" id="tabContColectas"></span></button>
+                    <button type="button" class="tab-panel-btn" role="tab" data-tab="productos" onclick="mostrarPestana('productos')"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Productos <span class="tab-panel-cont" id="tabContProductos"></span></button>
                 </div>
 
                 <div class="pc-wrap" id="panelColecta" style="display: none;"></div>
@@ -1864,9 +1864,14 @@
     </div>
 
     <!-- Scripts -->
+    <div class="scroll-nav" id="scrollNav">
+        <button type="button" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Ir arriba" aria-label="Ir arriba"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"></polyline></svg></button>
+        <button type="button" onclick="window.scrollTo({top: document.body.scrollHeight, behavior: 'smooth'})" title="Ir abajo" aria-label="Ir abajo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button>
+    </div>
+
     <script src="js/teclado-formularios.js?v=20261017_2"></script>
     <script src="js/theme.js?v=20261013_4"></script>
     <script src="js/notifications.js?v=20261013_4"></script>
-    <script src="js/app.js?v=20261018_16"></script>
+    <script src="js/app.js?v=20261018_17"></script>
 </body>
 </html>

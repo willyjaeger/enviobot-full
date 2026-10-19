@@ -1915,12 +1915,19 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .lista-colecta b { color: var(--text); }
 
 /* ── Pestañas del panel: Resumen / Colectas / Productos ── */
-.tabs-panel { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 16px; overflow-x: auto; }
-.tab-panel-btn { background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 10px 18px; font-size: 14.5px; font-weight: 600; color: var(--text2); cursor: pointer; white-space: nowrap; }
-.tab-panel-btn:hover { color: var(--text); }
-.tab-panel-btn.activa { color: var(--text); border-bottom-color: var(--accent); font-weight: 800; }
-.tab-panel-cont { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 10px; background: var(--surf2); color: var(--text2); font-size: 12px; font-weight: 700; text-align: center; }
+.tabs-panel { display: flex; gap: 6px; border-bottom: 2px solid var(--border); margin: 8px 0 18px; padding: 0 4px; overflow-x: auto; }
+.tab-panel-btn { display: inline-flex; align-items: center; gap: 8px; margin-bottom: -2px; padding: 11px 22px 10px; background: var(--surf2); border: 1px solid var(--border); border-bottom: 2px solid var(--border); border-radius: 10px 10px 0 0; font-size: 15px; font-weight: 600; color: var(--text2); cursor: pointer; white-space: nowrap; }
+.tab-panel-btn svg { flex-shrink: 0; }
+.tab-panel-btn:hover { background: var(--surface); color: var(--text); }
+.tab-panel-btn.activa { background: var(--surface); color: var(--text); font-weight: 800; border-top: 3px solid var(--accent); padding-top: 9px; border-bottom-color: var(--surface); }
+.tab-panel-btn.activa svg { color: var(--accent); }
+.tab-panel-cont { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--surface); color: var(--text2); font-size: 12px; font-weight: 700; text-align: center; }
+.tab-panel-btn.activa .tab-panel-cont { background: var(--accent); color: var(--bg); }
 .tab-panel-cont:empty { display: none; }
+/* Flechas para ir al principio o al final de la página (igual que en EnvioBot Pedidos). */
+.scroll-nav { position: fixed; right: 20px; bottom: 20px; z-index: 60; display: none; flex-direction: column; gap: 8px; }
+.scroll-nav button { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); color: var(--accent-text, var(--accent)); cursor: pointer; box-shadow: 0 3px 12px rgba(0,0,0,0.4); }
+.scroll-nav button:hover { background: var(--surf2); }
 .main-content[data-tab="resumen"] #panelColectasTab, .main-content[data-tab="resumen"] #cardStockPrincipal,
 .main-content[data-tab="colectas"] #panelColecta, .main-content[data-tab="colectas"] #cardStockPrincipal,
 .main-content[data-tab="productos"] #panelColecta, .main-content[data-tab="productos"] #panelColectasTab { display: none !important; }
