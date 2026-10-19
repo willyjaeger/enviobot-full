@@ -366,6 +366,158 @@ def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
     return "\n".join(lineas)
 
 
+# ── Mensajes de WhatsApp que Mercado Libre / transporte mandan al teléfono del vendedor ──
+
+_WA_DIRECTAS = (
+    "mercadolibre",
+    "mercado libre",
+    "mercadoenvios",
+    "mercado envios",
+    "colecta",
+    "transportista",
+    "transportadora",
+    "autorizacion",
+)
+_WA_LOGISTICA = (
+    "retiro",
+    "retirar",
+    "camion",
+    "chofer",
+    "flete",
+    "bulto",
+    "bultos",
+    "pallet",
+    "pallets",
+    "cajas",
+    "reprogram",
+    "envio",
+    "full",
+    "meli",
+    "planta",
+    "deposito",
+)
+
+
+def es_wa_de_colecta(texto, remitente=""):
+    """True si un WhatsApp entrante al teléfono vinculado habla de una colecta / Mercado Libre / camión."""
+    limpio = _sin_acentos(f"{remitente}\n{texto}")
+    if len((texto or "").strip()) < 6:
+        return False
+    if any(p in limpio for p in _WA_DIRECTAS):
+        return True
+    coincidencias = sum(1 for p in _WA_LOGISTICA if re.search(rf"\b{re.escape(p)}", limpio))
+    return coincidencias >= 2
+
+
+def armar_mensaje_wa_colecta(texto, datos, cuenta=None, telefono_receptor=None, remitente=None):
+    """Arma el aviso de WhatsApp cuando Mercado Libre o el transporte escriben al WhatsApp vinculado."""
+    de = f" de *{cuenta}*" if cuenta else ""
+    tel_txt = f" ({telefono_receptor})" if telefono_receptor else ""
+    lineas = [f"📲 Mercado Libre / Colecta escribió al WhatsApp{de}{tel_txt}"]
+    if remitente and remitente.strip():
+        lineas.append(f"Remitente: {remitente.strip()}")
+    if datos.get("desde") and datos.get("hasta"):
+        cuando = f"el {datos['fecha']}, " if datos.get("fecha") else ""
+        lineas.append(f"Franja informada: {cuando}entre las {datos['desde']} y las {datos['hasta']} hs")
+    if datos.get("envio"):
+        lineas.append(f"Envío N.º {datos['envio']}")
+    if datos.get("codigo"):
+        lineas.append(f"Código de autorización: *{datos['codigo']}*")
+    quien = " · ".join(
+        x for x in (
+            datos.get("transportista"),
+            ("Patente " + datos["patente"]) if datos.get("patente") else None,
+            ("Transportadora " + datos["transportadora"]) if datos.get("transportadora") else None,
+        ) if x
+    )
+    if quien:
+        lineas.append(quien)
+    resumen_ia = (datos.get("resumen") or "").strip()
+    if resumen_ia:
+        if datos.get("codigo"):
+            cod = datos["codigo"]
+            resumen_ia = re.sub(rf"(?<!\*)\b{re.escape(cod)}\b(?!\*)", f"*{cod}*", resumen_ia)
+        if cuenta:
+            resumen_ia = re.sub(rf"(?<!\*)\b{re.escape(cuenta)}\b(?!\*)", f"*{cuenta}*", resumen_ia, flags=re.I)
+        lineas.append("")
+        lineas.append(f"Resumen IA: {resumen_ia}")
+    original = limpiar(texto or "")
+    if original:
+        if len(original) > 600:
+            original = original[:600].rsplit(" ", 1)[0] + "…"
+        lineas.append("")
+        lineas.append(f"Mensaje original:\n{original}")
+    return "\n".join(lineas)
+
+
+def procesar_wa_entrante(
+    user_id,
+    texto,
+    remitente_nombre="",
+    remitente_telefono="",
+    telefono_receptor="",
+    ahora=None,
+    enviar=None,
+):
+    """Recibe un WhatsApp entrante del teléfono vinculado de la cuenta `user_id` y, si es de colecta,
+    lo resume con IA y lo reenvía a los destinatarios de la agenda."""
+    if not pausa_avisos.puede_enviar(pausa_avisos.MAIL_COLECTA):
+        return {"ok": True, "pausado": True}
+    if not es_wa_de_colecta(texto, remitente_nombre):
+        return {"ok": True, "ignorado": True, "motivo": "no_es_colecta"}
+
+    import alerts_engine
+    from aviso_limite_colecta import _destinatarios
+    from whatsapp_service import normalizar_telefono
+
+    ahora = ahora or datetime.now(proyeccion.HORA_BA)
+    enviar = enviar or _enviar_whatsapp
+
+    conn = alerts_engine.get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (user_id,))
+            fila_settings = cur.fetchone() or {"user_id": user_id}
+            cur.execute(
+                "SELECT ml_nickname FROM ml_credentials WHERE user_id=%s AND ml_nickname IS NOT NULL ORDER BY id",
+                (user_id,),
+            )
+            nombres = [r["ml_nickname"] for r in cur.fetchall()]
+            cur.execute("SELECT COALESCE(business_name, full_name) AS n FROM users WHERE id=%s", (user_id,))
+            u = cur.fetchone() or {}
+            nombre_cuenta = " / ".join(nombres) or u.get("n") or "tu cuenta"
+            destinos = _destinatarios(conn, user_id, fila_settings, pausa_avisos.MAIL_COLECTA)
+    finally:
+        conn.close()
+
+    excluir = {
+        normalizar_telefono(t)
+        for t in (telefono_receptor, remitente_telefono)
+        if t and normalizar_telefono(t)
+    }
+    a_enviar = [
+        t for t, h in destinos.items()
+        if normalizar_telefono(t) not in excluir and en_horario(h, ahora)
+    ]
+    if not a_enviar:
+        return {"ok": True, "enviados": 0, "motivo": "sin_destinatarios_en_horario"}
+
+    datos = enriquecer_datos(f"WhatsApp {remitente_nombre or 'Mercado Libre'}", texto)
+    mensaje = armar_mensaje_wa_colecta(
+        texto,
+        datos,
+        cuenta=nombre_cuenta,
+        telefono_receptor=telefono_receptor,
+        remitente=remitente_nombre,
+    )
+    resultados = enviar(a_enviar, mensaje)
+    ok_count = sum(1 for r in (resultados or []) if (r.get("result") or {}).get("ok"))
+    logger.info(
+        f"[WA colecta] Reenviado WhatsApp de colecta ({nombre_cuenta}) a {ok_count}/{len(a_enviar)} destinatarios"
+    )
+    return {"ok": True, "enviados": ok_count, "destinatarios": a_enviar, "mensaje": mensaje}
+
+
 # ── Casilla y envío ───────────────────────────────────────────────────────────────
 
 def leer_configuracion(env=None):

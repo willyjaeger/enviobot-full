@@ -4863,6 +4863,7 @@ async function cargarDestinatariosBackend() {
             invitarAppHabilitado = !!data.app_invite_enabled;
             puedeEditarDestinatarios = data.can_edit !== false;
             cargarColectaMail();
+            cargarColectaWA();
             tiposAvisoWA = Array.isArray(data.tipos_aviso) ? data.tipos_aviso : [];
             avisosEditablesWA = !!data.avisos_editables;
             renderizarDestinatariosWA();
@@ -5049,6 +5050,7 @@ function switchConfigTab(tab) {
         if (btnSave) btnSave.style.display = 'none';
         if (btnCancel) btnCancel.textContent = 'Cerrar';
         renderizarDestinatariosWA();
+        cargarColectaWA();
     } else if (tab === 'team') {
         if (tabTeam) tabTeam.style.display = 'block';
         if (btnTeam) btnTeam.classList.add('active');
@@ -5863,6 +5865,150 @@ async function guardarColectaMail() {
     } catch (e) {
         estado.style.color = '#ff7676';
         estado.textContent = 'Error de conexión. Probá de nuevo.';
+    }
+}
+
+let _colectaWATimer = null;
+
+function _detenerPollColectaWA() {
+    if (_colectaWATimer) {
+        clearInterval(_colectaWATimer);
+        _colectaWATimer = null;
+    }
+}
+
+function _pintarEstadoColectaWA(data, mostrarQrSiHay) {
+    const badge = document.getElementById('colectaWABadge');
+    const btnVincular = document.getElementById('btnVincularColectaWA');
+    const btnReconectar = document.getElementById('btnReconectarColectaWA');
+    const btnDesvincular = document.getElementById('btnDesvincularColectaWA');
+    const qrBox = document.getElementById('colectaWAQrBox');
+    const qrInner = document.getElementById('colectaWAQrInner');
+    const qrHint = document.getElementById('colectaWAQrHint');
+    const estado = document.getElementById('colectaWAEstado');
+    if (!badge) return;
+
+    const status = (data && data.status) || 'close';
+    const phone = (data && data.phone) ? `+${String(data.phone).replace(/^\+/, '')}` : '';
+
+    if (status === 'open') {
+        _detenerPollColectaWA();
+        badge.className = 'badge badge-ok';
+        badge.textContent = phone ? `Conectado (${phone})` : 'Conectado';
+        if (btnVincular) btnVincular.style.display = 'none';
+        if (btnReconectar) btnReconectar.style.display = puedeEditarDestinatarios ? 'inline-flex' : 'none';
+        if (btnDesvincular) btnDesvincular.style.display = puedeEditarDestinatarios ? 'inline-flex' : 'none';
+        if (qrBox) qrBox.style.display = 'none';
+        if (estado) {
+            estado.style.color = '#22c55e';
+            estado.textContent = `Escuchando mensajes de Mercado Libre / Colecta en ${phone || 'el WhatsApp vinculado'} y reenviándolos al equipo.`;
+        }
+    } else if (status === 'connecting' && data && data.qr) {
+        badge.className = 'badge badge-warn';
+        badge.textContent = 'Esperando escaneo de QR';
+        if (btnVincular) btnVincular.style.display = 'none';
+        if (btnReconectar) btnReconectar.style.display = puedeEditarDestinatarios ? 'inline-flex' : 'none';
+        if (btnDesvincular) btnDesvincular.style.display = puedeEditarDestinatarios ? 'inline-flex' : 'none';
+        if (qrBox) qrBox.style.display = 'block';
+        if (qrInner) {
+            qrInner.innerHTML = `<img src="${data.qr}" alt="Código QR de WhatsApp" style="width: 220px; height: 220px; display: block;">`;
+        }
+        if (qrHint) qrHint.textContent = 'El código QR se actualiza automáticamente hasta que lo escanees.';
+        if (estado) estado.textContent = '';
+    } else if (status === 'connecting' && mostrarQrSiHay) {
+        badge.className = 'badge badge-warn';
+        badge.textContent = 'Generando QR...';
+        if (qrBox) qrBox.style.display = 'block';
+        if (qrInner) qrInner.innerHTML = '<span style="color:#111;font-size:12px;">Generando código QR...</span>';
+    } else {
+        badge.className = 'badge badge-warn';
+        badge.textContent = 'Sin vincular';
+        if (btnVincular) {
+            btnVincular.style.display = 'inline-flex';
+            btnVincular.disabled = !puedeEditarDestinatarios;
+        }
+        if (btnReconectar) btnReconectar.style.display = 'none';
+        if (btnDesvincular) btnDesvincular.style.display = 'none';
+        if (qrBox && !mostrarQrSiHay) qrBox.style.display = 'none';
+        if (estado) {
+            estado.style.color = 'var(--text2)';
+            estado.textContent = '';
+        }
+    }
+}
+
+async function cargarColectaWA(mostrarQrSiHay) {
+    if (!document.getElementById('cardColectaWA') || !getToken()) return;
+    try {
+        const resp = await fetch(`${API_BASE}/full/settings/colecta-wa`, {
+            headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+        const data = await resp.json();
+        _pintarEstadoColectaWA(data, mostrarQrSiHay);
+    } catch (e) {
+        console.error('No se pudo consultar el WhatsApp de colecta', e);
+    }
+}
+
+async function conectarColectaWA(resetear) {
+    if (!getToken()) return;
+    const estado = document.getElementById('colectaWAEstado');
+    const qrBox = document.getElementById('colectaWAQrBox');
+    const qrInner = document.getElementById('colectaWAQrInner');
+    if (qrBox) qrBox.style.display = 'block';
+    if (qrInner) qrInner.innerHTML = '<span style="color:#111;font-size:12px;padding:20px;">Preparando código QR...</span>';
+    if (estado) {
+        estado.style.color = 'var(--text2)';
+        estado.textContent = 'Solicitando código QR al servidor de WhatsApp...';
+    }
+    try {
+        const resp = await fetch(`${API_BASE}/full/settings/colecta-wa/connect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+            body: JSON.stringify({ reset: !!resetear })
+        });
+        const data = await resp.json();
+        _pintarEstadoColectaWA(data, true);
+        _detenerPollColectaWA();
+        let intentos = 0;
+        _colectaWATimer = setInterval(async () => {
+            intentos++;
+            const modalAbierto = document.getElementById('modalConfig');
+            if (intentos > 60 || (modalAbierto && modalAbierto.style.display === 'none')) {
+                _detenerPollColectaWA();
+                return;
+            }
+            await cargarColectaWA(true);
+        }, 2500);
+    } catch (e) {
+        if (estado) {
+            estado.style.color = '#ff7676';
+            estado.textContent = 'Error de conexión al generar el QR.';
+        }
+    }
+}
+
+async function desconectarColectaWA() {
+    if (!confirm('¿Querés desvincular este WhatsApp? Después podés volver a vincularlo o cambiar de teléfono escaneando un nuevo QR.')) return;
+    _detenerPollColectaWA();
+    const estado = document.getElementById('colectaWAEstado');
+    if (estado) {
+        estado.style.color = 'var(--text2)';
+        estado.textContent = 'Desvinculando...';
+    }
+    try {
+        const resp = await fetch(`${API_BASE}/full/settings/colecta-wa/logout`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+        const data = await resp.json();
+        _pintarEstadoColectaWA(data, false);
+        if (estado) estado.textContent = 'WhatsApp desvinculado. Cuando quieras podés tocar "Vincular / Ver QR" para conectar de nuevo.';
+    } catch (e) {
+        if (estado) {
+            estado.style.color = '#ff7676';
+            estado.textContent = 'No se pudo desvincular. Probá de nuevo.';
+        }
     }
 }
 

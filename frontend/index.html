@@ -1384,6 +1384,33 @@
                             <div id="colectaMailEstado" style="font-size: 11px; color: var(--text2); min-height: 14px; margin-top: 6px;"></div>
                         </div>
 
+                        <!-- WhatsApp donde Mercado Libre o el transporte escribe por la colecta -->
+                        <div id="cardColectaWA" style="background: var(--surf2); padding: 12px; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap;">
+                                <div style="flex: 1; min-width: 240px;">
+                                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                        <span style="font-size: 12px; font-weight: 700; color: var(--text);">Avisos de colecta que llegan por WhatsApp</span>
+                                        <span id="colectaWABadge" class="badge badge-warn" style="font-size: 10.5px;">Sin vincular</span>
+                                    </div>
+                                    <div style="font-size: 11px; color: var(--text2); margin-top: 3px; line-height: 1.45;">
+                                        Si Mercado Libre o el transporte le escriben por WhatsApp al teléfono de tu cuenta (por ejemplo si el camión no pudo cargar todo o reprograman), vinculalo acá con código QR. EnvioBot detecta solo los mensajes de colecta/Mercado Libre, los resume con IA y se los reenvía automáticamente a Dani y a los destinatarios de abajo. Si algún día se desconecta o cambiás de teléfono, lo volvés a escanear desde acá cuantas veces quieras.
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-primary btn-sm" id="btnVincularColectaWA" onclick="conectarColectaWA(false)" style="font-size: 11px; padding: 6px 12px; white-space: nowrap;">Vincular / Ver QR</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btnReconectarColectaWA" onclick="conectarColectaWA(true)" style="font-size: 11px; padding: 6px 12px; white-space: nowrap; display: none;">Reconectar QR</button>
+                                    <button type="button" class="btn btn-secondary btn-sm" id="btnDesvincularColectaWA" onclick="desconectarColectaWA()" style="font-size: 11px; padding: 6px 12px; color: #ff6b6b; white-space: nowrap; display: none;">Desvincular</button>
+                                </div>
+                            </div>
+                            <div id="colectaWAQrBox" style="display: none; margin-top: 12px; padding: 14px; background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; text-align: center;">
+                                <div style="font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 4px;">Escaneá este QR desde el WhatsApp donde te escribe Mercado Libre</div>
+                                <div style="font-size: 11px; color: var(--text2); margin-bottom: 10px;">En ese celular abrí <strong>WhatsApp → Dispositivos vinculados → Vincular un dispositivo</strong></div>
+                                <div id="colectaWAQrInner" style="display: inline-flex; align-items: center; justify-content: center; min-height: 220px; min-width: 220px; background: #fff; padding: 10px; border-radius: 8px;"></div>
+                                <div id="colectaWAQrHint" style="font-size: 11px; color: var(--text2); margin-top: 8px;">Esperando escaneo...</div>
+                            </div>
+                            <div id="colectaWAEstado" style="font-size: 11px; color: var(--text2); min-height: 14px; margin-top: 6px;"></div>
+                        </div>
+
                         <!-- Tabla de Destinatarios de WhatsApp -->
                         <table class="recipients-table">
                             <thead>

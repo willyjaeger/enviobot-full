@@ -405,5 +405,30 @@ class TestPausa(unittest.TestCase):
             self.assertFalse(pausa_avisos.puede_enviar(pausa_avisos.AVISO_LIMITE_COLECTA))
 
 
+class TestWhatsAppColecta(unittest.TestCase):
+    def test_detecta_mensajes_de_mercadolibre_o_camion_y_descarta_charlas_comunes(self):
+        self.assertTrue(c.es_wa_de_colecta("Hola! Te escribimos de Mercado Libre por la colecta de hoy"))
+        self.assertTrue(c.es_wa_de_colecta("Pasó el camión a retirar los bultos para Full y no entraron todas las cajas"))
+        self.assertFalse(c.es_wa_de_colecta("Hola buen día, ¿me pasás lista de precios de nueces?"))
+
+    def test_arma_mensaje_wa_con_cuenta_y_codigo_en_negrita(self):
+        datos = {
+            "envio": "78889570",
+            "codigo": "9F769D2F",
+            "resumen": "Mercado Libre informa a MISTERNUT que el camión reprogramó el retiro con código 9F769D2F.",
+        }
+        msg = c.armar_mensaje_wa_colecta(
+            "Hola MISTERNUT, reprogramamos el retiro del envío #78889570. Código de autorización: 9F769D2F",
+            datos,
+            cuenta="MISTERNUT",
+            telefono_receptor="+5491150960091",
+            remitente="Mercado Libre",
+        )
+        self.assertIn("*MISTERNUT*", msg)
+        self.assertIn("*9F769D2F*", msg)
+        self.assertIn("+5491150960091", msg)
+
+
 if __name__ == "__main__":
     unittest.main()
+

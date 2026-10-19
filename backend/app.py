@@ -2144,6 +2144,89 @@ def colecta_mail():
     return jsonify({"ok": True, "emails": ",".join(direcciones)}), 200
 
 
+_WA_COLECTA_GATEWAY = os.getenv("WA_GATEWAY_BASE_URL", "http://127.0.0.1:8085").rstrip("/")
+_WA_MSG_VISTOS = []
+
+
+@app.route("/api/full/settings/colecta-wa", methods=["GET"])
+@jwt_required()
+@_equipo.requiere_rol('admin')
+def colecta_wa_status():
+    """Estado del WhatsApp receptor de avisos de colecta vinculado por QR para esta cuenta."""
+    user_id = int(get_jwt_identity())
+    try:
+        r = requests.get(f"{_WA_COLECTA_GATEWAY}/colecta-listener/{user_id}/status", timeout=6)
+        if r.status_code == 200:
+            return jsonify(r.json()), 200
+        return jsonify({"ok": False, "status": "close", "error": f"Gateway HTTP {r.status_code}"}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "status": "close", "error": str(e)}), 200
+
+
+@app.route("/api/full/settings/colecta-wa/connect", methods=["POST"])
+@jwt_required()
+@_equipo.requiere_rol('admin')
+def colecta_wa_connect():
+    """Inicia o regenera el código QR para vincular el WhatsApp donde Mercado Libre escribe por la colecta."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json(silent=True) or {}
+    forzar = bool(data.get("reset"))
+    try:
+        r = requests.post(
+            f"{_WA_COLECTA_GATEWAY}/colecta-listener/{user_id}/connect",
+            json={"reset": forzar},
+            timeout=10,
+        )
+        return jsonify(r.json()), r.status_code if r.status_code in (200, 400, 500) else 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"No se pudo conectar con el servicio de WhatsApp: {e}"}), 500
+
+
+@app.route("/api/full/settings/colecta-wa/logout", methods=["POST"])
+@jwt_required()
+@_equipo.requiere_rol('admin')
+def colecta_wa_logout():
+    """Desvincula el WhatsApp receptor de colectas de esta cuenta para poder vincular otro o reconectar."""
+    user_id = int(get_jwt_identity())
+    try:
+        r = requests.post(f"{_WA_COLECTA_GATEWAY}/colecta-listener/{user_id}/logout", timeout=10)
+        return jsonify(r.json()), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/full/internal/wa-colecta-incoming", methods=["POST"])
+def wa_colecta_incoming():
+    """Webhook interno llamado por whatsapp-gateway cuando llega un mensaje al WhatsApp vinculado."""
+    if request.remote_addr not in ("127.0.0.1", "::1", "localhost"):
+        return jsonify({"ok": False, "error": "Solo acceso local"}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        user_id = int(data.get("user_id") or 0)
+    except (TypeError, ValueError):
+        user_id = 0
+    texto = str(data.get("text") or "").strip()
+    msg_id = str(data.get("message_id") or "").strip()
+    if not user_id or not texto:
+        return jsonify({"ok": False, "error": "Faltan datos"}), 400
+    if msg_id:
+        clave = f"{user_id}:{msg_id}"
+        if clave in _WA_MSG_VISTOS:
+            return jsonify({"ok": True, "duplicado": True}), 200
+        _WA_MSG_VISTOS.append(clave)
+        if len(_WA_MSG_VISTOS) > 300:
+            del _WA_MSG_VISTOS[:100]
+    import correo_colectas
+    res = correo_colectas.procesar_wa_entrante(
+        user_id=user_id,
+        texto=texto,
+        remitente_nombre=str(data.get("sender_name") or ""),
+        remitente_telefono=str(data.get("sender_phone") or ""),
+        telefono_receptor=str(data.get("listener_phone") or ""),
+    )
+    return jsonify(res), 200
+
+
 @app.route("/api/full/recipients/<int:recipient_id>/avisos", methods=["PUT"])
 @jwt_required()
 @_equipo.requiere_rol('admin')
