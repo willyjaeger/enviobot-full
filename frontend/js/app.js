@@ -817,20 +817,37 @@ function tarjetaEstadoGeneral(g, total) {
     // Lo que tiene de más no es una novedad de la que haya que ocuparse: cuenta entre los tranquilos (su detalle queda más abajo).
     const tranquilosTodos = g.tranquilos.concat(g.deMas);
     grupoBarraPanel = Object.assign({}, g, { tranquilos: tranquilosTodos });
-    const seg = (n, color, grupo, estado) => n > 0
-        ? `<div class="pc-seg${estado ? ' pc-click' : ''}" data-grupo="${grupo}" style="flex: ${n}; background: var(${color});"${estado ? ` onclick="irAEstado('${estado}')"` : ''} onmouseenter="mostrarDetalleSegmento(event, '${grupo}')" onmousemove="moverDetalleSegmento(event)" onmouseleave="ocultarDetalleSegmento()"></div>` : '';
+    // Dona: cada porción es un arco (círculo con trazo) con el mismo detalle al pasar el mouse y el mismo clic que tenía la barra.
+    const R = 44, C = 2 * Math.PI * R;
+    const trozos = [
+        { n: tranquilosTodos.length, color: '--good', grupo: 'tranquilos', estado: 'ok' },
+        { n: g.pronto.length, color: '--warn', grupo: 'pronto', estado: 'warning' },
+        { n: g.urgentes.length, color: '--danger', grupo: 'urgentes', estado: 'critical' }
+    ].filter(t => t.n > 0);
+    const suma = trozos.reduce((acc, t) => acc + t.n, 0) || 1;
+    const hueco = trozos.length > 1 ? 3 : 0;
+    let acumulado = 0;
+    const arcos = trozos.map(t => {
+        const largo = (t.n / suma) * C;
+        const arco = `<circle class="pc-seg pc-click" data-grupo="${t.grupo}" cx="60" cy="60" r="${R}" fill="none" stroke="var(${t.color})" stroke-width="16" stroke-dasharray="${Math.max(largo - hueco, 0.5).toFixed(2)} ${(C - Math.max(largo - hueco, 0.5)).toFixed(2)}" stroke-dashoffset="${(-acumulado).toFixed(2)}" transform="rotate(-90 60 60)" onclick="irAEstado('${t.estado}')" onmouseenter="mostrarDetalleSegmento(event, '${t.grupo}')" onmousemove="moverDetalleSegmento(event)" onmouseleave="ocultarDetalleSegmento()"></circle>`;
+        acumulado += largo;
+        return arco;
+    }).join('');
+    const dona = `<svg class="pc-dona" width="128" height="128" viewBox="0 0 120 120" role="img" aria-label="${escapeHtml(`${tranquilosTodos.length} tranquilos, ${g.pronto.length} conviene mandar pronto, ${g.urgentes.length} urgentes`)}">${arcos}<text x="60" y="60" text-anchor="middle" class="pc-dona-num">${escapeHtml(total)}</text><text x="60" y="78" text-anchor="middle" class="pc-dona-txt">${total === 1 ? 'producto' : 'productos'}</text></svg>`;
     const dato = (n, color, texto, estado) => n > 0
-        ? `<span class="pc-leyenda-item${estado ? ' pc-click' : ''}"${estado ? ` onclick="irAEstado('${estado}')"` : ''}><span style="color: var(${color});">●</span> ${escapeHtml(texto)}</span>` : '';
+        ? `<span class="pc-leyenda-item${estado ? ' pc-click' : ''}"${estado ? ` onclick="irAEstado('${estado}')"` : ''}><span class="pc-ley-num" style="color: var(${color});">${escapeHtml(n)}</span> ${escapeHtml(texto)}</span>` : '';
     return `<div class="pc-hero ${clase}">
         <div class="pc-hero-top"><span class="pc-hero-icono">${icono.replace('margin-right: 4px;', '')}</span>
             <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub}</div></div></div>
-        <div class="pc-segmentos">${seg(tranquilosTodos.length, '--good', 'tranquilos', 'ok')}${seg(g.pronto.length, '--warn', 'pronto', 'warning')}${seg(g.urgentes.length, '--danger', 'urgentes', 'critical')}</div>
-        <div class="pc-leyenda">
-            ${dato(tranquilosTodos.length, '--good', `${tranquilosTodos.length} tranquilos`, 'ok')}
-            ${dato(g.pronto.length, '--warn', `${g.pronto.length} conviene mandar pronto`, 'warning')}
-            ${dato(g.urgentes.length, '--danger', `${g.urgentes.length} urgentes`, 'critical')}
-        </div>
-        <div class="pc-leyenda-expl">${explicacionBarra(tranquilosTodos.length, g.pronto.length, g.urgentes.length)}</div></div>`;
+        <div class="pc-hero-dona">${dona}
+            <div class="pc-hero-detalle">
+                <div class="pc-leyenda">
+                    ${dato(tranquilosTodos.length, '--good', 'tranquilos', 'ok')}
+                    ${dato(g.pronto.length, '--warn', 'conviene mandar pronto', 'warning')}
+                    ${dato(g.urgentes.length, '--danger', 'urgentes', 'critical')}
+                </div>
+                <div class="pc-leyenda-expl">${explicacionBarra(tranquilosTodos.length, g.pronto.length, g.urgentes.length)}</div>
+            </div></div></div>`;
 }
 
 // Los cuatro pasos de una colecta. Una cargada desde Mercado Libre (código ML-...) ya está en el paso 2.
