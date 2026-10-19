@@ -2005,3 +2005,23 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-hero-dona .pc-leyenda { flex-direction: column; gap: 4px; margin-top: 0; font-size: 13.5px; }
 .pc-ley-num { font-size: 20px; font-weight: 800; display: inline-block; min-width: 30px; }
 .pc-hero-dona .pc-leyenda-item { display: flex; align-items: baseline; gap: 6px; }
+
+/* ── Filas del Resumen más livianas: lo esencial a la vista, el detalle tras la flechita ── */
+.pc-fila { padding: 9px 0; }
+.pc-fila-top { flex-wrap: nowrap; align-items: center; }
+.pc-fila-nombre { min-width: 0; gap: 0; }
+.pc-fila-top > .pc-accion, .pc-fila-top > .pc-info { white-space: nowrap; text-align: right; font-size: 13px; }
+.pc-fila-flecha { flex-shrink: 0; width: 22px; height: 22px; margin-right: 4px; border: none; border-radius: 5px; background: transparent; cursor: pointer; position: relative; }
+.pc-fila-flecha:hover { background: var(--surf2); }
+.pc-fila-flecha::before { content: ""; position: absolute; left: 8px; top: 7px; width: 6px; height: 6px; border-right: 2px solid var(--text2); border-bottom: 2px solid var(--text2); transform: rotate(-45deg); transition: transform .15s ease; }
+.pc-fila-abierta .pc-fila-flecha::before { transform: rotate(45deg); top: 6px; }
+.pc-fila-sku { margin-left: 10px; font-size: 12px; font-weight: 400; color: var(--text2); white-space: nowrap; }
+.pc-bar-linea { display: flex; align-items: center; gap: 12px; padding-left: 26px; }
+.pc-bar-linea .pc-bar { flex: 1; margin: 6px 0; }
+.pc-bar-dias { flex-shrink: 0; min-width: 84px; text-align: right; font-size: 12px; color: var(--text2); }
+.pc-fila-detalle { display: none; padding-left: 26px; }
+.pc-fila-abierta .pc-fila-detalle { display: block; }
+@media (max-width: 720px) {
+    .pc-fila-top { flex-wrap: wrap; }
+    .pc-fila-top > .pc-accion, .pc-fila-top > .pc-info { white-space: normal; text-align: left; padding-left: 26px; }
+}

@@ -686,16 +686,35 @@ function cuentaDeDias(it) {
         (v > 0 ? ' → ' + dec(total) + ' ÷ ' + dec(v) + ' = ' + Math.round(total / v) + ' días' : '');
 }
 
+// Cada fila muestra lo esencial (nombre, SKU, acción y barra); los códigos, publicaciones y la cuenta
+// de días quedan escondidos tras la flechita de la fila. Se recuerda cuáles quedaron abiertas
+// porque el panel se redibuja cada minuto.
+const filasAbiertas = new Set();
+function alternarDetalleFila(ev, id) {
+    ev.stopPropagation();
+    const fila = ev.currentTarget.closest('.pc-fila');
+    if (!fila) return;
+    const abierta = fila.classList.toggle('pc-fila-abierta');
+    ev.currentTarget.setAttribute('aria-expanded', abierta ? 'true' : 'false');
+    if (abierta) filasAbiertas.add(id); else filasAbiertas.delete(id);
+}
+
 function filaConBarra(it, opciones) {
-    return `<div class="pc-fila pc-fila-clic" onclick="abrirGraficoDeProducto(${Number(it.id)})" title="Tocá para ver el gráfico">
+    const id = Number(it.id);
+    const abierta = filasAbiertas.has(id);
+    const dias = Math.round(opciones.dias || 0);
+    const corto = `${dias} de ${escapeHtml(it.target_stock_days)} días`;
+    return `<div class="pc-fila pc-fila-clic${abierta ? ' pc-fila-abierta' : ''}" onclick="abrirGraficoDeProducto(${id})" title="Tocá para ver el gráfico">
         <div class="pc-fila-top">
-            <span class="pc-fila-nombre">${opciones.icono}${escapeHtml(it.title)}${it.variation_name ? ` (${escapeHtml(it.variation_name)})` : ''}</span>
+            <span class="pc-fila-nombre"><button type="button" class="pc-fila-flecha" aria-expanded="${abierta ? 'true' : 'false'}" aria-label="Ver u ocultar el detalle" title="Ver u ocultar el detalle" onclick="alternarDetalleFila(event, ${id})"></button>${opciones.icono}${escapeHtml(it.title)}${it.variation_name ? ` (${escapeHtml(it.variation_name)})` : ''}<span class="pc-fila-sku">${escapeHtml(it.sku || 'sin SKU')}</span></span>
             <span class="${opciones.claseDerecha || 'pc-accion'}">${opciones.derecha}</span>
         </div>
-        <div class="pc-fila-ident">${identificacionItem(it)}</div>
-        ${barraCobertura(opciones.dias, it.target_stock_days, opciones.claseBarra)}
-        <div class="pc-fila-nota">${opciones.nota}</div>
-        <div class="pc-fila-nota pc-fila-cuenta">${escapeHtml(cuentaDeDias(it))}</div>
+        <div class="pc-bar-linea">${barraCobertura(opciones.dias, it.target_stock_days, opciones.claseBarra)}<span class="pc-bar-dias">${corto}</span></div>
+        <div class="pc-fila-detalle">
+            <div class="pc-fila-ident">${identificacionItem(it)}</div>
+            <div class="pc-fila-nota">${opciones.nota}</div>
+            <div class="pc-fila-nota pc-fila-cuenta">${escapeHtml(cuentaDeDias(it))}</div>
+        </div>
     </div>`;
 }
 
