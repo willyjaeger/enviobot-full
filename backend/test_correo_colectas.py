@@ -411,7 +411,7 @@ class TestWhatsAppColecta(unittest.TestCase):
         self.assertTrue(c.es_wa_de_colecta("Pasó el camión a retirar los bultos para Full y no entraron todas las cajas"))
         self.assertFalse(c.es_wa_de_colecta("Hola buen día, ¿me pasás lista de precios de nueces?"))
 
-    def test_arma_mensaje_wa_con_cuenta_y_codigo_en_negrita(self):
+    def test_arma_mensaje_wa_sin_emojis_y_con_cuenta_y_codigo_en_negrita(self):
         datos = {
             "envio": "78889570",
             "codigo": "9F769D2F",
@@ -421,14 +421,80 @@ class TestWhatsAppColecta(unittest.TestCase):
             "Hola MISTERNUT, reprogramamos el retiro del envío #78889570. Código de autorización: 9F769D2F",
             datos,
             cuenta="MISTERNUT",
-            telefono_receptor="+5491150960091",
+            telefono_receptor="+5491100000099",
             remitente="Mercado Libre",
         )
         self.assertIn("*MISTERNUT*", msg)
         self.assertIn("*9F769D2F*", msg)
-        self.assertIn("+5491150960091", msg)
+        self.assertIn("+5491100000099", msg)
+        self.assertTrue(msg.startswith("Mercado Libre / Colecta escribió al WhatsApp"))
+        self.assertTrue(all(ord(ch) < 0x1F000 for ch in msg))
+
+    def test_webhook_interno_rechaza_trafico_de_nginx_o_sin_token(self):
+        env = {"JWT_SECRET_KEY": "secreto-prueba-123"}
+        # Detrás de nginx viene X-Forwarded-For aunque remote_addr sea 127.0.0.1
+        self.assertFalse(c.autorizado_webhook_interno(
+            "127.0.0.1",
+            {"X-Forwarded-For": "190.1.2.3", "X-Internal-Token": "secreto-prueba-123"},
+            env=env,
+        ))
+        self.assertFalse(c.autorizado_webhook_interno(
+            "127.0.0.1",
+            {"X-Real-IP": "190.1.2.3", "X-Internal-Token": "secreto-prueba-123"},
+            env=env,
+        ))
+        # Sin token o con token incorrecto
+        self.assertFalse(c.autorizado_webhook_interno("127.0.0.1", {}, env=env))
+        self.assertFalse(c.autorizado_webhook_interno(
+            "127.0.0.1",
+            {"X-Internal-Token": "otro"},
+            env=env,
+        ))
+        # Local directo con token correcto
+        self.assertTrue(c.autorizado_webhook_interno(
+            "127.0.0.1",
+            {"X-Internal-Token": "secreto-prueba-123"},
+            env=env,
+        ))
+
+    def test_procesar_wa_entrante_respeta_horario_de_la_agenda(self):
+        import alerts_engine
+        conn = _ConnBase({
+            "settings": [{"user_id": 45, "colecta_email": "ventasml@logax.com.ar"}],
+            "nicks": {45: ["MISTERNUT"]},
+            "nombres": {45: "Guillermo"},
+        })
+        enviados = []
+        with mock.patch.object(alerts_engine, "get_db", return_value=conn), \
+             mock.patch("aviso_limite_colecta._destinatarios", return_value={"+5491100000001": HORARIO}), \
+             mock.patch.dict(os.environ, {"GEMINI_API_KEY": "", "GOOGLE_API_KEY": ""}):
+            fuera = c.procesar_wa_entrante(
+                45,
+                "Mercado Libre: pasamos por la colecta de hoy",
+                ahora=LUNES_20,
+                enviar=lambda t, x: enviados.append((t, x)) or [],
+            )
+            self.assertEqual(fuera.get("motivo"), "sin_destinatarios_en_horario")
+            self.assertEqual(enviados, [])
+
+            en_hora = c.procesar_wa_entrante(
+                45,
+                "Mercado Libre: pasamos por la colecta de hoy",
+                ahora=LUNES_10,
+                enviar=lambda t, x: enviados.append((t, x)) or [{"phone": t[0], "result": {"ok": True}}],
+            )
+            self.assertEqual(en_hora.get("enviados"), 1)
+            self.assertEqual(enviados[0][0], ["+5491100000001"])
+
+    def test_direcciones_del_mail_no_confia_en_from(self):
+        m = c.email.message_from_bytes(
+            _mail(para="colectas@enviobot.com.ar", de="ventasml@logax.com.ar"),
+            policy=c.email.policy.default,
+        )
+        self.assertEqual(c.direcciones_del_mail(m, propias=("colectas@enviobot.com.ar",)), set())
 
 
 if __name__ == "__main__":
     unittest.main()
+
 

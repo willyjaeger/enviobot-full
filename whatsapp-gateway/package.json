@@ -1,0 +1,12 @@
+{
+  "name": "enviobot-whatsapp-gateway",
+  "version": "1.0.0",
+  "description": "WhatsApp Baileys Gateway for EnvioBot",
+  "main": "server.js",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "express": "^4.19.2",
+    "qrcode": "^1.5.3",
+    "pino": "^9.0.0"
+  }
+}

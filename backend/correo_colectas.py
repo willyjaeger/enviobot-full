@@ -413,7 +413,7 @@ def armar_mensaje_wa_colecta(texto, datos, cuenta=None, telefono_receptor=None, 
     """Arma el aviso de WhatsApp cuando Mercado Libre o el transporte escriben al WhatsApp vinculado."""
     de = f" de *{cuenta}*" if cuenta else ""
     tel_txt = f" ({telefono_receptor})" if telefono_receptor else ""
-    lineas = [f"📲 Mercado Libre / Colecta escribió al WhatsApp{de}{tel_txt}"]
+    lineas = [f"Mercado Libre / Colecta escribió al WhatsApp{de}{tel_txt}"]
     if remitente and remitente.strip():
         lineas.append(f"Remitente: {remitente.strip()}")
     if datos.get("desde") and datos.get("hasta"):
@@ -450,6 +450,24 @@ def armar_mensaje_wa_colecta(texto, datos, cuenta=None, telefono_receptor=None, 
     return "\n".join(lineas)
 
 
+def autorizado_webhook_interno(remote_addr, headers, env=None):
+    """Valida que el llamado al webhook interno venga directo de localhost (no vía proxy nginx)
+    y traiga el token compartido X-Internal-Token."""
+    import hmac
+    env = os.environ if env is None else env
+    headers = headers or {}
+    if remote_addr not in ("127.0.0.1", "::1", "localhost"):
+        return False
+    # Detrás de nginx, cualquier petición externa trae X-Forwarded-For / X-Real-IP
+    if headers.get("X-Forwarded-For") or headers.get("X-Real-IP"):
+        return False
+    secreto = (env.get("WA_INTERNAL_SECRET") or env.get("JWT_SECRET_KEY") or "").strip()
+    token = str(headers.get("X-Internal-Token") or "").strip()
+    if not secreto or not token:
+        return False
+    return hmac.compare_digest(token.encode("utf-8"), secreto.encode("utf-8"))
+
+
 def procesar_wa_entrante(
     user_id,
     texto,
@@ -460,7 +478,7 @@ def procesar_wa_entrante(
     enviar=None,
 ):
     """Recibe un WhatsApp entrante del teléfono vinculado de la cuenta `user_id` y, si es de colecta,
-    lo resume con IA y lo reenvía a los destinatarios de la agenda."""
+    lo resume con IA y lo reenvía a los destinatarios de la agenda que estén en su horario."""
     if not pausa_avisos.puede_enviar(pausa_avisos.MAIL_COLECTA):
         return {"ok": True, "pausado": True}
     if not es_wa_de_colecta(texto, remitente_nombre):
@@ -496,11 +514,11 @@ def procesar_wa_entrante(
         if t and normalizar_telefono(t)
     }
     a_enviar = [
-        t for t in destinos
-        if normalizar_telefono(t) not in excluir
+        t for t, h in destinos.items()
+        if normalizar_telefono(t) not in excluir and en_horario(h, ahora)
     ]
     if not a_enviar:
-        return {"ok": True, "enviados": 0, "motivo": "sin_destinatarios"}
+        return {"ok": True, "enviados": 0, "motivo": "sin_destinatarios_en_horario"}
 
     datos = enriquecer_datos(f"WhatsApp {remitente_nombre or 'Mercado Libre'}", texto)
     mensaje = armar_mensaje_wa_colecta(
@@ -548,19 +566,11 @@ def direcciones_del_mail(msg, propias=()):
     """Direcciones a las que llegó el mail (en minúscula), sin las de la casilla común de EnvioBot.
 
     El reenvío del servidor de correo deja intacto el "Para" original, que es la dirección donde
-    Mercado Libre le escribe al cliente; y si el cliente lo reenvía manualmente o con filtro, su
-    dirección viene en From / Reply-To / Return-Path."""
+    Mercado Libre le escribe al cliente: con eso se sabe de qué cuenta es."""
     valores = []
-    for h in (
-        "To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To", "Resent-To",
-        "From", "Reply-To", "Return-Path", "Sender", "Resent-From",
-    ):
+    for h in ("To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To", "Resent-To"):
         valores += [str(v) for v in msg.get_all(h, [])]
-    direcciones = {
-        a.strip().lower()
-        for _n, a in getaddresses(valores)
-        if a and not any(x in a.lower() for x in ("mercadolibre.", "mercadoenvios."))
-    }
+    direcciones = {a.strip().lower() for _n, a in getaddresses(valores) if a}
     return direcciones - {p.lower() for p in propias}
 
 

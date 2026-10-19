@@ -2198,8 +2198,9 @@ def colecta_wa_logout():
 @app.route("/api/full/internal/wa-colecta-incoming", methods=["POST"])
 def wa_colecta_incoming():
     """Webhook interno llamado por whatsapp-gateway cuando llega un mensaje al WhatsApp vinculado."""
-    if request.remote_addr not in ("127.0.0.1", "::1", "localhost"):
-        return jsonify({"ok": False, "error": "Solo acceso local"}), 403
+    import correo_colectas
+    if not correo_colectas.autorizado_webhook_interno(request.remote_addr, request.headers):
+        return jsonify({"ok": False, "error": "No autorizado"}), 403
     data = request.get_json(silent=True) or {}
     try:
         user_id = int(data.get("user_id") or 0)
@@ -2216,7 +2217,6 @@ def wa_colecta_incoming():
         _WA_MSG_VISTOS.append(clave)
         if len(_WA_MSG_VISTOS) > 300:
             del _WA_MSG_VISTOS[:100]
-    import correo_colectas
     res = correo_colectas.procesar_wa_entrante(
         user_id=user_id,
         texto=texto,
