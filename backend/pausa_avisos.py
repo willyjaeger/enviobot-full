@@ -13,10 +13,11 @@ import os
 
 # Avisos que pasan aunque la pausa esté puesta. El de cambio de tasa de venta se está armando aparte:
 # quien lo envíe tiene que preguntar con puede_enviar("cambio_tasa_venta").
-TIPOS_PERMITIDOS = frozenset({"cambio_tasa_venta"})
+TIPOS_PERMITIDOS = frozenset({"cambio_tasa_venta", "colecta_mail"})
 
 ALERTA_STOCK = "alerta_stock"        # WhatsApp y mail de stock crítico, preventivo, de colecta y resumen diario
 AVISO_LIMITE_COLECTA = "colecta_limite"
+MAIL_COLECTA = "colecta_mail"          # reenvío por WhatsApp de los mails de ML sobre la colecta (pedido por Guillermo, 2026-10-19)
 
 
 def avisos_pausados():

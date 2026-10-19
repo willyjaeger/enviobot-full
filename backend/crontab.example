@@ -13,3 +13,6 @@
 
 # 3. Limpieza de logs antiguos (Mantiene logs de los últimos 30 días, todos los domingos a las 03:00 AM)
 0 3 * * 0 find /var/www/enviobot-full/backend/logs -name "worker_*.log" -type f -mtime +30 -delete
+
+# 4. Mails de ML sobre la colecta reenviados por WhatsApp (cada 5 minutos). Antes hay que cargar COLECTAS_* en el .env (ver correo_colectas.py)
+*/5 * * * * /var/www/enviobot-full/backend/venv/bin/python /var/www/enviobot-full/backend/correo_colectas.py >> /var/log/enviobot_full.log 2>&1
