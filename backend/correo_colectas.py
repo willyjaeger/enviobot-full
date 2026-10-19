@@ -326,7 +326,7 @@ def enriquecer_datos(asunto, cuerpo, env=None, post=None):
 
 def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
     """Texto de WhatsApp: de qué cuenta es, los datos que se pudieron leer y el resumen de IA (o extracto)."""
-    de = f" de {cuenta}" if cuenta else ""
+    de = f" de *{cuenta}*" if cuenta else ""
     if datos.get("desde") and datos.get("hasta"):
         cuando = f"el {datos['fecha']}, " if datos.get("fecha") else ""
         lineas = [f"La colecta{de} está programada para {cuando}entre las {datos['desde']} y las {datos['hasta']} hs"]
@@ -337,7 +337,7 @@ def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
     if datos.get("envio"):
         lineas.append(f"Envío N.º {datos['envio']}")
     if datos.get("codigo"):
-        lineas.append(f"Código de autorización: {datos['codigo']}")
+        lineas.append(f"Código de autorización: *{datos['codigo']}*")
     quien = " · ".join(
         x for x in (
             datos.get("transportista"),
@@ -349,6 +349,11 @@ def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
         lineas.append(quien)
     resumen_ia = (datos.get("resumen") or "").strip()
     if resumen_ia:
+        if datos.get("codigo"):
+            cod = datos["codigo"]
+            resumen_ia = re.sub(rf"(?<!\*)\b{re.escape(cod)}\b(?!\*)", f"*{cod}*", resumen_ia)
+        if cuenta:
+            resumen_ia = re.sub(rf"(?<!\*)\b{re.escape(cuenta)}\b(?!\*)", f"*{cuenta}*", resumen_ia, flags=re.I)
         lineas.append("")
         lineas.append(f"Resumen IA: {resumen_ia}")
     else:

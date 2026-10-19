@@ -180,13 +180,13 @@ class TestDatos(unittest.TestCase):
 
     def test_el_mensaje_dice_de_que_cuenta_es_la_colecta(self):
         txt = c.armar_mensaje("Tu colecta", CUERPO_ML, c.extraer_datos(CUERPO_ML), "MISTERNUT")
-        self.assertTrue(txt.startswith("La colecta de MISTERNUT está programada para el 19 de octubre, entre las 16:00 y las 18:00 hs"))
-        for esperado in ("Código de autorización: 9F769D2F", "Patente AB304TX", "Transportadora Dos Haches", "78889570"):
+        self.assertTrue(txt.startswith("La colecta de *MISTERNUT* está programada para el 19 de octubre, entre las 16:00 y las 18:00 hs"))
+        for esperado in ("Código de autorización: *9F769D2F*", "Patente AB304TX", "Transportadora Dos Haches", "78889570"):
             self.assertIn(esperado, txt)
 
     def test_si_no_se_leyo_la_hora_igual_dice_la_cuenta(self):
         txt = c.armar_mensaje("Novedades de tu colecta", "Pasamos a otro día.", {}, "MISTERNUT")
-        self.assertTrue(txt.startswith("Mercado Libre avisó por mail sobre la colecta de MISTERNUT"))
+        self.assertTrue(txt.startswith("Mercado Libre avisó por mail sobre la colecta de *MISTERNUT*"))
         self.assertIn("Pasamos a otro día.", txt)
 
     def test_sin_nombre_de_cuenta_el_mensaje_sigue_siendo_valido(self):
@@ -201,7 +201,7 @@ class TestDatos(unittest.TestCase):
         html = "<html><style>p{}</style><body><p>La colecta pasará el 19 de octubre entre las 16:00 y las 18:00 hs</p><p>Cód. autorización ABC123</p></body></html>"
         res, enviados, _ = _correr([_mail(html=html)])
         self.assertEqual(res["avisados"], 1)
-        self.assertIn("Código de autorización: ABC123", enviados[0][1])
+        self.assertIn("Código de autorización: *ABC123*", enviados[0][1])
 
 
 class TestDireccion(unittest.TestCase):
@@ -228,7 +228,7 @@ class TestEjecucion(unittest.TestCase):
         res, enviados, imap = _correr([_mail()])
         self.assertEqual(res["avisados"], 1)
         self.assertEqual(enviados[0][0], ["+5491100000001"])
-        self.assertIn("La colecta de MISTERNUT", enviados[0][1])
+        self.assertIn("La colecta de *MISTERNUT*", enviados[0][1])
         self.assertEqual(imap.flags, {1: "\\Deleted"})
         self.assertTrue(imap.expunged)
 
