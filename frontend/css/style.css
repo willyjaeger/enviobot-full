@@ -1968,8 +1968,9 @@ body:not(.sb-abierto) .sb-item { justify-content: center; padding: 9px 0; }
 body:not(.sb-abierto) .sb-badge { position: absolute; top: 3px; right: 5px; margin: 0; min-width: 16px; padding: 0 4px; font-size: 10px; line-height: 16px; }
 body:not(.sb-abierto) .sb-item:hover::after { content: attr(data-label); position: fixed; left: 70px; padding: 5px 10px; border-radius: 6px; background: var(--text); color: var(--bg); font-size: 12px; font-weight: 600; pointer-events: none; z-index: 70; }
 /* Encabezado más liviano: marca a la izquierda, cuenta de Mercado Libre y usuario a la derecha. */
-header { padding: 12px 18px; margin-bottom: 16px; }
-.user-info { flex-direction: row; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px 18px; }
+/* Misma altura y relleno que la tarjeta de título de EnvioBot Pedidos. */
+header { padding: 16px 20px; margin-bottom: 10px; }
+.user-info { gap: 6px; }
 /* Bloques plegables: la información se esconde, no se quita. */
 .plegable > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; user-select: none; }
 .plegable > summary::-webkit-details-marker { display: none; }
@@ -1992,5 +1993,5 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
     .scroll-nav { bottom: 76px; }
     .container { padding: 12px; }
     header { flex-direction: column; align-items: flex-start; gap: 8px; }
-    .user-info { justify-content: flex-start; }
+    .user-info { align-items: flex-start; }
 }
