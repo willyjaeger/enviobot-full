@@ -3588,6 +3588,102 @@ def delete_inbound_shipment(shipment_id):
 
     return jsonify({"ok": True, "message": "Envío eliminado correctamente."}), 200
 
+
+@app.route("/api/full/inbound/colecta-aviso", methods=["POST"])
+@app.route("/api/full/inbound/shipments/<int:shipment_id>/avisar-horario", methods=["POST"])
+@jwt_required()
+@_equipo.requiere_rol('operator')
+def avisar_horario_colecta(shipment_id=None):
+    """Analiza los datos/horario de la colecta (con regex + IA Gemini) y avisa por WhatsApp a la agenda de la cuenta."""
+    import correo_colectas as _correo_col
+    import pausa_avisos as _pausa
+    from aviso_limite_colecta import _destinatarios
+    from whatsapp_service import enviar_lote_con_demora
+
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    texto = (data.get("texto") or "").strip()
+    shipment_id = shipment_id or data.get("shipment_id")
+
+    datos = _correo_col.enriquecer_datos("Datos de la colecta", texto) if texto else {}
+    for k in ("fecha", "desde", "hasta", "codigo", "transportista", "patente", "transportadora", "envio"):
+        val = (data.get(k) or "").strip()
+        if val:
+            datos[k] = val.upper() if k in ("codigo", "patente") else val
+
+    if not texto and not datos:
+        return jsonify({"ok": False, "error": "Pegá los datos de la colecta de Mercado Libre o indicá el horario."}), 400
+
+    conn = get_db()
+    try:
+        account_id = get_account_user_id(user_id, conn)
+        with conn.cursor() as cur:
+            fila_envio = None
+            if shipment_id:
+                cur.execute("SELECT id, shipment_code, pickup_date, carrier_notes FROM inbound_shipments WHERE id=%s AND user_id=%s",
+                            (int(shipment_id), account_id))
+                fila_envio = cur.fetchone()
+            elif datos.get("envio"):
+                cur.execute("SELECT id, shipment_code, pickup_date, carrier_notes FROM inbound_shipments WHERE user_id=%s AND shipment_code=%s",
+                            (account_id, f"ML-{datos['envio']}"))
+                fila_envio = cur.fetchone()
+
+            if fila_envio:
+                cod_ml = str(fila_envio.get("shipment_code") or "")
+                if cod_ml.startswith("ML-") and not datos.get("envio"):
+                    datos["envio"] = cod_ml[3:]
+                if not datos.get("fecha") and fila_envio.get("pickup_date"):
+                    datos["fecha"] = str(fila_envio["pickup_date"])
+                partes_nota = []
+                if datos.get("desde") and datos.get("hasta"):
+                    partes_nota.append(f"Horario: {datos['desde']} a {datos['hasta']} hs")
+                if datos.get("codigo"):
+                    partes_nota.append(f"Cód: {datos['codigo']}")
+                if datos.get("transportista"):
+                    partes_nota.append(f"Chofer: {datos['transportista']}")
+                if datos.get("patente"):
+                    partes_nota.append(f"Patente: {datos['patente']}")
+                if datos.get("transportadora"):
+                    partes_nota.append(f"Transp: {datos['transportadora']}")
+                nota_nueva = " · ".join(partes_nota) or (datos.get("resumen") or texto)[:240]
+                if nota_nueva:
+                    cur.execute("UPDATE inbound_shipments SET carrier_notes=%s, updated_at=NOW() WHERE id=%s AND user_id=%s",
+                                (nota_nueva[:250], fila_envio["id"], account_id))
+
+            cur.execute("SELECT ml_nickname FROM ml_credentials WHERE user_id=%s AND ml_nickname IS NOT NULL ORDER BY id", (account_id,))
+            nombres = [r["ml_nickname"] for r in cur.fetchall()]
+            cur.execute("SELECT COALESCE(business_name, full_name) AS n FROM users WHERE id=%s", (account_id,))
+            u = cur.fetchone() or {}
+            nombre_cuenta = " / ".join(nombres) or u.get("n") or "tu cuenta"
+
+            cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (account_id,))
+            fila_settings = cur.fetchone() or {"user_id": account_id}
+            destinos = _destinatarios(conn, account_id, fila_settings, _pausa.MAIL_COLECTA)
+    finally:
+        conn.close()
+
+    telefonos = list(destinos.keys())
+    if not telefonos:
+        return jsonify({
+            "ok": False,
+            "error": "No hay destinatarios activos con el aviso de colecta habilitado en Configuración → WhatsApp.",
+            "datos": datos,
+        }), 400
+
+    cuerpo_base = "" if (datos.get("desde") or datos.get("codigo") or datos.get("resumen")) else texto
+    mensaje = _correo_col.armar_mensaje("", cuerpo_base, datos, nombre_cuenta)
+    resultados = enviar_lote_con_demora(telefonos, mensaje)
+    enviados_ok = sum(1 for r in (resultados or []) if (r.get("result") or {}).get("ok"))
+
+    return jsonify({
+        "ok": enviados_ok > 0,
+        "enviados": enviados_ok,
+        "total_destinatarios": len(telefonos),
+        "datos": datos,
+        "mensaje": mensaje,
+        "message": f"Horario de colecta enviado por WhatsApp a {enviados_ok} destinatario(s)." if enviados_ok else "No se pudo enviar el WhatsApp.",
+    }), (200 if enviados_ok > 0 else 502)
+
 @app.route("/api/full/inbound/shipments/<int:shipment_id>/remito-html", methods=["GET"])
 def get_inbound_shipment_remito_html(shipment_id):
     """Genera la vista imprimible A4 de la Hoja de Despacho / Colecta con códigos de barras."""

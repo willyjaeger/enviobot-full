@@ -80,7 +80,7 @@ def _correr(mails, ahora=LUNES_10, ok=True, cfg=CFG, cuentas=None):
         consultas.append(direcciones)
         return [MISTERNUT] if cuentas is None else cuentas
 
-    with mock.patch.dict(os.environ, {"ENVIOBOT_AVISOS": "pausados"}):
+    with mock.patch.dict(os.environ, {"ENVIOBOT_AVISOS": "pausados", "GEMINI_API_KEY": "", "GOOGLE_API_KEY": ""}):
         res = c.ejecutar(ahora=ahora, config=cfg, conectar=lambda _cfg: imap, enviar=enviar, resolver=resolver)
     res["consultas"] = consultas
     return res, enviados, imap
@@ -111,7 +111,69 @@ class TestDatos(unittest.TestCase):
         self.assertEqual(d["codigo"], "9F769D2F")
         self.assertEqual(d["patente"], "AB304TX")
         self.assertEqual(d["transportista"], "Luciano Damian Marenzi")
+        self.assertEqual(d["transportadora"], "Dos Haches")
         self.assertEqual(d["envio"], "78889570")
+
+    def test_extrae_texto_multilinea_copiado_de_shipping_inbounds_details(self):
+        multilinea = (
+            "Envío N.º 78889570 - Tentativo 20/10/2026\n"
+            "Datos de la colecta\n"
+            "La colecta pasará el 19 de octubre entre las 16:00 y las 18:00 hs\n"
+            "Cód. autorización\n9F769D2F\n"
+            "Transportista\nLuciano\nDamian\nMarenzi\n"
+            "Patente\nAB304TX\n"
+            "Transportadora\nDos Haches\n"
+        )
+        d = c.extraer_datos(multilinea)
+        self.assertEqual(d["envio"], "78889570")
+        self.assertEqual(d["fecha"], "19 de octubre")
+        self.assertEqual((d["desde"], d["hasta"]), ("16:00", "18:00"))
+        self.assertEqual(d["codigo"], "9F769D2F")
+        self.assertEqual(d["transportista"], "Luciano Damian Marenzi")
+        self.assertEqual(d["patente"], "AB304TX")
+        self.assertEqual(d["transportadora"], "Dos Haches")
+
+    def test_analizar_con_ia_gemini_arma_resumen_y_completa_datos(self):
+        class _Resp:
+            status_code = 200
+            def json(self):
+                return {
+                    "candidates": [{
+                        "content": {
+                            "parts": [{
+                                "text": (
+                                    '{"resumen": "Mercado Libre informó que el retiro del envío #78889570 '
+                                    'fue reprogramado para el 20 de octubre de 14:00 a 17:00 hs.", '
+                                    '"envio": "#78889570", "fecha": "20 de octubre", '
+                                    '"desde": "14:00", "hasta": "17:00", "codigo": "9f769d2f"}'
+                                )
+                            }]
+                        }
+                    }]
+                }
+
+        llamadas = []
+        def fake_post(url, **kw):
+            llamadas.append((url, kw))
+            return _Resp()
+
+        env = {"GEMINI_API_KEY": "test-gemini-key"}
+        d = c.enriquecer_datos("Cambio en tu colecta", "Hola, reprogramamos el retiro.", env=env, post=fake_post)
+        self.assertEqual(len(llamadas), 1)
+        self.assertIn("gemini-2.5-flash:generateContent", llamadas[0][0])
+        self.assertEqual(d["envio"], "78889570")
+        self.assertEqual((d["desde"], d["hasta"]), ("14:00", "17:00"))
+        self.assertEqual(d["codigo"], "9F769D2F")
+        msg = c.armar_mensaje("Cambio en tu colecta", "Hola, reprogramamos el retiro.", d, "MISTERNUT")
+        self.assertIn("Resumen IA: Mercado Libre informó que el retiro del envío #78889570", msg)
+        self.assertNotIn("Hola, reprogramamos el retiro.", msg)
+
+    def test_si_ia_falla_sigue_con_extraccion_clasica(self):
+        def fake_post_error(*a, **kw):
+            raise RuntimeError("timeout")
+        d = c.enriquecer_datos("Tu colecta", CUERPO_ML, env={"GEMINI_API_KEY": "k"}, post=fake_post_error)
+        self.assertEqual(d["codigo"], "9F769D2F")
+        self.assertEqual((d["desde"], d["hasta"]), ("16:00", "18:00"))
 
     def test_lo_que_no_esta_queda_afuera_sin_romper(self):
         self.assertEqual(c.extraer_datos("Hola, novedades de tu colecta."), {})
@@ -119,7 +181,7 @@ class TestDatos(unittest.TestCase):
     def test_el_mensaje_dice_de_que_cuenta_es_la_colecta(self):
         txt = c.armar_mensaje("Tu colecta", CUERPO_ML, c.extraer_datos(CUERPO_ML), "MISTERNUT")
         self.assertTrue(txt.startswith("La colecta de MISTERNUT está programada para el 19 de octubre, entre las 16:00 y las 18:00 hs"))
-        for esperado in ("Código de autorización: 9F769D2F", "Patente AB304TX", "78889570"):
+        for esperado in ("Código de autorización: 9F769D2F", "Patente AB304TX", "Transportadora Dos Haches", "78889570"):
             self.assertIn(esperado, txt)
 
     def test_si_no_se_leyo_la_hora_igual_dice_la_cuenta(self):
@@ -181,9 +243,10 @@ class TestEjecucion(unittest.TestCase):
         mapa = {"ventasml@logax.com.ar": [a], "ventas@otro.com": [b]}
         imap = _Imap([_mail(para="ventasml@logax.com.ar"), _mail(para="ventas@otro.com", asunto="Colecta de otro")])
         enviados = []
-        res = c.ejecutar(ahora=LUNES_10, config=CFG, conectar=lambda _c: imap,
-                         enviar=lambda t, x: enviados.append((t, x)) or [{"phone": t[0], "result": {"ok": True}}],
-                         resolver=lambda dirs: [cu for d in dirs for cu in mapa.get(d, [])])
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "", "GOOGLE_API_KEY": ""}):
+            res = c.ejecutar(ahora=LUNES_10, config=CFG, conectar=lambda _c: imap,
+                             enviar=lambda t, x: enviados.append((t, x)) or [{"phone": t[0], "result": {"ok": True}}],
+                             resolver=lambda dirs: [cu for d in dirs for cu in mapa.get(d, [])])
         self.assertEqual(res["avisados"], 2)
         self.assertEqual(enviados[0][0], ["+5491100000001"])
         self.assertIn("MISTERNUT", enviados[0][1])

@@ -291,11 +291,17 @@
             <div id="listaProd" class="apilado">${lista.length ? lista.map(filaProducto).join('') : '<div class="vacio">No hay productos con ese filtro.</div>'}</div>`;
     }
 
+    function urlEnvioMl(codigo) {
+        const m = /^ML-(\d{5,})$/.exec(String(codigo || '').trim());
+        return m ? `https://vendedores.mercadolibre.com.ar/shipping/inbounds/${m[1]}/details` : 'https://vendedores.mercadolibre.com.ar/shipping/inbounds';
+    }
     function tarjetaColecta(col, i) {
         const tc = tortaColecta(col, 'media', 'tortaCol' + i);
         const prods = (col.productos || []);
+        const urlMl = urlEnvioMl(col.codigo);
         return `<section class="card"><div class="colecta-top">${tc.html}<div class="txt">${textoColecta(col, tc.modo)}</div></div>
             ${col.de_ml ? '<div class="nota-col">Cargada desde Mercado Libre</div>' : (col.estado === 'scheduled' ? '<div class="nota-col">Armada en EnvioBot: recordá cargarla en Mercado Libre</div>' : '')}
+            <a class="pub" href="${esc(urlMl)}" target="_blank" rel="noopener" style="margin-top:8px;"><span>${col.de_ml ? 'Ver envío en Mercado Libre' : 'Gestión de envíos Full en ML'}</span>${icono(ICO_LINK, 'ico-chico')}</a>
             ${prods.length ? `<details class="desplegable"><summary>${prods.length} ${prods.length === 1 ? 'producto' : 'productos'}</summary>${prods.map(p => `<div class="lin"><span class="n">${esc(p.titulo || p.sku)}</span><span class="v">${NF.format(p.unidades)}</span></div>`).join('')}</details>` : ''}
         </section>`;
     }

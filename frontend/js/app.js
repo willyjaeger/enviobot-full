@@ -1907,6 +1907,23 @@ function resaltarSerie(id, clave) {
     });
 }
 
+const URL_ML_INBOUNDS = 'https://vendedores.mercadolibre.com.ar/shipping/inbounds';
+
+function urlEnvioMl(codigo) {
+    const m = /^ML-(\d{5,})$/.exec(String(codigo || '').trim());
+    return m ? `${URL_ML_INBOUNDS}/${m[1]}/details` : URL_ML_INBOUNDS;
+}
+
+function botonesMlColecta(id, codigo) {
+    const url = urlEnvioMl(codigo);
+    const esDetalle = url !== URL_ML_INBOUNDS;
+    const textoMl = esDetalle ? 'Ver en ML' : 'Gestión Full en ML';
+    const idNum = Number(id) > 0 ? Number(id) : 0;
+    const codEsc = escapeHtml(String(codigo || ''));
+    return `<a class="btn btn-secondary btn-sm" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Abrir este envío en Mercado Libre Full">${textoMl} ↗</a>` +
+        `<button type="button" class="btn btn-secondary btn-sm" onclick="avisarHorarioColecta(${idNum}, '${codEsc}')" title="Pegar el horario de retiro de Mercado Libre y avisar por WhatsApp">Avisar horario WA</button>`;
+}
+
 function tarjetaDeColecta(c) {
     const programada = c.estado === 'scheduled';
     const resto = programada ? textoCuentaRegresiva(c.limite_edicion) : null;
@@ -1930,7 +1947,7 @@ function tarjetaDeColecta(c) {
             <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado} Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))}.${c.de_ml ? '' : ' Falta cargarla en Mercado Libre.'}</div>
             ${pasosColecta(c.codigo)}
         </div>
-        ${boton}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${boton}${botonesMlColecta(c.id, c.codigo)}</div>
         ${detalle}
         ${htmlProyeccionColecta(c)}
     </div>`;
@@ -1961,6 +1978,7 @@ function tarjetaColecta(enColecta) {
     const detalle = enColecta.length
         ? `<details class="pc-detalle"><summary>Ver los ${enColecta.length} productos</summary>${tablaProductosColecta(enColecta)}</details>` : '';
     const idColecta = proximaColecta && Number(proximaColecta.id) > 0 ? Number(proximaColecta.id) : 0;
+    const codColecta = proximaColecta && proximaColecta.codigo ? proximaColecta.codigo : '';
     const botonColecta = (resto && idColecta)
         ? `<button type="button" class="btn btn-sm" onclick="abrirModalEditarEnvio(${idColecta})">Editar colecta</button>`
         : '<button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver detalle</button>';
@@ -1971,7 +1989,7 @@ function tarjetaColecta(enColecta) {
             <div class="pc-banner-sub">${cuanto}${estado}${entra}</div>
             ${proximaColecta ? pasosColecta(proximaColecta.codigo) : ''}
         </div>
-        ${botonColecta}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${botonColecta}${botonesMlColecta(idColecta, codColecta)}</div>
         ${detalle}
     </div>`;
 }
@@ -3969,6 +3987,7 @@ async function cargarHistorialColectas(soloBadge = false) {
                                 <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 700;" onclick="abrirRemitoOficial(${sh.id})">
                                     Ver Hoja de Despacho
                                 </button>
+                                ${botonesMlColecta(sh.id, sh.shipment_code)}
                                 ${btnEditarHtml}
                                 <button type="button" class="btn btn-secondary btn-sm" id="btnToggleDetalle_${sh.id}" onclick="toggleDetalleArticulosHistorial(${sh.id})" title="Ver lista de artículos de este envío">
                                     Ver Artículos (${sh.total_items})
@@ -4003,6 +4022,36 @@ async function cargarHistorialColectas(soloBadge = false) {
     }
 }
 window.cargarHistorialColectas = cargarHistorialColectas;
+
+async function avisarHorarioColecta(shipmentId, codigo) {
+    const token = getToken();
+    if (!token) return;
+    const etiqueta = codigo ? ` (${codigo})` : '';
+    const texto = window.prompt(
+        `Pegá acá los "Datos de la colecta" copiados de Mercado Libre${etiqueta} (o escribí el horario, ej: "entre las 16:00 y las 18:00 hs"):\n\n` +
+        `EnvioBot lo analiza con IA y se lo manda por WhatsApp a los destinatarios configurados en tu agenda.`,
+        ''
+    );
+    if (!texto || !texto.trim()) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/colecta-aviso`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ shipment_id: shipmentId || null, texto: texto.trim() })
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+            showToast(data.message || 'Horario de colecta enviado por WhatsApp.', 'success');
+            cargarHistorialColectas();
+        } else {
+            showToast(data.error || 'No se pudo enviar el aviso por WhatsApp.', 'error');
+        }
+    } catch (e) {
+        showToast('Error de conexión: ' + e.message, 'error');
+    }
+}
+window.avisarHorarioColecta = avisarHorarioColecta;
+window.urlEnvioMl = urlEnvioMl;
 
 async function toggleDetalleArticulosHistorial(shipmentId) {
     const el = document.getElementById(`detalleArticulos_${shipmentId}`);

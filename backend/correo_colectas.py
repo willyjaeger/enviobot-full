@@ -24,11 +24,14 @@ Se configura en el .env del servidor (nada de claves en el código):
     COLECTAS_IMAP_HOST (opcional; por defecto el SMTP_HOST), COLECTAS_IMAP_PORT (opcional, 993)
     COLECTAS_MAX_HORAS       opcional, por defecto 36
     COLECTAS_BORRAR          opcional, "no" para dejar los mails como leídos en vez de borrarlos
+    GEMINI_API_KEY           opcional (recomendado): analiza el mail con IA (Gemini 2.5 Flash) y arma el resumen
+    GEMINI_MODEL             opcional, por defecto "gemini-2.5-flash"
 Qué mail es de cada cliente se configura en el panel (Configuración, WhatsApp), no acá.
 """
 import email
 import email.policy
 import imaplib
+import json
 import logging
 import os
 import re
@@ -36,6 +39,11 @@ import unicodedata
 from datetime import datetime, timedelta
 from email.utils import getaddresses, parsedate_to_datetime
 from html.parser import HTMLParser
+
+try:
+    import requests as _requests
+except ImportError:  # pragma: no cover
+    _requests = None
 
 try:  # cron no carga el .env: se lee el de esta carpeta (el mismo que usa la app)
     from dotenv import load_dotenv
@@ -51,6 +59,8 @@ logger = logging.getLogger("correo_colectas")
 
 MAX_HORAS_DEFECTO = 36
 LARGO_EXTRACTO = 450
+GEMINI_MODEL_DEFECTO = "gemini-2.5-flash"
+IA_TIMEOUT_SEG = 12
 
 
 # ── Lectura de un mail ───────────────────────────────────────────────────────────────
@@ -123,19 +133,42 @@ def es_de_colecta(asunto, cuerpo, remitente=""):
     return any(x in origen for x in ("mercadolibre", "mercado libre", "mercadoenvios", "mercado envios"))
 
 
-# ── Datos del mail ───────────────────────────────────────────────────────────────
+# ── Datos del mail y análisis con IA (Gemini 2.5 Flash) ──────────────────────────────
 
 _RE_FRANJA = re.compile(r"entre\s+las\s+(\d{1,2})[:.](\d{2})\s*(?:y|a)\s*las\s+(\d{1,2})[:.](\d{2})", re.I)
 _RE_FECHA = re.compile(r"(?:el\s+)?(\d{1,2}\s+de\s+[a-záéíóúñ]+(?:\s+de\s+\d{4})?)", re.I)
 _RE_CODIGO = re.compile(r"c[oó]d(?:igo|\.)?\s*(?:de\s+)?autorizaci[oó]n\s*[:\-]?\s*([A-Z0-9]{5,12})\b", re.I)
 _RE_PATENTE = re.compile(r"Patente\s*[:\-]?\s*([A-Z]{2}\s?\d{3}\s?[A-Z]{2}|[A-Z]{3}\s?\d{3})\b", re.I)
-_RE_TRANSPORTISTA = re.compile(r"Transportista\s*[:\-]?\s*(.+?)(?=\s+(?:Patente|Transportadora|Domicilio|C[oó]d)\b|\n|$)", re.I)
+_RE_TRANSPORTISTA = re.compile(
+    r"Transportista\s*[:\-]?\s*([^\n.]+?(?=\s+(?:Patente|Transportadora|Domicilio|C[oó]d)\b|[.\n]|$)"
+    r"(?:\n(?!(?:Patente|Transportadora|Domicilio|C[oó]d|Env[ií]o|La colecta)\b)[A-ZÁÉÍÓÚÑa-záéíóúñ ]+)*)",
+    re.I,
+)
+_RE_TRANSPORTADORA = re.compile(
+    r"Transportadora\s*[:\-]?\s*([^\n.]+?)(?=\s+(?:Patente|Transportista|Domicilio|C[oó]d)\b|[.\n]|$)",
+    re.I,
+)
 _RE_ENVIO = re.compile(r"Env[ií]o\s*(?:N\.?\s*[º°o]?\s*|#\s*)(\d{6,})", re.I)
+
+_PROMPT_IA = """Analizá este mensaje de Mercado Libre sobre una colecta de Mercado Envíos Full.
+Devolvé ÚNICAMENTE un objeto JSON válido con estas claves (usá "" si un dato no aparece):
+{
+  "resumen": "Resumen claro y directo en español argentino (1 a 3 oraciones máximo, ideal para WhatsApp) explicando qué informa el mensaje (ej: horario de retiro confirmado, código de autorización, reprogramación, demora o confirmación de colecta). No incluyas saludos genéricos ni texto legal.",
+  "fecha": "Fecha de la colecta si la menciona (ej: '19 de octubre')",
+  "desde": "Hora de inicio de la franja en formato HH:MM (ej: '16:00')",
+  "hasta": "Hora de fin de la franja en formato HH:MM (ej: '18:00')",
+  "codigo": "Código de autorización alfanumérico si aparece (ej: '9F769D2F')",
+  "transportista": "Nombre del chofer o transportista si aparece",
+  "patente": "Patente o dominio del vehículo si aparece (ej: 'AB304TX')",
+  "transportadora": "Empresa transportadora si aparece (ej: 'Dos Haches')",
+  "envio": "Número de envío de Mercado Libre (solo dígitos, ej: '78889570')"
+}"""
 
 
 def extraer_datos(texto):
     """Lo que se pueda sacar del texto; lo que no aparece queda afuera (el formato del mail puede cambiar)."""
     d = {}
+    texto = texto or ""
     f = _RE_FRANJA.search(texto)
     if f:
         d["desde"] = "%02d:%s" % (int(f.group(1)), f.group(2))
@@ -144,17 +177,157 @@ def extraer_datos(texto):
         fechas = _RE_FECHA.findall(antes)
         if fechas:
             d["fecha"] = fechas[-1].strip()
-    for clave, rx in (("codigo", _RE_CODIGO), ("patente", _RE_PATENTE), ("transportista", _RE_TRANSPORTISTA), ("envio", _RE_ENVIO)):
+    for clave, rx in (
+        ("codigo", _RE_CODIGO),
+        ("patente", _RE_PATENTE),
+        ("transportista", _RE_TRANSPORTISTA),
+        ("transportadora", _RE_TRANSPORTADORA),
+        ("envio", _RE_ENVIO),
+    ):
         m = rx.search(texto)
         if m:
-            d[clave] = re.sub(r"\s+", " ", m.group(1)).strip().upper() if clave in ("codigo", "patente") else re.sub(r"\s+", " ", m.group(1)).strip()
+            val = re.sub(r"\s+", " ", m.group(1)).strip()
+            d[clave] = val.upper() if clave in ("codigo", "patente") else val
     return d
 
 
+def _limpiar_json_ia(texto):
+    """Extrae el diccionario JSON de la respuesta del modelo aunque venga envuelto en ```json ... ```."""
+    if not texto:
+        return {}
+    limpio = texto.strip()
+    if limpio.startswith("```"):
+        limpio = re.sub(r"^```(?:json)?\s*|\s*```$", "", limpio, flags=re.I | re.S).strip()
+    try:
+        obj = json.loads(limpio)
+        return obj if isinstance(obj, dict) else {}
+    except Exception:
+        m = re.search(r"\{.*\}", limpio, flags=re.S)
+        if m:
+            try:
+                obj = json.loads(m.group(0))
+                return obj if isinstance(obj, dict) else {}
+            except Exception:
+                pass
+    return {}
+
+
+def analizar_con_ia(asunto, cuerpo, env=None, post=None):
+    """Analiza el asunto y cuerpo con Gemini 2.5 Flash (o OpenAI/Anthropic si están configurados).
+
+    Si no hay clave configurada o falla la red, devuelve `{}` sin interrumpir el envío por WhatsApp.
+    """
+    env = os.environ if env is None else env
+    post = (_requests.post if _requests else None) if post is None else post
+    if post is None:
+        return {}
+
+    gemini_key = (env.get("GEMINI_API_KEY") or env.get("GOOGLE_API_KEY") or "").strip()
+    openai_key = (env.get("OPENAI_API_KEY") or "").strip()
+    anthropic_key = (env.get("ANTHROPIC_API_KEY") or "").strip()
+    if not (gemini_key or openai_key or anthropic_key):
+        return {}
+
+    contenido = f"Asunto: {(asunto or '').strip()}\n\nContenido:\n{(cuerpo or '').strip()[:6000]}"
+    raw_text = ""
+    try:
+        if gemini_key:
+            modelo = (env.get("GEMINI_MODEL") or GEMINI_MODEL_DEFECTO).strip()
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={gemini_key}"
+            payload = {
+                "contents": [{"parts": [{"text": f"{_PROMPT_IA}\n\n---\n{contenido}"}]}],
+                "generationConfig": {"temperature": 0.1, "responseMimeType": "application/json"},
+            }
+            resp = post(url, json=payload, timeout=IA_TIMEOUT_SEG)
+            if resp.status_code == 200:
+                data = resp.json() or {}
+                cands = data.get("candidates") or []
+                if cands:
+                    parts = ((cands[0].get("content") or {}).get("parts")) or []
+                    if parts:
+                        raw_text = parts[0].get("text") or ""
+            else:
+                logger.warning(f"[Mail colecta IA] Gemini devolvió HTTP {resp.status_code}")
+        elif openai_key:
+            modelo = (env.get("OPENAI_MODEL") or "gpt-4o-mini").strip()
+            resp = post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
+                json={
+                    "model": modelo,
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"},
+                    "messages": [
+                        {"role": "system", "content": _PROMPT_IA},
+                        {"role": "user", "content": contenido},
+                    ],
+                },
+                timeout=IA_TIMEOUT_SEG,
+            )
+            if resp.status_code == 200:
+                choices = (resp.json() or {}).get("choices") or []
+                if choices:
+                    raw_text = ((choices[0].get("message") or {}).get("content")) or ""
+        elif anthropic_key:
+            modelo = (env.get("ANTHROPIC_MODEL") or "claude-haiku-4-5").strip()
+            resp = post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": anthropic_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": modelo,
+                    "max_tokens": 500,
+                    "temperature": 0.1,
+                    "system": _PROMPT_IA,
+                    "messages": [{"role": "user", "content": contenido}],
+                },
+                timeout=IA_TIMEOUT_SEG,
+            )
+            if resp.status_code == 200:
+                bloques = (resp.json() or {}).get("content") or []
+                if bloques:
+                    raw_text = bloques[0].get("text") or ""
+    except Exception as e:
+        logger.warning(f"[Mail colecta IA] Falló consulta a IA, se usa extracción clásica: {e}")
+        return {}
+
+    parsed = _limpiar_json_ia(raw_text)
+    if not parsed:
+        return {}
+
+    resultado = {}
+    for k in ("resumen", "fecha", "desde", "hasta", "codigo", "transportista", "patente", "transportadora", "envio"):
+        val = parsed.get(k)
+        if isinstance(val, str):
+            val = re.sub(r"\s+", " ", val).strip()
+            if val:
+                resultado[k] = val.upper() if k in ("codigo", "patente") else val
+    if resultado.get("envio"):
+        solo_digitos = re.sub(r"\D+", "", resultado["envio"])
+        if solo_digitos:
+            resultado["envio"] = solo_digitos
+    return resultado
+
+
+def enriquecer_datos(asunto, cuerpo, env=None, post=None):
+    """Combina los datos extraídos por expresiones regulares con el análisis de IA (si está activa)."""
+    datos = extraer_datos(cuerpo)
+    ia = analizar_con_ia(asunto, cuerpo, env=env, post=post)
+    for k, v in ia.items():
+        if v and not datos.get(k):
+            datos[k] = v
+    if ia.get("resumen"):
+        datos["resumen"] = ia["resumen"]
+    return datos
+
+
 def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
-    """Texto de WhatsApp: de qué cuenta es, los datos que se pudieron leer y un extracto por si falta algo."""
+    """Texto de WhatsApp: de qué cuenta es, los datos que se pudieron leer y el resumen de IA (o extracto)."""
     de = f" de {cuenta}" if cuenta else ""
-    if datos.get("desde"):
+    if datos.get("desde") and datos.get("hasta"):
         cuando = f"el {datos['fecha']}, " if datos.get("fecha") else ""
         lineas = [f"La colecta{de} está programada para {cuando}entre las {datos['desde']} y las {datos['hasta']} hs"]
     else:
@@ -165,15 +338,26 @@ def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
         lineas.append(f"Envío N.º {datos['envio']}")
     if datos.get("codigo"):
         lineas.append(f"Código de autorización: {datos['codigo']}")
-    quien = " · ".join(x for x in (datos.get("transportista"), ("Patente " + datos["patente"]) if datos.get("patente") else None) if x)
+    quien = " · ".join(
+        x for x in (
+            datos.get("transportista"),
+            ("Patente " + datos["patente"]) if datos.get("patente") else None,
+            ("Transportadora " + datos["transportadora"]) if datos.get("transportadora") else None,
+        ) if x
+    )
     if quien:
         lineas.append(quien)
-    extracto = (cuerpo or "").strip().replace("\n", " ")
-    if len(extracto) > LARGO_EXTRACTO:
-        extracto = extracto[:LARGO_EXTRACTO].rsplit(" ", 1)[0] + "…"
-    if extracto:
+    resumen_ia = (datos.get("resumen") or "").strip()
+    if resumen_ia:
         lineas.append("")
-        lineas.append(extracto)
+        lineas.append(f"Resumen IA: {resumen_ia}")
+    else:
+        extracto = (cuerpo or "").strip().replace("\n", " ")
+        if len(extracto) > LARGO_EXTRACTO:
+            extracto = extracto[:LARGO_EXTRACTO].rsplit(" ", 1)[0] + "…"
+        if extracto:
+            lineas.append("")
+            lineas.append(extracto)
     return "\n".join(lineas)
 
 
@@ -314,7 +498,7 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None, resolver=None)
                 res["sin_cuenta"] += 1   # nadie configuró esa dirección: se deja, y caduca solo
                 logger.info(f"[Mail colecta] Mail de colecta sin cuenta asignada (¿falta cargar el mail en Configuración?): {asunto[:80]}")
                 continue
-            datos_mail = extraer_datos(cuerpo)
+            datos_mail = enriquecer_datos(asunto, cuerpo)
             enviado = False
             hay_alguien = False
             for nombre, destinos in cuentas:

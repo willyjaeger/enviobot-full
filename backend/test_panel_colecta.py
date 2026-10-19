@@ -255,8 +255,13 @@ process.stdout.write(tip.innerHTML);
         de_ml = self._correr([it], self._prox(codigo='ML-78889570'))['html']
         self.assertIn('pc-paso-hecho">Propuesta', de_ml)
         self.assertIn('pc-paso-actual">Armada en ML', de_ml)
+        self.assertIn('https://vendedores.mercadolibre.com.ar/shipping/inbounds/78889570/details', de_ml)
+        self.assertIn('Ver en ML ↗', de_ml)
+        self.assertIn('avisarHorarioColecta(', de_ml)
         propia = self._correr([it], self._prox(codigo='COL-FULL-1'))['html']
         self.assertIn('pc-paso-actual">Propuesta', propia)
+        self.assertIn('https://vendedores.mercadolibre.com.ar/shipping/inbounds"', propia)
+        self.assertIn('Gestión Full en ML ↗', propia)
 
     def test_comparar_con_la_propuesta(self):
         harness = (
