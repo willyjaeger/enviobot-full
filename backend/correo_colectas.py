@@ -496,11 +496,11 @@ def procesar_wa_entrante(
         if t and normalizar_telefono(t)
     }
     a_enviar = [
-        t for t, h in destinos.items()
-        if normalizar_telefono(t) not in excluir and en_horario(h, ahora)
+        t for t in destinos
+        if normalizar_telefono(t) not in excluir
     ]
     if not a_enviar:
-        return {"ok": True, "enviados": 0, "motivo": "sin_destinatarios_en_horario"}
+        return {"ok": True, "enviados": 0, "motivo": "sin_destinatarios"}
 
     datos = enriquecer_datos(f"WhatsApp {remitente_nombre or 'Mercado Libre'}", texto)
     mensaje = armar_mensaje_wa_colecta(
@@ -548,11 +548,19 @@ def direcciones_del_mail(msg, propias=()):
     """Direcciones a las que llegó el mail (en minúscula), sin las de la casilla común de EnvioBot.
 
     El reenvío del servidor de correo deja intacto el "Para" original, que es la dirección donde
-    Mercado Libre le escribe al cliente: con eso se sabe de qué cuenta es."""
+    Mercado Libre le escribe al cliente; y si el cliente lo reenvía manualmente o con filtro, su
+    dirección viene en From / Reply-To / Return-Path."""
     valores = []
-    for h in ("To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To", "Resent-To"):
+    for h in (
+        "To", "Cc", "Delivered-To", "X-Original-To", "Envelope-To", "Resent-To",
+        "From", "Reply-To", "Return-Path", "Sender", "Resent-From",
+    ):
         valores += [str(v) for v in msg.get_all(h, [])]
-    direcciones = {a.strip().lower() for _n, a in getaddresses(valores) if a}
+    direcciones = {
+        a.strip().lower()
+        for _n, a in getaddresses(valores)
+        if a and not any(x in a.lower() for x in ("mercadolibre.", "mercadoenvios."))
+    }
     return direcciones - {p.lower() for p in propias}
 
 
