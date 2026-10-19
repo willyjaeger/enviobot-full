@@ -149,6 +149,7 @@ const it = { sku: '07011' };
 process.stdout.write(JSON.stringify({
   html: vm.runInContext('htmlColectasDeItem(' + JSON.stringify(it) + ')', ctx), n: vm.runInContext('colectasDeItem(' + JSON.stringify(it) + ').length', ctx),
   otro: vm.runInContext('colectasDeItem({ sku: "999" }).length', ctx),
+  prep: vm.runInContext('htmlPreparacionPorColecta(' + JSON.stringify(it) + ')', ctx),
   num: vm.runInContext('[numeroColecta({codigo:"ML-79759779"}), numeroColecta({codigo:"COL-FULL-20261012-002"})]', ctx)
 }));
 """
@@ -160,8 +161,11 @@ process.stdout.write(JSON.stringify({
         d = json.loads(r.stdout)
         self.assertEqual(d['n'], 2)
         self.assertEqual(d['otro'], 0)
-        self.assertIn('<b>#78889570</b> <span>+40 u.</span>', d['html'])
-        self.assertIn('<b>#79759779</b> <span>+10 u.</span>', d['html'])
+        self.assertIn('<b>#78889570</b></div>', d['html'])
+        self.assertNotIn('+40 u.', d['html'])
+        self.assertIn('<b>#79759779</b></div>', d['html'])
+        self.assertIn('+40 en preparación', d['prep'])
+        self.assertIn('+10 en preparación', d['prep'])
         self.assertNotIn('COL-X', d['html'])
         self.assertEqual(d['num'], ['#79759779', 'COL-FULL-20261012-002'])
 

@@ -601,7 +601,14 @@ function colectasDeItem(it) {
 function htmlColectasDeItem(it) {
     return colectasDeItem(it).map(function (x) {
         return '<div class="lista-colecta" title="Colecta ' + escapeHtml(numeroColecta(x.colecta)) + ': retiro el ' + escapeHtml(formatearFechaCorta(x.colecta.fecha_retiro)) + '">' +
-            '<b>' + escapeHtml(numeroColecta(x.colecta)) + '</b> <span>+' + escapeHtml(x.unidades) + ' u.</span></div>';
+            '<b>' + escapeHtml(numeroColecta(x.colecta)) + '</b></div>';
+    }).join('');
+}
+
+// Columna del medio: las unidades de cada colecta, una línea por colecta y alineada con su número.
+function htmlPreparacionPorColecta(it) {
+    return colectasDeItem(it).map(function (x) {
+        return '<div class="lista-colecta" style="color: #64b5f6; font-weight: 600; font-size: 13px;">+' + escapeHtml(x.unidades) + ' en preparación</div>';
     }).join('');
 }
 
@@ -2669,8 +2676,11 @@ function renderizarTabla() {
 
         // FECHA DE QUIEBRE ESTIMADA (Sobria y legible)
         let quiebraElHtml = '—';
+        const prepPorColecta = it.status === 'in_preparation' ? htmlPreparacionPorColecta(it) : '';
         if (it.pausado) {
             quiebraElHtml = '<span style="color: var(--text2);">Pausada</span>';
+        } else if (prepPorColecta) {
+            quiebraElHtml = prepPorColecta;
         } else if (it.status === 'in_preparation') {
             quiebraElHtml = `<span style="color: #64b5f6; font-weight: 600;" title="Colecta generada en depósito">+${it.in_preparation_stock} en preparación</span>`;
         } else if (it.status === 'in_transit') {
