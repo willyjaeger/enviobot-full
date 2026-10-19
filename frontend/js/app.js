@@ -699,8 +699,24 @@ function filaConBarra(it, opciones) {
     </div>`;
 }
 
-function seccionPanel(titulo, contenidoHtml) {
-    return `<div><h3 class="pc-block-title">${titulo}</h3><div class="pc-lista">${contenidoHtml}</div></div>`;
+// Secciones del panel que se pueden plegar: la información no se quita, solo se esconde.
+// Cada una recuerda cómo la dejaste (el panel se redibuja cada minuto y no debe reabrirse solo).
+const SECCIONES_CERRADAS_POR_DEFECTO = ['Artículos con stock suficiente'];
+function seccionesGuardadas() {
+    try { return JSON.parse(localStorage.getItem('envioBotFullSecciones') || '{}') || {}; } catch (e) { return {}; }
+}
+function recordarSeccion(el) {
+    try {
+        const g = seccionesGuardadas();
+        g[el.dataset.sec] = el.open;
+        localStorage.setItem('envioBotFullSecciones', JSON.stringify(g));
+    } catch (e) { /* sin almacenamiento: no pasa nada */ }
+}
+function seccionPanel(titulo, contenidoHtml, cantidad) {
+    const g = seccionesGuardadas();
+    const abierta = titulo in g ? g[titulo] : SECCIONES_CERRADAS_POR_DEFECTO.indexOf(titulo) === -1;
+    const cuenta = cantidad ? `<span class="tab-panel-cont">${Number(cantidad)}</span>` : '';
+    return `<details class="plegable pc-plegable" data-sec="${escapeHtml(titulo)}" ${abierta ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary class="pc-block-title">${titulo}${cuenta}</summary><div class="pc-lista">${contenidoHtml}</div></details>`;
 }
 
 // Detalle al pasar el mouse por la barra de estado: qué productos son y cuántas unidades mandar.
@@ -2006,13 +2022,46 @@ function tarjetaColecta(enColecta) {
     } catch (e) { /* sin página (tests) */ }
 })();
 
+// Menú lateral: angosto (solo íconos) o ancho (con nombres). Se acuerda de tu elección.
+function alternarSidebar(forzar) {
+    const abierto = typeof forzar === 'boolean' ? forzar : !document.body.classList.contains('sb-abierto');
+    document.body.classList.toggle('sb-abierto', abierto);
+    const b = document.getElementById('sbToggle');
+    if (b) b.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+    try { localStorage.setItem('envioBotFullMenu', abierto ? 'abierto' : 'angosto'); } catch (e) { /* idem */ }
+}
+(function () {
+    const arrancar = () => {
+        try {
+            let abierto = false;
+            try { abierto = localStorage.getItem('envioBotFullMenu') === 'abierto'; } catch (e) { /* idem */ }
+            document.body.classList.toggle('sb-abierto', abierto);
+            const b = document.getElementById('sbToggle');
+            if (b) b.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+            // Bloques fijos plegables (ej. resumen y filtros de Productos): cerrados salvo que los hayas abierto.
+            document.querySelectorAll('details[data-recordar]').forEach(d => {
+                const k = 'envioBotFullPleg_' + d.dataset.recordar;
+                try { d.open = localStorage.getItem(k) === '1'; } catch (e) { /* idem */ }
+                d.addEventListener('toggle', () => { try { localStorage.setItem(k, d.open ? '1' : '0'); } catch (e) { /* idem */ } });
+            });
+            // El menú solo existe con sesión: corremos el contenido cuando el panel está a la vista.
+            const vista = document.getElementById('viewMainDashboard');
+            if (!vista) return;
+            const sync = () => document.body.classList.toggle('con-panel', vista.style.display !== 'none');
+            new MutationObserver(sync).observe(vista, { attributes: true, attributeFilter: ['style'] });
+            sync();
+        } catch (e) { /* sin página (tests) */ }
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar); else arrancar();
+})();
+
 // Pestañas del panel: la página queda corta y cada cosa en su lugar.
 const PESTANAS_PANEL = ['resumen', 'colectas', 'productos'];
 function mostrarPestana(nombre, guardar) {
     if (PESTANAS_PANEL.indexOf(nombre) === -1) nombre = 'resumen';
     const main = document.querySelector('.main-content');
     if (main) main.dataset.tab = nombre;
-    document.querySelectorAll('#tabsPanel .tab-panel-btn').forEach(b => {
+    document.querySelectorAll('#tabsPanel .sb-tab').forEach(b => {
         const activa = b.dataset.tab === nombre;
         b.classList.toggle('activa', activa);
         b.setAttribute('aria-selected', activa ? 'true' : 'false');
@@ -2075,7 +2124,7 @@ function renderizarPanelColecta() {
             nota: hayColectas
                 ? (colAbierta ? `Todavía podés ajustarlo en la colecta del ${escapeHtml(formatearFechaCorta(colAbierta.fecha_retiro))}.` : 'Esas colectas ya no se pueden cambiar: ajustalo en la siguiente.')
                 : (abierta ? 'Todavía podés ajustarlo.' : 'Esta colecta ya no se puede cambiar: ajustalo en la siguiente.')
-        })).join(''));
+        })).join(''), cortos.length);
 
     // Tienen de más
     const deMas = g.deMas.slice().sort((a, b) => (b.covered_days_left || 0) - (a.covered_days_left || 0));
@@ -2088,10 +2137,10 @@ function renderizarPanelColecta() {
             dias: it.covered_days_left,
             claseBarra: 'pc-fill-info',
             nota: `Objetivo: ${escapeHtml(it.target_stock_days)} días.`
-        })).join(''));
+        })).join(''), deMas.length);
 
     cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)
-        + seccionPanel('Qué hacer hoy', htmlHacer)
+        + seccionPanel('Qué hacer hoy', htmlHacer, hacer.length)
         + htmlAjustar
         + htmlDeMas;
     cont.style.display = 'flex';
@@ -3934,7 +3983,7 @@ async function cargarHistorialColectas(soloBadge = false) {
             inboundShipmentsList = data.shipments;
             const count = inboundShipmentsList.length;
             if (badge) badge.textContent = count;
-            if (topBadge) topBadge.textContent = count;
+            if (topBadge) topBadge.textContent = count || '';
             if (totalBadge) totalBadge.textContent = `${count} ${count === 1 ? 'envío' : 'envíos'}`;
 
             if (soloBadge) return;

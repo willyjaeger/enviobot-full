@@ -1931,3 +1931,66 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .main-content[data-tab="resumen"] #panelColectasTab, .main-content[data-tab="resumen"] #cardStockPrincipal,
 .main-content[data-tab="colectas"] #panelColecta, .main-content[data-tab="colectas"] #cardStockPrincipal,
 .main-content[data-tab="productos"] #panelColecta, .main-content[data-tab="productos"] #panelColectasTab { display: none !important; }
+
+
+/* ── Menú lateral (2026-10-19): íconos de contorno, angosto por defecto ──
+   Reemplaza los botones del encabezado y las pestañas de arriba. Los textos viven
+   en .sb-txt: con el menú angosto se ven como globito al pasar el mouse. */
+.sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 64px; z-index: 50; display: none; flex-direction: column; gap: 4px; padding: 12px 8px; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; overflow-x: hidden; transition: width .18s ease; }
+body.con-panel .sidebar { display: flex; }
+body.con-panel { padding-left: 64px; transition: padding-left .18s ease; }
+body.con-panel.sb-abierto { padding-left: 232px; }
+body.sb-abierto .sidebar { width: 232px; }
+.sb-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px 12px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.sb-marca { flex-shrink: 0; margin-left: 4px; }
+.sb-toggle { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text2); cursor: pointer; }
+.sb-toggle:hover { color: var(--text); border-color: var(--border-hover); }
+.sb-toggle svg { transition: transform .18s ease; }
+body.sb-abierto .sb-toggle svg { transform: rotate(180deg); }
+body:not(.sb-abierto) .sb-top { flex-direction: column; padding-bottom: 10px; }
+.sb-grupo { display: flex; flex-direction: column; gap: 2px; }
+.sb-sep { height: 1px; background: var(--border); margin: 8px 6px; }
+.sb-spacer { flex: 1; min-height: 12px; }
+.sb-item { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 9px 12px; border: none; border-radius: 8px; background: transparent; color: var(--text2); font: inherit; font-size: 13.5px; font-weight: 600; text-align: left; white-space: nowrap; cursor: pointer; }
+.sb-item svg { flex-shrink: 0; }
+.sb-item:hover { background: var(--surf2); color: var(--text); }
+.sb-item.activa { background: var(--warn-bg); color: var(--text); }
+.sb-item.activa svg { color: var(--accent); }
+.sb-item.activa::before { content: ""; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+.sb-item:focus-visible, .sb-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sb-txt { overflow: hidden; text-overflow: ellipsis; }
+.sb-badge { margin-left: auto; }
+.sb-badge.sb-badge-acento { background: var(--accent); color: #111; }
+#btnAvisosTop.sin-leer { border: none; }
+/* Angosto: solo el ícono; el nombre sale como globito y los contadores como puntito. */
+body:not(.sb-abierto) .sb-txt { display: none; }
+body:not(.sb-abierto) .sb-item { justify-content: center; padding: 9px 0; }
+body:not(.sb-abierto) .sb-badge { position: absolute; top: 3px; right: 5px; margin: 0; min-width: 16px; padding: 0 4px; font-size: 10px; line-height: 16px; }
+body:not(.sb-abierto) .sb-item:hover::after { content: attr(data-label); position: fixed; left: 70px; padding: 5px 10px; border-radius: 6px; background: var(--text); color: var(--bg); font-size: 12px; font-weight: 600; pointer-events: none; z-index: 70; }
+/* Encabezado más liviano: marca a la izquierda, cuenta de Mercado Libre y usuario a la derecha. */
+header { padding: 12px 18px; margin-bottom: 16px; }
+.user-info { flex-direction: row; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px 18px; }
+/* Bloques plegables: la información se esconde, no se quita. */
+.plegable > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; user-select: none; }
+.plegable > summary::-webkit-details-marker { display: none; }
+.plegable > summary::before { content: ""; flex-shrink: 0; width: 6px; height: 6px; margin: 0 4px 0 2px; border-right: 2px solid var(--text2); border-bottom: 2px solid var(--text2); transform: rotate(-45deg); transition: transform .15s ease; }
+.plegable[open] > summary::before { transform: rotate(45deg); }
+.plegable > summary:hover { color: var(--accent-text); }
+#plegableResumen { margin-bottom: 12px; }
+#plegableResumen > summary { font-size: 13px; font-weight: 600; color: var(--text2); padding: 4px 0 10px; }
+details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
+.pc-toolbar { margin-bottom: 12px; }
+/* Celular o ventana chica: el menú pasa a una barra abajo, solo íconos. */
+@media (max-width: 720px) {
+    .sidebar { top: auto; width: 100% !important; height: 58px; flex-direction: row; align-items: center; gap: 2px; padding: 6px 8px; border-right: none; border-top: 1px solid var(--border); overflow-x: auto; overflow-y: hidden; }
+    body.con-panel, body.con-panel.sb-abierto { padding-left: 0; padding-bottom: 70px; }
+    .sb-top, .sb-sep, .sb-spacer, .sb-txt { display: none !important; }
+    .sb-grupo { flex-direction: row; gap: 2px; }
+    .sb-item { width: 44px; min-width: 44px; justify-content: center; padding: 9px 0; }
+    .sb-item.activa::before { left: 8px; right: 8px; top: -6px; bottom: auto; width: auto; height: 3px; border-radius: 0 0 3px 3px; }
+    body:not(.sb-abierto) .sb-item:hover::after { display: none; }
+    .scroll-nav { bottom: 76px; }
+    .container { padding: 12px; }
+    header { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .user-info { justify-content: flex-start; }
+}
