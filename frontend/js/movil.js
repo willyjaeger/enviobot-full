@@ -186,6 +186,25 @@
         return vigentes.find(c => c.abierta) || vigentes[0] || estado.colectas[0] || null;
     }
 
+    // A qué colecta sumar lo que falta: la primera que todavía se puede editar (la que Mercado Libre ya cerró no sirve).
+    function colectaParaSumar() {
+        return estado.colectas
+            .filter(c => c.estado === 'scheduled' && c.abierta && Date.parse(c.limite_edicion) > Date.now())
+            .sort((a, b) => String(a.fecha_retiro).localeCompare(String(b.fecha_retiro)))[0] || null;
+    }
+    function numeroColecta(col) {
+        const cod = String(col.codigo || '');
+        return /^ML-/.test(cod) ? '#' + cod.replace(/^ML-/, '') : cod;
+    }
+    // Qué hacer con un producto que falta: en qué colecta agregarlo y hasta cuándo se puede.
+    function textoSumar(it) {
+        const g = grupoDe(it);
+        if (g !== 'urgentes' && g !== 'pronto') return '';
+        const c = colectaParaSumar();
+        if (!c) return 'No hay una colecta abierta para sumarlo: armá una nueva.';
+        return `Agregalo a la colecta ${numeroColecta(c)} del ${fechaCorta(c.fecha_retiro)} (podés hasta el ${fechaCorta(c.limite_edicion)} a las ${horaDe(c.limite_edicion)}).`;
+    }
+
     // ── Vistas ──────────────────────────────────────────────────────────────────
     function vistaResumen() {
         const c = conteos();
@@ -251,7 +270,8 @@
         return `<button class="prod" data-prod="${idx}">
             ${torta('mini', [{ valor: r.frac * 100, color: g.color }, { valor: (1 - r.frac) * 100, color: 'transparent' }], r.texto, '', 11)}
             <div class="info"><div class="tit">${esc(tituloItem(it))}</div>
-            <div class="sub"><span class="etiqueta" style="--c:${g.color}">${esc(g.corto)}</span>${alerta ? icono(ICO_ALERTA, 'ico-chico adv') : ''}${subTexto(it)}</div></div>
+            <div class="sub"><span class="etiqueta" style="--c:${g.color}">${esc(g.corto)}</span>${alerta ? icono(ICO_ALERTA, 'ico-chico adv') : ''}${subTexto(it)}</div>
+            ${textoSumar(it) ? `<div class="sumar">${esc(textoSumar(it))}</div>` : ''}</div>
         </button>`;
     }
 
@@ -339,8 +359,8 @@
         let nota = '', notaColor = g.color;
         const gid = grupoDe(it);
         if (gid === 'pausados') nota = 'Todas sus publicaciones están pausadas en Mercado Libre: no vende, por eso no cuenta como urgencia.';
-        else if (gid === 'urgentes') nota = 'Se queda sin stock antes de que le entre mercadería. Conviene sumarlo a la próxima colecta.';
-        else if (gid === 'pronto') nota = 'Todavía hay stock, pero conviene sumarlo a la próxima colecta.';
+        else if (gid === 'urgentes') nota = 'Se queda sin stock antes de que le entre mercadería. ' + textoSumar(it);
+        else if (gid === 'pronto') nota = 'Todavía hay stock, pero conviene sumarlo. ' + textoSumar(it);
         else if (cubiertoPorColecta(it)) nota = `Hoy en Full hay ${NF.format(it.stock)} unidades (${NF.format(Math.round(it.stock / vpdReal(it)))} días de venta), pero la colecta que ya está en camino suma ${NF.format(it.entrante)} y con eso alcanza para ${NF.format(Math.round(dReal))} días. No hace falta mandar más: solo esperar que entre.`;
         else if (gid === 'deMas') nota = 'Entre lo que hay en Full y lo que viaja en tus colectas alcanza para mucho más que tu objetivo. No mandes más por ahora.';
         else if (it.entrante > 0) nota = 'Hay mercadería en camino que lo cubre: solo falta esperar que entre.';
