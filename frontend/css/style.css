@@ -1913,3 +1913,14 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 
 .lista-colecta { display: flex; align-items: baseline; justify-content: center; gap: 6px; white-space: nowrap; font-size: 12.5px; color: var(--text2); }
 .lista-colecta b { color: var(--text); }
+
+/* ── Pestañas del panel: Resumen / Colectas / Productos ── */
+.tabs-panel { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 16px; overflow-x: auto; }
+.tab-panel-btn { background: none; border: none; border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 10px 18px; font-size: 14.5px; font-weight: 600; color: var(--text2); cursor: pointer; white-space: nowrap; }
+.tab-panel-btn:hover { color: var(--text); }
+.tab-panel-btn.activa { color: var(--text); border-bottom-color: var(--accent); font-weight: 800; }
+.tab-panel-cont { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 10px; background: var(--surf2); color: var(--text2); font-size: 12px; font-weight: 700; text-align: center; }
+.tab-panel-cont:empty { display: none; }
+.main-content[data-tab="resumen"] #panelColectasTab, .main-content[data-tab="resumen"] #cardStockPrincipal,
+.main-content[data-tab="colectas"] #panelColecta, .main-content[data-tab="colectas"] #cardStockPrincipal,
+.main-content[data-tab="productos"] #panelColecta, .main-content[data-tab="productos"] #panelColectasTab { display: none !important; }

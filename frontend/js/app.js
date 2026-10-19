@@ -1214,6 +1214,7 @@ async function confirmarCambiosCalendario() {
 }
 
 function irAColecta(id) {
+    mostrarPestana('colectas');
     const el = document.getElementById('colecta-' + id);
     if (!el) return;
     const det = el.querySelector('details');
@@ -1968,6 +1969,26 @@ function tarjetaColecta(enColecta) {
     </div>`;
 }
 
+// Pestañas del panel: la página queda corta y cada cosa en su lugar.
+const PESTANAS_PANEL = ['resumen', 'colectas', 'productos'];
+function mostrarPestana(nombre, guardar) {
+    if (PESTANAS_PANEL.indexOf(nombre) === -1) nombre = 'resumen';
+    const main = document.querySelector('.main-content');
+    if (main) main.dataset.tab = nombre;
+    document.querySelectorAll('#tabsPanel .tab-panel-btn').forEach(b => {
+        const activa = b.dataset.tab === nombre;
+        b.classList.toggle('activa', activa);
+        b.setAttribute('aria-selected', activa ? 'true' : 'false');
+    });
+    if (guardar !== false) { try { localStorage.setItem('envioBotFullPestana', nombre); } catch (e) { /* sin almacenamiento: no pasa nada */ } }
+}
+(function () {
+    let guardada = 'resumen';
+    try { guardada = localStorage.getItem('envioBotFullPestana') || 'resumen'; } catch (e) { /* idem */ }
+    const arrancar = () => { try { mostrarPestana(guardada, false); } catch (e) { /* sin página (tests) */ } };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar); else arrancar();
+})();
+
 function renderizarPanelColecta() {
     const cont = document.getElementById('panelColecta');
     if (!cont) return;
@@ -2033,11 +2054,20 @@ function renderizarPanelColecta() {
         })).join(''));
 
     cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)
-        + (hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta))
         + seccionPanel('Qué hacer hoy', htmlHacer)
         + htmlAjustar
         + htmlDeMas;
     cont.style.display = 'flex';
+
+    // Pestaña Colectas: calendario y colectas armadas (o la tarjeta de lo que está en preparación).
+    const contColectas = document.getElementById('panelColectasTab');
+    if (contColectas) {
+        contColectas.innerHTML = hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta);
+    }
+    const nCol = document.getElementById('tabContColectas');
+    if (nCol) nCol.textContent = hayColectas ? String(colectasData.length) : '';
+    const nProd = document.getElementById('tabContProductos');
+    if (nProd) nProd.textContent = String(itemsData.length);
 
     // La cuenta regresiva se refresca sola cada minuto.
     if (!panelColectaTimer) {
@@ -2379,6 +2409,7 @@ function actualizarCardsActivas(activeCardId) {
 }
 
 function irAQuiebreInminente() {
+    mostrarPestana('productos');
     actualizarCardsActivas('statCardCritical');
 
     // 1. Filtrar por crítico / sin stock
@@ -2426,6 +2457,7 @@ function irAQuiebreInminente() {
 }
 
 function irAEstado(estado) {
+    mostrarPestana('productos');
     if (estado === 'critical') {
         irAQuiebreInminente();
         return;

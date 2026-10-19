@@ -28,8 +28,8 @@ def _corte(js, desde, hasta):
 HARNESS = r"""
 const vm = require('vm');
 const src = require('fs').readFileSync(process.argv[2], 'utf8'), caso = JSON.parse(process.argv[3]);
-const cont = { style: {}, innerHTML: '' };
-const ctx = { document: { getElementById: id => id === 'panelColecta' ? cont : null },
+const cont = { style: {}, innerHTML: '' }, colectas = { style: {}, innerHTML: '' };
+const ctx = { document: { getElementById: id => id === 'panelColecta' ? cont : (id === 'panelColectasTab' ? colectas : null) },
               setInterval: () => 1, Date, Math, String, console };
 ctx.itemsData = caso.items;
 vm.createContext(ctx);
@@ -38,7 +38,7 @@ vm.runInContext('proximaColecta = ' + JSON.stringify(caso.prox), ctx);
 vm.runInContext('colectasData = ' + JSON.stringify(caso.colectas || []), ctx);
 vm.runInContext('cambiosPendientes = ' + JSON.stringify(caso.pendientes || {}), ctx);
 ctx.__render();
-process.stdout.write(JSON.stringify({ html: cont.innerHTML, display: cont.style.display }));
+process.stdout.write(JSON.stringify({ html: colectas.innerHTML + cont.innerHTML, display: cont.style.display }));
 """
 
 
