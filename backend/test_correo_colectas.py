@@ -43,7 +43,7 @@ def _mail(asunto="Tu colecta de Full", cuerpo=CUERPO_ML, de="Mercado Libre <no-r
 class _Imap:
     """Casilla de mentira: guarda qué mails se marcaron como leídos."""
     def __init__(self, mails):
-        self.mails, self.vistos = mails, set()
+        self.mails, self.vistos, self.flags, self.expunged = mails, set(), {}, False
 
     def search(self, _c, _crit):
         pendientes = [str(i + 1).encode() for i in range(len(self.mails)) if (i + 1) not in self.vistos]
@@ -52,8 +52,12 @@ class _Imap:
     def fetch(self, num, _q):
         return "OK", [(b"1 (BODY[] {1})", self.mails[int(num) - 1])]
 
-    def store(self, num, _f, _flag):
+    def store(self, num, _f, flag):
         self.vistos.add(int(num))
+        self.flags[int(num)] = flag
+
+    def expunge(self):
+        self.expunged = True
 
     def logout(self):
         pass
@@ -129,6 +133,21 @@ class TestEjecucion(unittest.TestCase):
         self.assertEqual(enviados[0][0], ["+5491155550001"])
         self.assertEqual(imap.vistos, {1})
 
+    def test_el_mail_resuelto_se_borra_de_la_casilla(self):
+        res, _, imap = _correr([_mail(), _mail(asunto="Vendiste", cuerpo="hola")])
+        self.assertEqual(imap.flags, {1: "\\Deleted", 2: "\\Deleted"})
+        self.assertTrue(imap.expunged)
+
+    def test_lo_pendiente_no_se_borra(self):
+        _, _, imap = _correr([_mail()], ahora=LUNES_20)
+        self.assertEqual(imap.flags, {})
+        self.assertFalse(imap.expunged)
+
+    def test_se_puede_pedir_que_queden_como_leidos(self):
+        _, _, imap = _correr([_mail()], cfg=dict(CFG, borrar=False))
+        self.assertEqual(imap.flags, {1: "\\Seen"})
+        self.assertFalse(imap.expunged)
+
     def test_fuera_de_horario_no_manda_y_deja_el_mail_sin_leer(self):
         res, enviados, imap = _correr([_mail()], ahora=LUNES_20)
         self.assertEqual((res["avisados"], res["pendientes"]), (0, 1))
@@ -168,6 +187,8 @@ class TestEjecucion(unittest.TestCase):
         cfg = c.leer_configuracion(env)
         self.assertEqual(cfg["telefonos"], ["+5491100000001", "+5491100000002"])
         self.assertEqual((cfg["host"], cfg["port"], cfg["max_horas"]), ("po.ferozo.com", 993, c.MAX_HORAS_DEFECTO))
+        self.assertTrue(cfg["borrar"])
+        self.assertFalse(c.leer_configuracion(dict(env, COLECTAS_BORRAR="no"))["borrar"])
 
     def test_falta_el_telefono_y_no_se_configura(self):
         self.assertIsNone(c.leer_configuracion({"COLECTAS_IMAP_USER": "a", "COLECTAS_IMAP_PASSWORD": "b"}))

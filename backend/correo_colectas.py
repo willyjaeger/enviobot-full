@@ -10,7 +10,9 @@ Corre cada pocos minutos desde cron:
     */5 * * * * <venv>/bin/python <app>/backend/correo_colectas.py >> /var/log/enviobot_full.log 2>&1
 Cargar esa línea es un cambio aparte, con OK de Guillermo.
 
-Cómo funciona sin guardar nada en la base: el mail leído y avisado se marca como "leído" en la casilla.
+Cómo funciona sin guardar nada en la base de datos: la casilla es solo de paso. Cada mail resuelto
+(avisado, ajeno a la colecta o demasiado viejo) se BORRA de la casilla, así no se acumula nada. El mail
+original sigue en el buzón de origen si el reenvío conserva una copia (conviene dejarlo así).
 - Si WhatsApp está fuera de horario (lunes a viernes de 8:30 a 18:00), el mail queda sin leer y sale
   en la próxima corrida dentro del horario.
 - Un mail de más de COLECTAS_MAX_HORAS horas ya no se manda: sería información vieja.
@@ -21,6 +23,7 @@ Se configura en el .env del servidor (nada de claves en el código):
     COLECTAS_IMAP_HOST (opcional; por defecto el SMTP_HOST), COLECTAS_IMAP_PORT (opcional, 993)
     COLECTAS_WHATSAPP        teléfono(s) de quien recibe el aviso, separados por coma
     COLECTAS_MAX_HORAS       opcional, por defecto 36
+    COLECTAS_BORRAR          opcional, "no" para dejar los mails como leídos en vez de borrarlos
 Sin la casilla o sin el teléfono configurados, no hace nada.
 """
 import email
@@ -188,6 +191,7 @@ def leer_configuracion(env=None):
         "host": (env.get("COLECTAS_IMAP_HOST") or env.get("SMTP_HOST") or "").strip(),
         "port": int(env.get("COLECTAS_IMAP_PORT") or 993),
         "user": usuario, "password": clave, "telefonos": telefonos, "max_horas": max_horas,
+        "borrar": (env.get("COLECTAS_BORRAR") or "si").strip().lower() not in ("no", "0", "false"),
     }
 
 
@@ -196,6 +200,11 @@ def _conectar(cfg):
     imap.login(cfg["user"], cfg["password"])
     imap.select("INBOX")
     return imap
+
+
+def _descartar(imap, num, cfg):
+    """Mail ya resuelto: se borra de la casilla (que solo es de paso) o, si se prefiere guardarlo, queda como leído."""
+    imap.store(num, "+FLAGS", "\\Deleted" if cfg.get("borrar", True) else "\\Seen")
 
 
 def _enviar_whatsapp(telefonos, texto):
@@ -230,7 +239,7 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None):
             asunto = str(msg.get("Subject") or "")
             cuerpo = texto_del_mail(msg)
             if not es_de_colecta(asunto, cuerpo, str(msg.get("From") or "")):
-                imap.store(num, "+FLAGS", "\\Seen")
+                _descartar(imap, num, cfg)
                 res["ignorados"] += 1
                 continue
             try:
@@ -238,7 +247,7 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None):
                 if fecha_mail.tzinfo is None:
                     fecha_mail = fecha_mail.replace(tzinfo=ahora.tzinfo)
                 if ahora - fecha_mail > timedelta(hours=cfg["max_horas"]):
-                    imap.store(num, "+FLAGS", "\\Seen")
+                    _descartar(imap, num, cfg)
                     res["viejos"] += 1
                     continue
             except (TypeError, ValueError):
@@ -249,12 +258,14 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None):
             texto = armar_mensaje(asunto, cuerpo, extraer_datos(cuerpo))
             resultados = enviar(cfg["telefonos"], texto)
             if any((r.get("result") or {}).get("ok") for r in (resultados or [])):
-                imap.store(num, "+FLAGS", "\\Seen")
+                _descartar(imap, num, cfg)
                 res["avisados"] += 1
                 logger.info(f"[Mail colecta] Avisado por WhatsApp: {asunto[:80]}")
             else:
                 res["pendientes"] += 1
                 logger.error(f"[Mail colecta] No se pudo enviar el WhatsApp ({asunto[:80]}); se reintenta.")
+        if cfg.get("borrar", True) and (res["avisados"] or res["ignorados"] or res["viejos"]):
+            imap.expunge()   # saca de verdad los mails marcados: la casilla no acumula nada
     finally:
         try:
             imap.logout()
