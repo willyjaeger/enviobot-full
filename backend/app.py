@@ -412,7 +412,8 @@ def get_user_full_subscription(user_id, conn):
         "admin_notes": u.get("admin_notes", ""),
         "has_pedidos": bool(u.get("has_pedidos", 1)),
         "has_full": has_full,
-        "limits": PLAN_LIMITS["pro"] if has_full else PLAN_LIMITS["trial"]
+        # Los administradores de EnvioBot (el dueño) no tienen tope de números, depósitos ni cuentas.
+        "limits": (PLAN_LIMITS["empresarial"] if is_admin else PLAN_LIMITS["pro"]) if has_full else PLAN_LIMITS["trial"]
     }
 
 def get_user_plan_info(user_id, conn):

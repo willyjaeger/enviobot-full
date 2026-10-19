@@ -4713,7 +4713,8 @@ let recipientsData = [
     { id: 2, name: "Marcos (Depósito)", phone: "+54 9 11 4444-0002", role: "deposito", warehouse_filter: "meli_full", is_verified: 1 }
 ];
 let currentPlanTier = 'pro'; // trial: 1, pro: 2, enterprise: 10
-const PLAN_LIMITS = { trial: 1, pro: 2, enterprise: 10 };
+const PLAN_LIMITS = { trial: 1, pro: 2, enterprise: 10 };   // solo de respaldo: manda el límite que informa el servidor
+let maxDestinatariosWA = 0;                                 // límite de números de la agenda, según el servidor
 
 function abrirConfiguracion(initialTab = 'meli') {
     document.getElementById('configModal').style.display = 'flex';
@@ -4808,6 +4809,7 @@ async function cargarDestinatariosBackend() {
         if (data.ok && Array.isArray(data.recipients)) {
             recipientsData = data.recipients;
             if (data.plan_tier) currentPlanTier = data.plan_tier;
+            if (data.max_allowed) maxDestinatariosWA = Number(data.max_allowed);
             if (data.owner_schedule) horarioDuenoWA = data.owner_schedule;
             invitarAppHabilitado = !!data.app_invite_enabled;
             puedeEditarDestinatarios = data.can_edit !== false;
@@ -5617,7 +5619,7 @@ function renderizarDestinatariosWA() {
     if (!tbody) return;
     tbody.innerHTML = '';
 
-    const maxAllowed = PLAN_LIMITS[currentPlanTier] || 2;
+    const maxAllowed = maxDestinatariosWA || PLAN_LIMITS[currentPlanTier] || 2;
     const badgeTier = document.getElementById('waPlanBadge');
     if (badgeTier) badgeTier.textContent = `Plan ${currentPlanTier.toUpperCase()}`;
     const countUsedEl = document.getElementById('waCountUsed');
@@ -5869,7 +5871,7 @@ function editarAvisosWA(id) {
 }
 
 async function agregarDestinatarioWA() {
-    const maxAllowed = PLAN_LIMITS[currentPlanTier] || 2;
+    const maxAllowed = maxDestinatariosWA || PLAN_LIMITS[currentPlanTier] || 2;
     if (recipientsData.length >= maxAllowed) {
         alert(`Alcanzaste el límite de ${maxAllowed} números de tu Plan ${currentPlanTier.toUpperCase()}.\n\nPara agregar más integrantes de tu equipo (depósito, fleteros), mejorá al Plan Enterprise.`);
         return;
