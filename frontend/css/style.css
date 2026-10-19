@@ -1936,7 +1936,7 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 /* ── Menú lateral (2026-10-19): íconos de contorno, angosto por defecto ──
    Reemplaza los botones del encabezado y las pestañas de arriba. Los textos viven
    en .sb-txt: con el menú angosto se ven como globito al pasar el mouse. */
-.sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 64px; z-index: 50; display: none; flex-direction: column; gap: 4px; padding: 12px 8px; background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; overflow-x: hidden; transition: width .18s ease; }
+.sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 64px; z-index: 50; display: none; flex-direction: column; gap: 4px; padding: 12px 8px; background: var(--surface); border-right: 1px solid var(--border-hover); box-shadow: 2px 0 10px rgba(0,0,0,0.12); overflow-y: auto; overflow-x: hidden; transition: width .18s ease; }
 body.con-panel .sidebar { display: flex; }
 body.con-panel { padding-left: 64px; transition: padding-left .18s ease; }
 body.con-panel.sb-abierto { padding-left: 232px; }
@@ -1949,18 +1949,18 @@ body.sb-abierto .sidebar { width: 232px; }
 body.sb-abierto .sb-toggle svg { transform: rotate(180deg); }
 body:not(.sb-abierto) .sb-top { flex-direction: column; padding-bottom: 10px; }
 .sb-grupo { display: flex; flex-direction: column; gap: 2px; }
-.sb-sep { height: 1px; background: var(--border); margin: 8px 6px; }
+.sb-sep { height: 1px; background: var(--border-hover); margin: 8px 6px; }
 .sb-spacer { flex: 1; min-height: 12px; }
-.sb-item { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 9px 12px; border: none; border-radius: 8px; background: transparent; color: var(--text2); font: inherit; font-size: 13.5px; font-weight: 600; text-align: left; white-space: nowrap; cursor: pointer; }
+.sb-item { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 9px 12px; border: none; border-radius: 8px; background: transparent; color: var(--text); opacity: .82; font: inherit; font-size: 13.5px; font-weight: 600; text-align: left; white-space: nowrap; cursor: pointer; }
 .sb-item svg { flex-shrink: 0; }
-.sb-item:hover { background: var(--surf2); color: var(--text); }
-.sb-item.activa { background: var(--warn-bg); color: var(--text); }
-.sb-item.activa svg { color: var(--accent); }
-.sb-item.activa::before { content: ""; position: absolute; left: -8px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+.sb-item:hover { background: var(--surf2); opacity: 1; }
+.sb-item.activa { background: var(--accent); color: #111; opacity: 1; }
+.sb-item.activa svg { color: #111; }
 .sb-item:focus-visible, .sb-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .sb-txt { overflow: hidden; text-overflow: ellipsis; }
 .sb-badge { margin-left: auto; }
 .sb-badge.sb-badge-acento { background: var(--accent); color: #111; }
+.sb-item.activa .sb-badge { background: #111; color: var(--accent); }
 #btnAvisosTop.sin-leer { border: none; }
 /* Angosto: solo el ícono; el nombre sale como globito y los contadores como puntito. */
 body:not(.sb-abierto) .sb-txt { display: none; }
@@ -1988,7 +1988,6 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
     .sb-top, .sb-sep, .sb-spacer, .sb-txt { display: none !important; }
     .sb-grupo { flex-direction: row; gap: 2px; }
     .sb-item { width: 44px; min-width: 44px; justify-content: center; padding: 9px 0; }
-    .sb-item.activa::before { left: 8px; right: 8px; top: -6px; bottom: auto; width: auto; height: 3px; border-radius: 0 0 3px 3px; }
     body:not(.sb-abierto) .sb-item:hover::after { display: none; }
     .scroll-nav { bottom: 76px; }
     .container { padding: 12px; }
