@@ -31,7 +31,7 @@ from whatsapp_service import (
 )
 from alerts_engine import procesar_alertas_usuario
 import horario_whatsapp as _horario
-from email_service import enviar_email, enviar_email_prueba, enviar_email_bienvenida_verificacion
+from email_service import enviar_email, enviar_email_prueba, enviar_email_bienvenida_verificacion, get_welcome_smtp_config
 import equipo as _equipo
 import proyeccion as _proy
 import esquema as _esquema
@@ -638,7 +638,7 @@ def _google_state_valido(state):
 
 def _google_volver_con_error(mensaje):
     # En el fragmento (#...) para que no quede en los logs del servidor.
-    return redirect(f"{_GOOGLE_APP_URL}/#" + urlencode({"google_error": mensaje}))
+    return redirect(f"{_GOOGLE_APP_URL}/login.html#" + urlencode({"google_error": mensaje}))
 
 
 @app.route("/api/auth/google/login", methods=["GET"])
@@ -721,10 +721,96 @@ def google_callback():
             conn.close()
 
         token = create_access_token(identity=str(user_id))
-        return redirect(f"{_GOOGLE_APP_URL}/#" + urlencode({"google_token": token}))
+        return redirect(f"{_GOOGLE_APP_URL}/login.html#" + urlencode({"google_token": token}))
     except Exception as e:
         print(f"✗ Error en google_callback: {e}")
         return _google_volver_con_error("Ocurrió un error inesperado con el acceso de Google.")
+
+
+# Recuperar contraseña. Sin tabla nueva: el link lleva un token firmado con vencimiento
+# que incluye una huella de la contraseña actual, así que deja de servir apenas se cambia
+# (un solo uso) o si la clave ya cambió por otro lado.
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+_RESET_TTL = 3600  # 1 hora
+_reset_ultimo = {}
+
+
+def _reset_serializer():
+    return URLSafeTimedSerializer(app.config["JWT_SECRET_KEY"], salt="enviobot-full-reset")
+
+
+def _reset_huella(password_hash):
+    return hashlib.sha256((password_hash or "").encode()).hexdigest()[:16]
+
+
+def _mail_restablecer(email, nombre, link):
+    texto = "\n".join([
+        f"Hola {nombre},", "",
+        "Recibimos un pedido para cambiar tu contraseña de EnvioBot Full. Entrá a este link para elegir una nueva (vale 1 hora y se usa una sola vez):",
+        link, "",
+        "Si no fuiste vos, ignorá este mail: tu contraseña sigue igual."])
+    html = (f'<div style="font-family:Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1b1f27">'
+            f'<div style="font-size:20px;font-weight:700;margin-bottom:16px">EnvioBot <span style="color:#f5a623">Full</span></div>'
+            f'<p>Hola {nombre},</p>'
+            f'<p>Recibimos un pedido para cambiar tu contraseña. El link vale 1 hora y se usa una sola vez.</p>'
+            f'<p style="margin:24px 0"><a href="{link}" style="background:#f5a623;color:#111;text-decoration:none;'
+            f'font-weight:700;padding:12px 22px;border-radius:6px;display:inline-block">Elegir nueva contraseña</a></p>'
+            f'<p style="font-size:13px;color:#666">Si no fuiste vos, ignorá este mail: tu contraseña sigue igual.</p></div>')
+    enviar_email(email, "Cambiá tu contraseña de EnvioBot Full", texto, html, smtp_cfg=get_welcome_smtp_config())
+
+
+@app.route("/api/full/auth/forgot", methods=["POST"])
+def forgot_password():
+    """Siempre responde lo mismo, exista o no el mail, para no revelar quién tiene cuenta."""
+    email = ((request.get_json() or {}).get("email") or "").strip().lower()
+    respuesta = jsonify({"ok": True, "message": "Si ese email tiene cuenta, te mandamos un link para cambiar la contraseña. Revisá también el spam."})
+    if not email or len(email) > 254:
+        return respuesta
+    ahora = time.time()
+    if ahora - _reset_ultimo.get(email, 0) < 60:
+        return respuesta
+    _reset_ultimo[email] = ahora
+    if len(_reset_ultimo) > 5000:
+        for k in [k for k, t in _reset_ultimo.items() if ahora - t > 3600]:
+            _reset_ultimo.pop(k, None)
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, full_name, password_hash, COALESCE(is_blocked, 0) AS is_blocked FROM users WHERE email=%s LIMIT 1", (email,))
+            u = cur.fetchone()
+    finally:
+        conn.close()
+    if u and not u["is_blocked"]:
+        token = _reset_serializer().dumps({"id": u["id"], "h": _reset_huella(u["password_hash"])})
+        link = f"{_GOOGLE_APP_URL}/restablecer.html#t={token}"
+        nombre = (u.get("full_name") or email.split("@")[0]).replace("<", "").replace(">", "")
+        # En un hilo para que el tiempo de respuesta no delate si el mail existe.
+        threading.Thread(target=_mail_restablecer, args=(email, nombre, link), daemon=True).start()
+    return respuesta
+
+
+@app.route("/api/full/auth/reset", methods=["POST"])
+def reset_password():
+    data = request.get_json() or {}
+    password = (data.get("password") or "").strip()
+    if len(password) < 6:
+        return jsonify({"ok": False, "error": "La contraseña debe tener al menos 6 caracteres."}), 400
+    invalido = jsonify({"ok": False, "error": "El link venció o ya se usó. Pedí uno nuevo desde \"Olvidé mi contraseña\"."})
+    try:
+        datos = _reset_serializer().loads(data.get("token") or "", max_age=_RESET_TTL)
+    except (BadSignature, SignatureExpired):
+        return invalido, 400
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, password_hash, COALESCE(is_blocked, 0) AS is_blocked FROM users WHERE id=%s", (datos.get("id"),))
+            u = cur.fetchone()
+            if not u or u["is_blocked"] or _reset_huella(u["password_hash"]) != datos.get("h"):
+                return invalido, 400
+            cur.execute("UPDATE users SET password_hash=%s, must_change_password=0 WHERE id=%s", (hash_pw(password), u["id"]))
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "message": "Listo, ya podés ingresar con tu nueva contraseña."})
 
 
 @app.route("/api/auth/login", methods=["POST"])

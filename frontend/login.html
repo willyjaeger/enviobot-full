@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ingresar — EnvioBot Full</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f5a623' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M 13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z'/%3E%3Cpolyline points='3.4 7.1 12 12 20.6 7.1'/%3E%3Cline x1='12' y1='21.1' x2='12' y2='12'/%3E%3C/svg%3E">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=20261017_3">
     <style>
         .auth-wrapper {
             min-height: 85vh;
@@ -40,7 +40,16 @@
                 <p style="font-size: 13px; color: var(--text2);">Monitoreá tus stocks en bodega y evitá quiebres de venta.</p>
             </div>
 
+            <div class="auth-tabs">
+                <button type="button" class="auth-tab-btn active" id="tabLogin" onclick="cambiarModo('login')">Ingresar</button>
+                <button type="button" class="auth-tab-btn" id="tabRegister" onclick="cambiarModo('register')">Crear cuenta</button>
+            </div>
+
             <form id="loginForm" onsubmit="handleLogin(event)">
+                <div class="form-group" id="nameGroup" style="display: none;">
+                    <label for="fullName">Nombre o negocio</label>
+                    <input type="text" id="fullName" autocomplete="name" placeholder="Tu nombre o el de tu tienda">
+                </div>
                 <div class="form-group">
                     <label for="email">Email</label>
                     <input type="email" id="email" required autocomplete="email" placeholder="vos@tutienda.com.ar">
@@ -50,10 +59,21 @@
                     <input type="password" id="password" required autocomplete="current-password">
                 </div>
 
-                <button type="submit" class="btn btn-block" style="padding: 11px; margin-top: 8px; font-size: 14px;">
+                <div id="authMsg" role="alert" style="display: none; font-size: 12.5px; line-height: 1.45; margin: 4px 0 10px; padding: 9px 12px; border-radius: 6px;"></div>
+
+                <button type="submit" id="btnSubmit" class="btn btn-block" style="padding: 11px; margin-top: 4px; font-size: 14px;">
                     Ingresar
                 </button>
+                <div style="text-align: center; margin-top: 12px;">
+                    <a href="#" id="linkOlvide" onclick="olvideClave(event)" style="font-size: 12.5px; color: var(--accent-text); text-decoration: none;">¿Olvidaste tu contraseña?</a>
+                </div>
             </form>
+
+            <div class="auth-divider"><span>o</span></div>
+            <a href="/api/full/auth/google/login" class="btn-google">
+                <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.6 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.5 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.7 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 6.1 29.5 4 24 4c-7.5 0-14 4.2-17.7 10.7z"/><path fill="#4CAF50" d="M24 44c5.4 0 10.3-2.1 14-5.5l-6.5-5.5C29.4 34.7 26.9 36 24 36c-5.3 0-9.7-3.4-11.3-8.1l-6.5 5c3.6 7.1 11 12.1 17.8 12.1z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.3 5.7l6.5 5.5C39.8 37 44 31 44 24c0-1.2-.1-2.4-.4-3.5z"/></svg>
+                Continuar con Google
+            </a>
 
             <div style="margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); text-align: center;">
                 <a href="index.html" style="font-size: 12.5px; color: var(--accent-text); text-decoration: none;">
@@ -65,36 +85,99 @@
 
     <script src="js/teclado-formularios.js?v=20261017_1"></script>
     <script>
+        let modo = 'login';
+        const el = id => document.getElementById(id);
+
+        function mostrar(texto, ok) {
+            const m = el('authMsg');
+            if (!texto) { m.style.display = 'none'; return; }
+            m.textContent = texto;
+            m.style.display = 'block';
+            m.style.color = ok ? '#7bd88f' : '#ff7676';
+            m.style.background = ok ? 'rgba(76,175,80,0.1)' : 'rgba(255,82,82,0.1)';
+            m.style.border = '1px solid ' + (ok ? 'rgba(76,175,80,0.3)' : 'rgba(255,82,82,0.3)');
+        }
+
+        function cambiarModo(nuevo) {
+            modo = nuevo;
+            const reg = nuevo === 'register';
+            el('tabLogin').classList.toggle('active', !reg);
+            el('tabRegister').classList.toggle('active', reg);
+            el('nameGroup').style.display = reg ? 'block' : 'none';
+            el('linkOlvide').parentNode.style.display = reg ? 'none' : 'block';
+            el('password').autocomplete = reg ? 'new-password' : 'current-password';
+            el('btnSubmit').textContent = reg ? 'Crear cuenta (30 días gratis)' : 'Ingresar';
+            mostrar('');
+        }
+
+        async function post(path, body) {
+            const opciones = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+            let res = await fetch('/api/full/auth/' + path, opciones);
+            if (res.status === 404 && (path === 'login' || path === 'register')) {
+                res = await fetch('/api/auth/' + path, opciones);
+            }
+            return res.json();
+        }
+
         async function handleLogin(e) {
             e.preventDefault();
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-
+            const email = el('email').value.trim();
+            const password = el('password').value;
+            const btn = el('btnSubmit');
+            const texto = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Procesando...';
+            mostrar('');
             try {
-                let res = await fetch('/api/full/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
-                });
-                if (res.status === 404) {
-                    res = await fetch('/api/auth/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ email, password })
-                    });
-                }
-                const data = await res.json();
+                const body = modo === 'login' ? { email, password } : { email, password, full_name: el('fullName').value.trim() };
+                const data = await post(modo, body);
                 if (data.ok && data.token) {
                     localStorage.setItem('enviobot_full_token', data.token);
+                    localStorage.setItem('token', data.token);
                     window.location.href = 'index.html';
-                } else {
-                    alert(data.error || 'Error al iniciar sesión');
+                    return;
                 }
+                mostrar(data.error || 'No se pudo completar. Probá de nuevo.');
             } catch (err) {
-                // Fallback a demo si corre sin backend
-                window.location.href = 'index.html';
+                mostrar('No hay conexión con el servidor. Probá de nuevo en un momento.');
+            }
+            btn.disabled = false;
+            btn.textContent = texto;
+        }
+
+        async function olvideClave(e) {
+            e.preventDefault();
+            const email = el('email').value.trim();
+            if (!email) {
+                mostrar('Escribí tu email arriba y volvé a tocar "¿Olvidaste tu contraseña?".');
+                el('email').focus();
+                return;
+            }
+            mostrar('');
+            try {
+                const data = await post('forgot', { email });
+                mostrar(data.message || 'Si ese email tiene cuenta, te mandamos un link.', true);
+            } catch (err) {
+                mostrar('No hay conexión con el servidor. Probá de nuevo en un momento.');
             }
         }
+
+        // Vuelta del acceso con Google: el servidor deja el token (o el error) en el
+        // fragmento (#...), que no viaja a los logs. Se lee y se borra de la barra.
+        (function volverDeGoogle() {
+            const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+            const token = h.get('google_token');
+            const error = h.get('google_error');
+            if (!token && !error) return;
+            history.replaceState({}, document.title, location.pathname + location.search);
+            if (token) {
+                localStorage.setItem('enviobot_full_token', token);
+                localStorage.setItem('token', token);
+                window.location.href = 'index.html';
+            } else {
+                mostrar(error);
+            }
+        })();
     </script>
 </body>
 </html>
