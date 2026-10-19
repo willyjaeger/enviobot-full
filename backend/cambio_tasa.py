@@ -404,7 +404,7 @@ def procesar_usuario(conn, user_id, ahora=None):
         return res
     from aviso_limite_colecta import _destinatarios
     horas = REPETIR_DIAS * 24
-    for tel, horario in _destinatarios(conn, user_id, settings).items():
+    for tel, horario in _destinatarios(conn, user_id, settings, "cambio_tasa_venta").items():
         if not whatsapp_permitido(ahora, horario):
             continue
         marcas = {_clave(c): f"wa:{normalizar_telefono(tel)}:{_hash_corto(_clave(c) + ':' + str(fila['id']))}" for c, fila in vigentes}

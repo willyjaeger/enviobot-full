@@ -34,6 +34,7 @@ import horario_whatsapp as _horario
 from email_service import enviar_email, enviar_email_prueba, enviar_email_bienvenida_verificacion, get_welcome_smtp_config
 import equipo as _equipo
 import proyeccion as _proy
+import avisos_tipos as _avisos
 import esquema as _esquema
 from inbound_service import render_remito_html
 import pdf_envio_ml as _pdf_ml
@@ -2003,10 +2004,11 @@ def get_recipients():
     max_allowed = plan_info["limits"]["max_recipients"]
 
     with conn.cursor() as cur:
+        con_avisos = _esquema.tiene_columna(cur, "alert_recipients", "avisos")   # migración 003
         cur.execute("""
             SELECT id, name, phone, role, warehouse_filter, is_active, 
                    COALESCE(is_verified, 1) AS is_verified, created_at,
-                   wa_days, wa_from, wa_to
+                   wa_days, wa_from, wa_to""" + (", avisos" if con_avisos else "") + """
             FROM alert_recipients
             WHERE user_id=%s AND is_active=1
             ORDER BY id ASC
@@ -2025,8 +2027,12 @@ def get_recipients():
     for r in recipients:
         r["schedule"] = _horario.a_texto(_horario.horario_de(r, horario_dueno))
         r["schedule_custom"] = bool(r.get("wa_days") or r.get("wa_from") or r.get("wa_to"))
+        r["avisos_resumen"] = _avisos.resumen(r.get("avisos"))
+        r["avisos_lista"] = [t["clave"] for t in _avisos.TIPOS if _avisos.recibe(r, t["clave"])]
 
     return jsonify({
+        "avisos_editables": con_avisos,
+        "tipos_aviso": list(_avisos.TIPOS),
         "ok": True,
         "plan_tier": plan_info["plan_tier"],
         "plan_name": plan_info["plan_name"],
@@ -2086,6 +2092,32 @@ def guardar_horario_destinatario(recipient_id):
                     valores + (recipient_id, user_id))
     conn.close()
     return jsonify({"ok": True}), 200
+
+@app.route("/api/full/recipients/<int:recipient_id>/avisos", methods=["PUT"])
+@jwt_required()
+@_equipo.requiere_rol('admin')
+def guardar_avisos_destinatario(recipient_id):
+    """Qué avisos recibe este destinatario. {"tipos": ["colecta_mail", ...]} o {"todos": true}."""
+    user_id = int(get_jwt_identity())
+    data = request.get_json() or {}
+    if data.get("todos"):
+        valor = None
+    else:
+        valor, error = _avisos.a_texto(data.get("tipos"))
+        if error:
+            return jsonify({"ok": False, "error": error}), 400
+    conn = get_db()
+    with conn.cursor() as cur:
+        if not _esquema.tiene_columna(cur, "alert_recipients", "avisos"):
+            conn.close()
+            return jsonify({"ok": False, "error": "Todavía no está habilitado: falta aplicar la actualización de la base (migración 003)."}), 409
+        cur.execute("SELECT id FROM alert_recipients WHERE id=%s AND user_id=%s", (recipient_id, user_id))
+        if not cur.fetchone():
+            conn.close()
+            return jsonify({"ok": False, "error": "No encontramos ese número."}), 404
+        cur.execute("UPDATE alert_recipients SET avisos=%s WHERE id=%s AND user_id=%s", (valor, recipient_id, user_id))
+    conn.close()
+    return jsonify({"ok": True, "resumen": _avisos.resumen(valor)}), 200
 
 @app.route("/api/full/recipients", methods=["POST"])
 @jwt_required()

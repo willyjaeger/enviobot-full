@@ -14,6 +14,7 @@ import logging
 from datetime import datetime
 
 import alerts_engine
+import avisos_tipos
 import esquema
 import proyeccion
 from email_service import enviar_email
@@ -46,18 +47,22 @@ def texto_aviso(fecha_retiro, limite, segundos_restantes, codigo=None, app_url="
     )
 
 
-def _destinatarios(conn, user_id, settings):
-    """Teléfono -> horario de WhatsApp (el del destinatario, o el del dueño si no cambió nada)."""
+def _destinatarios(conn, user_id, settings, tipo=None):
+    """Teléfono -> horario de WhatsApp (el del destinatario, o el del dueño si no cambió nada).
+    Con `tipo`, solo los que pidieron recibir ese aviso (avisos_tipos.py)."""
     horario_dueno = horario_de(settings)
     destinos = {}
     with conn.cursor() as cur:
         con_horario = esquema.tiene_columna(cur, "alert_recipients", "wa_days")
-        cur.execute("SELECT phone" + (", wa_days, wa_from, wa_to" if con_horario else "")
+        con_avisos = esquema.tiene_columna(cur, "alert_recipients", "avisos")   # migración 003
+        cur.execute("SELECT phone" + (", wa_days, wa_from, wa_to" if con_horario else "") + (", avisos" if con_avisos else "")
                     + " FROM alert_recipients WHERE user_id=%s AND is_active=1", (user_id,))
-        for r in cur.fetchall():
+        agenda = cur.fetchall()
+        filas = [r for r in agenda if avisos_tipos.recibe(r, tipo)] if tipo else agenda
+        for r in filas:
             if r.get("phone"):
                 destinos.setdefault(r["phone"], horario_de(r, horario_dueno))
-    if not destinos and settings.get("whatsapp_phone"):
+    if not destinos and not agenda and settings.get("whatsapp_phone"):   # agenda vacía: queda el teléfono del dueño
         destinos[settings["whatsapp_phone"]] = horario_dueno
     return destinos
 
@@ -95,7 +100,7 @@ def procesar_usuario(conn, user_id, ahora=None):
         # Un registro por canal, y el de WhatsApp por destinatario (cada uno tiene su horario):
         # si a alguien le toca esperar, el mail y los demás no lo bloquean.
         ya_mail = alerts_engine.ya_se_envio_alerta_hoy(conn, user_id, TIPO_ALERTA, clave + ":mail", horas_cooldown=72)
-        destinos = _destinatarios(conn, user_id, settings) if settings.get("notify_whatsapp", True) else {}
+        destinos = _destinatarios(conn, user_id, settings, TIPO_ALERTA) if settings.get("notify_whatsapp", True) else {}
         pendientes = [t for t in destinos
                       if not alerts_engine.ya_se_envio_alerta_hoy(conn, user_id, TIPO_ALERTA, f"{clave}:wa:{normalizar_telefono(t)}", horas_cooldown=72)]
         if not pendientes and ya_mail:

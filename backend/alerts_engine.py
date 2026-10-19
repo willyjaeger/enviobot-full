@@ -25,6 +25,7 @@ from whatsapp_service import (
     obtener_configuracion_whatsapp
 )
 from email_service import enviar_alerta_stock_email, enviar_email
+import avisos_tipos
 import esquema
 import proyeccion
 from horario_whatsapp import horario_de, en_horario
@@ -276,19 +277,21 @@ def procesar_alertas_usuario(user_id: int) -> dict:
 
         with conn.cursor() as cur:
             con_horario = esquema.tiene_columna(cur, "alert_recipients", "wa_days")
+            con_avisos = esquema.tiene_columna(cur, "alert_recipients", "avisos")   # migración 003
             cur.execute("""
-                SELECT phone, name, role, warehouse_filter""" + (", wa_days, wa_from, wa_to" if con_horario else "") + """
+                SELECT phone, name, role, warehouse_filter""" + (", wa_days, wa_from, wa_to" if con_horario else "") + (", avisos" if con_avisos else "") + """
                 FROM alert_recipients 
                 WHERE user_id=%s AND is_active=1
             """, (user_id,))
-            destinatarios = cur.fetchall()
+            agenda = cur.fetchall()
+            destinatarios = [r for r in agenda if avisos_tipos.recibe(r, pausa_avisos.ALERTA_STOCK)]
 
         for r in destinatarios:
             if r.get("phone"):
                 destinos.setdefault(r["phone"], horario_de(r, horario_dueno))
 
         # Si no tiene destinatarios en la tabla pero tiene teléfono en user_settings
-        if not destinos and settings.get("whatsapp_phone"):
+        if not destinos and not agenda and settings.get("whatsapp_phone"):
             destinos[settings["whatsapp_phone"]] = horario_dueno
 
         # Sumar destinatarios administradores/globales configurados en admin.enviobot.com.ar

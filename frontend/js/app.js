@@ -4706,6 +4706,8 @@ function cerrarModalExplicacionColecta() {
 }
 
 // ── Modal de Configuración General y Pestañas ───────────────────────
+let tiposAvisoWA = [];            // catálogo de avisos (lo manda el servidor)
+let avisosEditablesWA = false;    // false hasta que se aplique la migración 003
 let recipientsData = [
     { id: 1, name: "Guillermo (Dueño)", phone: "+54 9 11 5555-0001", role: "admin", warehouse_filter: "all", is_verified: 1 },
     { id: 2, name: "Marcos (Depósito)", phone: "+54 9 11 4444-0002", role: "deposito", warehouse_filter: "meli_full", is_verified: 1 }
@@ -4809,6 +4811,8 @@ async function cargarDestinatariosBackend() {
             if (data.owner_schedule) horarioDuenoWA = data.owner_schedule;
             invitarAppHabilitado = !!data.app_invite_enabled;
             puedeEditarDestinatarios = data.can_edit !== false;
+            tiposAvisoWA = Array.isArray(data.tipos_aviso) ? data.tipos_aviso : [];
+            avisosEditablesWA = !!data.avisos_editables;
             renderizarDestinatariosWA();
         }
     } catch (e) {
@@ -5646,7 +5650,7 @@ function renderizarDestinatariosWA() {
     }
 
     if (recipientsData.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text2); padding: 15px;">No tenés números de WhatsApp configurados todavía.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text2); padding: 15px;">No tenés números de WhatsApp configurados todavía.</td></tr>';
         return;
     }
 
@@ -5677,8 +5681,11 @@ function renderizarDestinatariosWA() {
             <td><span class="role-badge ${roleBadgeClass}">${roleLabel}</span></td>
             <td style="color: var(--text2); font-size: 11px;">${whName}</td>
             <td style="font-size: 11px; color: var(--text2);">${resumenHorarioWA(r.schedule || horarioDuenoWA)}${r.schedule_custom ? '' : ' <span style="opacity:.7">(del dueño)</span>'}</td>
+            <td style="font-size: 11px; color: var(--text2); max-width: 170px;">${escapeHtml(r.avisos_resumen || 'Todos')}</td>
             <td style="text-align: right;">
                 <div style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; align-items: center; min-width: 260px;">
+                    <button class="btn btn-secondary btn-sm" style="${estiloBtn()}"${avisosEditablesWA ? bloq : ' disabled title="Se habilita al aplicar la actualización de la base"'}
+                            onclick="editarAvisosWA(${r.id})" title="${puedeEditarDestinatarios ? 'Elegir de qué avisos se entera' : sinPermiso}">Avisos</button>
                     <button class="btn btn-secondary btn-sm" style="${estiloBtn()}"${bloq}
                             onclick="editarHorarioWA(${r.id})" title="${puedeEditarDestinatarios ? 'Elegir los días y horas en que recibe avisos' : sinPermiso}">Horario</button>
                     ${invitarAppHabilitado ? (r.app_access === 'activo'
@@ -5767,6 +5774,59 @@ function editarHorarioWA(id) {
     });
     const her = document.getElementById('hwaHeredar');
     if (her) her.onclick = () => enviar({ inherit: true });
+}
+
+// Menú de avisos: qué tipos de aviso recibe cada número de la agenda.
+function editarAvisosWA(id) {
+    const rec = recipientsData.find(x => x.id === id);
+    if (!rec) return;
+    const elegidos = new Set(rec.avisos_lista || tiposAvisoWA.map(t => t.clave));
+
+    const viejo = document.getElementById('modalAvisosWA');
+    if (viejo) viejo.remove();
+    const m = document.createElement('div');
+    m.id = 'modalAvisosWA';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+    m.innerHTML = `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:22px 24px;max-width:480px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.6);">
+            <div style="font-size:15px;font-weight:700;margin-bottom:4px;">Avisos de ${escapeHtml(rec.name)}</div>
+            <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">Marcá de qué se entera este número por WhatsApp. Respeta su horario.</div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+                ${tiposAvisoWA.map(t => `
+                    <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;">
+                        <input type="checkbox" class="awa-tipo" value="${escapeHtml(t.clave)}" ${elegidos.has(t.clave) ? 'checked' : ''} style="margin-top:3px;">
+                        <span><b style="font-size:13.5px;">${escapeHtml(t.titulo)}</b><br><span style="font-size:12px;color:var(--text2);">${escapeHtml(t.descripcion)}</span></span>
+                    </label>`).join('')}
+            </div>
+            <div id="awaError" style="color:#ff7676;font-size:12px;min-height:16px;margin-bottom:8px;"></div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                <button type="button" class="btn btn-secondary btn-sm" id="awaTodos" style="margin-right:auto;">Marcar todos</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="awaCancelar">Cancelar</button>
+                <button type="button" class="btn btn-sm" id="awaGuardar" style="background:var(--accent);color:#111;font-weight:700;">Guardar</button>
+            </div>
+        </div>`;
+    document.body.appendChild(m);
+
+    const cerrar = () => m.remove();
+    m.addEventListener('click', e => { if (e.target === m) cerrar(); });
+    document.getElementById('awaCancelar').onclick = cerrar;
+    document.getElementById('awaTodos').onclick = () => m.querySelectorAll('.awa-tipo').forEach(c => { c.checked = true; });
+    document.getElementById('awaGuardar').onclick = async () => {
+        const tipos = Array.from(m.querySelectorAll('.awa-tipo:checked')).map(x => x.value);
+        try {
+            const resp = await fetch(`${API_BASE}/full/recipients/${rec.id}/avisos`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+                body: JSON.stringify(tipos.length === tiposAvisoWA.length ? { todos: true } : { tipos })
+            });
+            const data = await resp.json();
+            if (!data.ok) { document.getElementById('awaError').textContent = data.error || 'No se pudo guardar.'; return; }
+            cerrar();
+            await cargarDestinatariosBackend();
+        } catch (e) {
+            document.getElementById('awaError').textContent = 'Error de conexión. Probá de nuevo.';
+        }
+    };
 }
 
 async function agregarDestinatarioWA() {

@@ -66,7 +66,7 @@ class _Imap:
 CFG = {"host": "h", "port": 993, "user": "u", "password": "p", "telefonos": ["+5491155550001"], "max_horas": 36}
 
 
-def _correr(mails, ahora=LUNES_10, ok=True, cfg=CFG):
+def _correr(mails, ahora=LUNES_10, ok=True, cfg=CFG, destinos=None):
     imap = _Imap(mails)
     enviados = []
 
@@ -75,7 +75,8 @@ def _correr(mails, ahora=LUNES_10, ok=True, cfg=CFG):
         return [{"phone": t, "result": {"ok": ok}} for t in tels]
 
     with mock.patch.dict(os.environ, {"ENVIOBOT_AVISOS": "pausados"}):
-        res = c.ejecutar(ahora=ahora, config=cfg, conectar=lambda _cfg: imap, enviar=enviar)
+        res = c.ejecutar(ahora=ahora, config=cfg, conectar=lambda _cfg: imap, enviar=enviar,
+                         destinatarios=(lambda: destinos) if destinos is not None else None)
     return res, enviados, imap
 
 
@@ -192,6 +193,49 @@ class TestEjecucion(unittest.TestCase):
 
     def test_falta_el_telefono_y_no_se_configura(self):
         self.assertIsNone(c.leer_configuracion({"COLECTAS_IMAP_USER": "a", "COLECTAS_IMAP_PASSWORD": "b"}))
+
+
+DOMINGO = {"dias": (6,), "desde": (0, 0), "hasta": (23, 59)}
+
+
+class TestAgenda(unittest.TestCase):
+    def test_solo_les_llega_a_quienes_estan_en_su_horario(self):
+        destinos = {"+5491100000001": c.horario_defecto(), "+5491100000002": DOMINGO}
+        res, enviados, _ = _correr([_mail()], destinos=destinos)
+        self.assertEqual(enviados[0][0], ["+5491100000001"])
+        self.assertEqual(res["avisados"], 1)
+
+    def test_si_nadie_esta_en_horario_el_mail_espera(self):
+        res, enviados, imap = _correr([_mail()], destinos={"+5491100000002": DOMINGO})
+        self.assertEqual((res["pendientes"], res["avisados"]), (1, 0))
+        self.assertEqual((enviados, imap.flags), ([], {}))
+
+    def test_si_nadie_pidio_este_aviso_no_se_manda_ni_se_borra(self):
+        res, enviados, imap = _correr([_mail()], destinos={})
+        self.assertEqual((res.get("sin_destinatarios"), res["avisados"]), (1, 0))
+        self.assertEqual((enviados, imap.flags), ([], {}))
+
+    def test_la_agenda_se_consulta_una_sola_vez_por_corrida(self):
+        llamadas = []
+
+        def destinos():
+            llamadas.append(1)
+            return {"+5491100000001": c.horario_defecto()}
+        imap = _Imap([_mail(), _mail(asunto="Colecta modificada")])
+        with mock.patch.dict(os.environ, {"ENVIOBOT_AVISOS": "pausados"}):
+            c.ejecutar(ahora=LUNES_10, config=CFG, conectar=lambda _c: imap, enviar=lambda t, x: [{"phone": t[0], "result": {"ok": True}}],
+                       destinatarios=destinos)
+        self.assertEqual(len(llamadas), 1)
+
+    def test_sin_mails_no_se_consulta_la_agenda(self):
+        def destinos():
+            raise AssertionError("no hacía falta")
+        res = c.ejecutar(ahora=LUNES_10, config=CFG, conectar=lambda _c: _Imap([]), destinatarios=destinos)
+        self.assertEqual(res["leidos"], 0)
+
+    def test_alcanza_con_la_cuenta_sin_telefonos_sueltos(self):
+        cfg = c.leer_configuracion({"COLECTAS_IMAP_USER": "a", "COLECTAS_IMAP_PASSWORD": "b", "COLECTAS_CUENTA_EMAIL": "Guillermo@x.com"})
+        self.assertEqual((cfg["cuenta_email"], cfg["telefonos"]), ("guillermo@x.com", []))
 
 
 class TestPausa(unittest.TestCase):

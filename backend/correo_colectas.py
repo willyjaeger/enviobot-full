@@ -21,10 +21,11 @@ original sigue en el buzón de origen si el reenvío conserva una copia (convien
 Se configura en el .env del servidor (nada de claves en el código):
     COLECTAS_IMAP_USER, COLECTAS_IMAP_PASSWORD   casilla que recibe los mails reenviados
     COLECTAS_IMAP_HOST (opcional; por defecto el SMTP_HOST), COLECTAS_IMAP_PORT (opcional, 993)
-    COLECTAS_WHATSAPP        teléfono(s) de quien recibe el aviso, separados por coma
+    COLECTAS_CUENTA_EMAIL    email del usuario cuya agenda de envíos recibe el aviso (cada uno según su menú de Avisos)
+    COLECTAS_WHATSAPP        opcional: teléfonos sueltos que reciben el aviso además de la agenda, separados por coma
     COLECTAS_MAX_HORAS       opcional, por defecto 36
     COLECTAS_BORRAR          opcional, "no" para dejar los mails como leídos en vez de borrarlos
-Sin la casilla o sin el teléfono configurados, no hace nada.
+Sin la casilla, o sin agenda ni teléfonos configurados, no hace nada.
 """
 import email
 import email.policy
@@ -45,7 +46,7 @@ except ImportError:  # pragma: no cover
 
 import pausa_avisos
 import proyeccion
-from horario_whatsapp import horario_defecto, whatsapp_permitido
+from horario_whatsapp import en_horario, horario_defecto
 
 logger = logging.getLogger("correo_colectas")
 
@@ -180,8 +181,9 @@ def armar_mensaje(asunto, cuerpo, datos):
 def leer_configuracion(env=None):
     env = os.environ if env is None else env
     telefonos = [t.strip() for t in (env.get("COLECTAS_WHATSAPP") or "").split(",") if t.strip()]
+    cuenta = (env.get("COLECTAS_CUENTA_EMAIL") or "").strip().lower()
     usuario, clave = (env.get("COLECTAS_IMAP_USER") or "").strip(), env.get("COLECTAS_IMAP_PASSWORD") or ""
-    if not (usuario and clave and telefonos):
+    if not (usuario and clave and (telefonos or cuenta)):
         return None
     try:
         max_horas = float(env.get("COLECTAS_MAX_HORAS") or MAX_HORAS_DEFECTO)
@@ -190,7 +192,7 @@ def leer_configuracion(env=None):
     return {
         "host": (env.get("COLECTAS_IMAP_HOST") or env.get("SMTP_HOST") or "").strip(),
         "port": int(env.get("COLECTAS_IMAP_PORT") or 993),
-        "user": usuario, "password": clave, "telefonos": telefonos, "max_horas": max_horas,
+        "user": usuario, "password": clave, "telefonos": telefonos, "cuenta_email": cuenta, "max_horas": max_horas,
         "borrar": (env.get("COLECTAS_BORRAR") or "si").strip().lower() not in ("no", "0", "false"),
     }
 
@@ -200,6 +202,38 @@ def _conectar(cfg):
     imap.login(cfg["user"], cfg["password"])
     imap.select("INBOX")
     return imap
+
+
+def destinos_de_la_agenda(cfg):
+    """Teléfono -> horario de WhatsApp de quienes reciben este aviso.
+
+    Salen de la agenda de envíos de la cuenta (COLECTAS_CUENTA_EMAIL) con el menú de avisos de cada uno
+    (avisos_tipos.py), más los teléfonos sueltos de COLECTAS_WHATSAPP si hay. Cada uno con su horario."""
+    from whatsapp_service import normalizar_telefono
+    destinos = {}
+    if cfg.get("cuenta_email"):
+        import alerts_engine
+        from aviso_limite_colecta import _destinatarios
+        conn = alerts_engine.get_db()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE LOWER(email)=%s", (cfg["cuenta_email"],))
+                fila = cur.fetchone()
+                settings = {}
+                if fila:
+                    cur.execute("SELECT * FROM user_settings WHERE user_id=%s", (fila["id"],))
+                    settings = cur.fetchone() or {}
+            if fila:
+                destinos.update(_destinatarios(conn, fila["id"], settings, pausa_avisos.MAIL_COLECTA))
+            else:
+                logger.error(f"[Mail colecta] No existe el usuario {cfg['cuenta_email']}: no se usa la agenda.")
+        finally:
+            conn.close()
+    vistos = {normalizar_telefono(t) for t in destinos}
+    for t in cfg.get("telefonos", []):
+        if normalizar_telefono(t) not in vistos:
+            destinos[t] = horario_defecto()
+    return destinos
 
 
 def _descartar(imap, num, cfg):
@@ -212,8 +246,8 @@ def _enviar_whatsapp(telefonos, texto):
     return enviar_lote_con_demora(telefonos, texto)
 
 
-def ejecutar(ahora=None, config=None, conectar=None, enviar=None):
-    """Una pasada por la casilla. `conectar` y `enviar` se pueden reemplazar (tests)."""
+def ejecutar(ahora=None, config=None, conectar=None, enviar=None, destinatarios=None):
+    """Una pasada por la casilla. `conectar`, `enviar` y `destinatarios` se pueden reemplazar (tests)."""
     res = {"leidos": 0, "avisados": 0, "ignorados": 0, "viejos": 0, "pendientes": 0}
     if not pausa_avisos.puede_enviar(pausa_avisos.MAIL_COLECTA):
         logger.info("[Mail colecta] Avisos pausados (ENVIOBOT_AVISOS): no se envía nada.")
@@ -226,6 +260,7 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None):
         return res
     ahora = ahora or datetime.now(proyeccion.HORA_BA)
     enviar = enviar or _enviar_whatsapp
+    destinos = None   # se arma recién cuando hay un mail para avisar
     imap = (conectar or _conectar)(cfg)
     try:
         tipo, datos = imap.search(None, "UNSEEN")
@@ -252,11 +287,18 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None):
                     continue
             except (TypeError, ValueError):
                 pass  # sin fecha legible se trata como reciente
-            if not whatsapp_permitido(ahora, horario_defecto()):
-                res["pendientes"] += 1  # queda sin leer: sale en la próxima corrida dentro del horario
+            if destinos is None:
+                destinos = (destinatarios or (lambda: destinos_de_la_agenda(cfg)))()
+            if not destinos:
+                res["sin_destinatarios"] = res.get("sin_destinatarios", 0) + 1   # nadie lo pidió: se deja, y caduca solo
+                logger.info("[Mail colecta] Nadie en la agenda recibe este aviso (ver el menú Avisos de Configuración).")
+                continue
+            a_enviar = [t for t, h in destinos.items() if en_horario(h, ahora)]
+            if not a_enviar:
+                res["pendientes"] += 1  # queda sin leer: sale en la próxima corrida dentro del horario de alguno
                 continue
             texto = armar_mensaje(asunto, cuerpo, extraer_datos(cuerpo))
-            resultados = enviar(cfg["telefonos"], texto)
+            resultados = enviar(a_enviar, texto)
             if any((r.get("result") or {}).get("ok") for r in (resultados or [])):
                 _descartar(imap, num, cfg)
                 res["avisados"] += 1
