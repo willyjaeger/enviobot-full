@@ -124,7 +124,16 @@
         if (d === null || d === undefined) return { frac: 1, texto: '–' };
         return { frac: Math.max(0.04, Math.min(1, d / obj)), texto: d >= 100 ? '99+' : String(Math.round(d)) };
     }
-    function colorItem(it) { return GRUPO[grupoDe(it)].color; }
+    // Producto que hoy no alcanza con lo que hay en Full, pero que lo que ya viaja en colectas cubre.
+    function cubiertoPorColecta(it) {
+        const g = grupoDe(it);
+        return (g === 'deMas' || g === 'tranquilos') && it.entrante > 0 && vpdReal(it) > 0 && it.stock / vpdReal(it) < it.objetivo;
+    }
+    // Rótulo y color de cada producto: el grupo, salvo que lo cubra una colecta.
+    function etiquetaItem(it) {
+        if (cubiertoPorColecta(it)) return { corto: 'Cubierto por colecta', nombre: 'Cubierto por colecta', color: 'var(--camino)' };
+        return GRUPO[grupoDe(it)];
+    }
 
     function segundosA(s) {
         const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
@@ -225,6 +234,9 @@
     function subTexto(it) {
         const g = grupoDe(it);
         if (g === 'pausados') return `${NF.format(it.stock)} en Full · no se vende`;
+        if (cubiertoPorColecta(it)) {
+            return `${NF.format(it.stock)} en Full + ${NF.format(it.entrante)} en colecta · alcanza ${NF.format(Math.round(diasReales(it)))} días`;
+        }
         if (g === 'deMas') {
             const d = diasReales(it);
             return `${NF.format(it.stock)} en Full · ${d === null ? 'sin ventas en 30 días' : 'dura ' + NF.format(Math.round(d)) + ' días'}`;
@@ -232,7 +244,7 @@
         return `${NF.format(it.stock)} en Full · ${it.vpd > 0 ? (Math.round(it.vpd * 10) / 10).toLocaleString('es-AR') + '/día' : 'sin ventas'}`;
     }
     function filaProducto(it) {
-        const g = GRUPO[grupoDe(it)];
+        const g = etiquetaItem(it);
         const r = ringDias(it);
         const idx = estado.items.indexOf(it);
         const alerta = grupoDe(it) === 'deMas' && (diasReales(it) === null || diasReales(it) > UMBRAL_EXCEDENTE_ML_DIAS);
@@ -255,6 +267,7 @@
         return `<input class="buscador" id="buscador" type="search" placeholder="Buscar por nombre, SKU o MLA" value="${esc(estado.busqueda)}" autocomplete="off">
             <div class="filtros">${chips.map(ch => `<button class="chip${estado.filtro === ch.id ? ' activo' : ''}" data-filtro="${ch.id}" ${ch.color ? `style="--c:${ch.color}"` : ''}>${ch.color ? '<i></i>' : ''}${esc(ch.nombre)} ${ch.n}</button>`).join('')}</div>
             <div class="contador" id="contador">Mostrando ${lista.length} de ${estado.items.length}</div>
+            ${estado.filtro === 'deMas' ? '<div class="explica">Los días cuentan el stock que hay hoy en Full más lo que ya viaja en tus colectas. Si dice "Cubierto por colecta", hoy no alcanza solo, pero lo que viene sí: solo falta esperar que entre.</div>' : ''}
             <div id="listaProd" class="apilado">${lista.length ? lista.map(filaProducto).join('') : '<div class="vacio">No hay productos con ese filtro.</div>'}</div>`;
     }
 
@@ -313,7 +326,7 @@
     function abrirDetalle(idx) {
         const it = estado.items[idx];
         if (!it) return;
-        const g = GRUPO[grupoDe(it)];
+        const g = etiquetaItem(it);
         const r = ringDias(it);
         const dReal = diasReales(it);
         const partes = [
@@ -328,6 +341,7 @@
         if (gid === 'pausados') nota = 'Todas sus publicaciones están pausadas en Mercado Libre: no vende, por eso no cuenta como urgencia.';
         else if (gid === 'urgentes') nota = 'Se queda sin stock antes de que le entre mercadería. Conviene sumarlo a la próxima colecta.';
         else if (gid === 'pronto') nota = 'Todavía hay stock, pero conviene sumarlo a la próxima colecta.';
+        else if (cubiertoPorColecta(it)) nota = `Hoy en Full hay ${NF.format(it.stock)} unidades (${NF.format(Math.round(it.stock / vpdReal(it)))} días de venta), pero la colecta que ya está en camino suma ${NF.format(it.entrante)} y con eso alcanza para ${NF.format(Math.round(dReal))} días. No hace falta mandar más: solo esperar que entre.`;
         else if (gid === 'deMas') nota = 'Entre lo que hay en Full y lo que viaja en tus colectas alcanza para mucho más que tu objetivo. No mandes más por ahora.';
         else if (it.entrante > 0) nota = 'Hay mercadería en camino que lo cubre: solo falta esperar que entre.';
         let advertencia = '';
@@ -356,7 +370,7 @@
             <div class="datos">
                 <div class="dato"><b>${NF.format(it.stock)}</b><span>Unidades en Full</span></div>
                 <div class="dato"><b>${v > 0 ? (Math.round(v * 10) / 10).toLocaleString('es-AR') : '0'}</b><span>Ventas por día</span></div>
-                <div class="dato"><b>${gid === 'pausados' || gid === 'deMas' || !it.quiebre ? '–' : esc(fechaCorta(it.quiebre))}</b><span>Se quiebra</span></div>
+                <div class="dato"><b>${gid === 'pausados' || gid === 'deMas' || cubiertoPorColecta(it) || !it.quiebre ? '–' : esc(fechaCorta(it.quiebre))}</b><span>Se quiebra</span></div>
                 <div class="dato"><b>${NF.format(it.sugerido)}</b><span>Sugerido a mandar</span></div>
             </div>
             <div class="chico cuenta">${esc(cuenta)}${it.no_disponible ? ' · ' + NF.format(it.no_disponible) + ' no disponibles' : ''}</div>

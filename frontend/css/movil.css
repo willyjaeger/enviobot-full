@@ -184,3 +184,5 @@ button.ley:active { transform: scale(.97); border-color: var(--c); }
 .aviso-item p { margin: 10px 0 0; font-size: 13px; line-height: 1.45; color: var(--text2); }
 .leyenda .ley:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .aviso .ico-chico { vertical-align: -3px; }
+
+.explica { padding: 12px 14px; border-radius: 14px; font-size: 13px; line-height: 1.45; color: var(--text2); background: color-mix(in srgb, var(--camino) 12%, transparent); border: 1px solid color-mix(in srgb, var(--camino) 35%, transparent); }
