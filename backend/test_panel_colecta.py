@@ -1120,3 +1120,49 @@ class TestAsistenteEnElPanel(unittest.TestCase):
         self.assertIn('Agregar 13 u. de 05142', agregar)
         self.assertIn('tenía 20 u.', quitar)
         self.assertIn('de 200 a 250 u.', cambiar)
+
+
+class TestPasoMercadoLibreTrasGuardar(unittest.TestCase):
+    """Pedido de Guillermo (2026-10-20): cambiar una colecta ya subida a ML tiene que ser fácil; la lista de pasos no puede desaparecer al guardar."""
+
+    def _js(self):
+        return _leer(os.path.join('js', 'app.js'))
+
+    def test_si_hay_cambios_para_ml_guardar_no_cierra_la_ventana(self):
+        js = self._js()
+        cuerpo = js[js.index('async function guardarEdicionEnvio'):js.index('window.guardarEdicionEnvio')]
+        self.assertIn('entrarEnPasoMercadoLibre()', cuerpo)
+        self.assertIn('else cerrarModalEditarEnvio(true)', cuerpo)
+
+    def test_la_ventana_nueva_o_cerrada_vuelve_al_modo_normal(self):
+        js = self._js()
+        apertura = js[js.index('async function abrirModalEditarEnvio'):js.index('window.abrirModalEditarEnvio')]
+        cierre = js[js.index('function cerrarModalEditarEnvio'):js.index('window.cerrarModalEditarEnvio')]
+        self.assertIn('salirDelPasoMercadoLibre()', apertura)
+        self.assertIn('salirDelPasoMercadoLibre()', cierre)
+
+    def test_cada_paso_dice_como_hacerlo_con_los_botones_de_ml(self):
+        import json
+        import subprocess
+        js = self._js()
+        fn = js[js.index('function pasoEnML'):js.index('// Tras guardar')]
+        c = [{'tipo': 'agregar', 'codigo_ml': 'GYWY38682', 'sku': '05012', 'titulo': 'x', 'antes': 0, 'ahora': 5},
+             {'tipo': 'quitar', 'codigo_ml': 'AAAA11111', 'sku': '01', 'titulo': 'y', 'antes': 3, 'ahora': 0},
+             {'tipo': 'cambiar', 'codigo_ml': 'BBBB22222', 'sku': '02', 'titulo': 'z', 'antes': 10, 'ahora': 25}]
+        r = subprocess.run(['node', '-e', fn + "\nconsole.log(JSON.stringify(%s.map(pasoEnML)));" % json.dumps(c)],
+                           capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        agregar, quitar, cambiar = json.loads(r.stdout)
+        self.assertIn('Agregar productos', agregar)
+        self.assertIn('GYWY38682', agregar)
+        self.assertIn('Eliminar productos', quitar)
+        self.assertIn('de 10'.replace('de ', 'ahora dice '), cambiar)
+        self.assertIn('Stock a enviar', cambiar)
+
+    def test_en_modo_guardado_se_oculta_la_edicion_y_queda_la_lista_con_casillas(self):
+        css = _leer(os.path.join('css', 'style.css'))
+        self.assertRegex(css, r'\.guardado-pendiente-ml #btnGuardarEdicionEnvio')
+        js = self._js()
+        cuerpo = js[js.index('function renderizarCambiosML'):js.index('function entrarEnPasoMercadoLibre')]
+        self.assertIn('type="checkbox"', cuerpo)
+        self.assertIn('Listo, ya lo hice en Mercado Libre', cuerpo)

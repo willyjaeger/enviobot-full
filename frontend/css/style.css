@@ -2095,3 +2095,12 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .asistente-form { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
 .asistente-form input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
 @media (max-width: 600px) { .asistente-boton span { display: none; } .asistente-boton { padding: 12px; } }
+
+/* Colecta ya guardada: queda solo el paso que falta en Mercado Libre */
+.guardado-pendiente-ml #editarEnvioBuscador,
+.guardado-pendiente-ml .modal-body-scroll,
+.guardado-pendiente-ml #btnGuardarEdicionEnvio { display: none !important; }
+.cambios-ml-pasos { list-style: decimal; }
+.cambios-ml-pasos li { margin-bottom: 8px; }
+.cambios-ml-pasos label { cursor: pointer; }
+.cambios-ml-como { margin: 2px 0 0 22px; font-size: 12px; color: var(--text2); line-height: 1.45; }

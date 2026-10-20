@@ -4567,6 +4567,7 @@ async function abrirModalEditarEnvio(shipmentId) {
         }
 
         shipmentEnEdicionId = shipmentId;
+        salirDelPasoMercadoLibre();
         itemsEnEdicion = (data.items || []).map(it => ({
             id: it.id,
             item_id: String(it.item_id || ''),
@@ -4644,6 +4645,7 @@ function cerrarModalEditarEnvio(volverAlHistorial = true) {
     if (modal) modal.style.display = 'none';
     shipmentEnEdicionId = null;
     itemsEnEdicion = [];
+    salirDelPasoMercadoLibre();
     if (volverAlHistorial) {
         abrirHistorialColectas();
     }
@@ -4939,6 +4941,17 @@ function textoCambiosML(cambios, codigoEnvio) {
     return lineas.join('\n');
 }
 
+// Cómo se hace cada cambio en la pantalla "Editá los productos de tu envío" de ML (botones y textos como los muestra ML).
+function pasoEnML(c) {
+    const cod = c.codigo_ml ? `Código ML ${c.codigo_ml}` : (c.sku ? `SKU ${c.sku}` : c.titulo);
+    if (c.tipo === 'agregar') return `Tocá "Agregar productos", buscá ${cod} y poné ${c.ahora} u. en "Stock a enviar".`;
+    if (c.tipo === 'quitar') return `Marcá la fila de ${cod} y tocá "Eliminar productos".`;
+    return `En la fila de ${cod}, poné ${c.ahora} u. en "Stock a enviar" (ahora dice ${c.antes}).`;
+}
+
+// Tras guardar, la ventana no se cierra: queda la lista de pasos para Mercado Libre, que es lo que falta.
+let guardadoPendienteML = false;
+
 function renderizarCambiosML() {
     const caja = document.getElementById('editarEnvioCambiosML');
     if (!caja) return;
@@ -4947,14 +4960,44 @@ function renderizarCambiosML() {
     const m = /^ML-(\d+)/i.exec(codigoEnvioEnEdicion);
     const etiqueta = { agregar: 'Agregar', cambiar: 'Cambiar', quitar: 'Quitar' };
     const detalle = c => c.tipo === 'agregar' ? `${escapeHtml(c.ahora)} u.` : c.tipo === 'quitar' ? `tenía ${escapeHtml(c.antes)} u.` : `de ${escapeHtml(c.antes)} a ${escapeHtml(c.ahora)} u.`;
+    const quien = c => escapeHtml([c.sku ? 'SKU ' + c.sku : '', c.codigo_ml ? 'Código ML ' + c.codigo_ml : ''].filter(Boolean).join(' · '));
+    const abrirML = m ? `<a class="btn btn-secondary btn-sm" href="https://vendedores.mercadolibre.com.ar/shipping/inbounds/${m[1]}/units" target="_blank" rel="noopener">Abrir el envío en Mercado Libre</a>` : '';
     caja.style.display = 'block';
+    if (guardadoPendienteML) {
+        caja.innerHTML = `<div class="cambios-ml-titulo">Guardado en EnvioBot. Falta un paso: hacerlo en Mercado Libre</div>
+            <div class="cambios-ml-sub">Mercado Libre no deja modificar el envío desde acá. Abrilo, hacé estos cambios y tildalos a medida que los hacés. Después tocá Guardar en su pantalla. Tiene que quedar hecho antes del límite que ahí figura.</div>
+            <ol class="cambios-ml-lista cambios-ml-pasos">${cambios.map(c => `<li><label><input type="checkbox"> <strong>${etiqueta[c.tipo]}</strong> ${detalle(c)} <span class="cambios-ml-cod">${quien(c)}</span> ${escapeHtml(c.titulo)}</label><div class="cambios-ml-como">${escapeHtml(pasoEnML(c))}</div></li>`).join('')}</ol>
+            <div class="cambios-ml-acciones">
+                ${abrirML}
+                <button type="button" class="btn btn-secondary btn-sm" onclick="copiarCambiosML()">Copiar cambios</button>
+                <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 800;" onclick="cerrarModalEditarEnvio(true)">Listo, ya lo hice en Mercado Libre</button>
+            </div>`;
+        return;
+    }
     caja.innerHTML = `<div class="cambios-ml-titulo">Cambios para hacer en Mercado Libre</div>
-        <div class="cambios-ml-sub">Guardar acá no modifica el envío de Mercado Libre: hay que corregirlo en su pantalla, antes del límite que ahí figura.</div>
-        <ul class="cambios-ml-lista">${cambios.map(c => `<li><strong>${etiqueta[c.tipo]}</strong> ${detalle(c)} <span class="cambios-ml-cod">${escapeHtml([c.sku ? 'SKU ' + c.sku : '', c.codigo_ml ? 'Código ML ' + c.codigo_ml : ''].filter(Boolean).join(' · '))}</span> ${escapeHtml(c.titulo)}</li>`).join('')}</ul>
+        <div class="cambios-ml-sub">Guardar acá no modifica el envío de Mercado Libre: hay que corregirlo en su pantalla, antes del límite que ahí figura. Al guardar te dejo los pasos a mano.</div>
+        <ul class="cambios-ml-lista">${cambios.map(c => `<li><strong>${etiqueta[c.tipo]}</strong> ${detalle(c)} <span class="cambios-ml-cod">${quien(c)}</span> ${escapeHtml(c.titulo)}</li>`).join('')}</ul>
         <div class="cambios-ml-acciones">
             <button type="button" class="btn btn-secondary btn-sm" onclick="copiarCambiosML()">Copiar cambios</button>
-            ${m ? `<a class="btn btn-secondary btn-sm" href="https://vendedores.mercadolibre.com.ar/shipping/inbounds/${m[1]}/units" target="_blank" rel="noopener">Abrir el envío en Mercado Libre</a>` : ''}
+            ${abrirML}
         </div>`;
+}
+
+function entrarEnPasoMercadoLibre() {
+    guardadoPendienteML = true;
+    const modal = document.getElementById('modalEditarEnvio');
+    if (modal) modal.classList.add('guardado-pendiente-ml');
+    const cancelar = document.getElementById('btnCancelarEdicionEnvio');
+    if (cancelar) cancelar.textContent = 'Cerrar';
+    renderizarCambiosML();
+}
+
+function salirDelPasoMercadoLibre() {
+    guardadoPendienteML = false;
+    const modal = document.getElementById('modalEditarEnvio');
+    if (modal) modal.classList.remove('guardado-pendiente-ml');
+    const cancelar = document.getElementById('btnCancelarEdicionEnvio');
+    if (cancelar) cancelar.textContent = 'Cancelar';
 }
 
 function copiarCambiosML() {
@@ -5136,7 +5179,9 @@ async function guardarEdicionEnvio() {
         const data = await res.json();
         if (data.ok) {
             showToast("Envío actualizado correctamente.", "success");
-            cerrarModalEditarEnvio(true);
+            const faltaEnML = calcularCambiosML(itemsOriginalesEdicion, itemsEnEdicion).length > 0;
+            if (faltaEnML) entrarEnPasoMercadoLibre();   // queda abierta con los pasos de Mercado Libre
+            else cerrarModalEditarEnvio(true);
             // Actualizar tabla principal de stock para reflejar nuevo stock en preparación / tránsito
             if (typeof cargarDatos === 'function') cargarDatos();
         } else {
