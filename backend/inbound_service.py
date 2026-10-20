@@ -1,6 +1,6 @@
 """
 inbound_service.py - Módulo de Colectas y Envíos Inbound a Mercado Libre Full
-Maneja la generación de remitos oficiales imprimibles, cálculo de bultos y sincronización con MeLi.
+Maneja la generación de remitos oficiales imprimibles, sincronización con MeLi.
 """
 
 from datetime import datetime
@@ -105,17 +105,9 @@ def render_remito_html(shipment: dict, items: list, branding: dict = None) -> st
         """
 
     total_unidades = shipment.get("total_units", 0)
-    total_bultos = shipment.get("total_boxes", 1)
-    packaging_type = shipment.get("packaging_type", "cajas_master")
-    packaging_label = {
-        "cajas_master": "Cajas Máster Rotuladas",
-        "bultos_sueltos": "Bultos / Cajas Mixtas",
-        "pallet": "Pallet Filmado"
-    }.get(packaging_type, "Cajas Máster")
 
     # Filas de ítems
     rows_html = []
-    box_num = 1
     for idx, it in enumerate(items, 1):
         sku = html.escape(it.get("sku") or "Sin SKU")
         inv_id = html.escape(it.get("inventory_id") or "N/A")
@@ -123,13 +115,6 @@ def render_remito_html(shipment: dict, items: list, branding: dict = None) -> st
         var_name = html.escape(it.get("variation_name") or "")
         var_badge = f'<span class="var-badge">{var_name}</span>' if var_name else ''
         units = it.get("units_to_send", 0)
-        box_count = it.get("box_count", 1)
-        units_per_box = it.get("units_per_box", 0)
-        
-        box_text = f"Caja {box_num}" if box_count == 1 else f"Cajas {box_num} a {box_num + box_count - 1}"
-        if units_per_box > 0:
-            box_text += f" ({units_per_box} un/caja)"
-        box_num += box_count
 
         rows_html.append(f"""
         <tr>
@@ -140,9 +125,6 @@ def render_remito_html(shipment: dict, items: list, branding: dict = None) -> st
             </td>
             <td>
                 {title} {var_badge}
-            </td>
-            <td style="text-align: center; font-size: 12px; color: #333;">
-                {box_text}
             </td>
             <td style="text-align: right; font-weight: 800; font-size: 14px;">
                 {units} un.
@@ -440,16 +422,8 @@ def render_remito_html(shipment: dict, items: list, branding: dict = None) -> st
                 <div class="lbl">SKUs Distintos</div>
             </div>
             <div class="summary-metric">
-                <div class="val" style="color: #0056b3;">{total_bultos}</div>
-                <div class="lbl">Total Cajas / Bultos</div>
-            </div>
-            <div class="summary-metric">
                 <div class="val" style="color: #28a745;">{total_unidades} un.</div>
                 <div class="lbl">Unidades Totales</div>
-            </div>
-            <div class="summary-metric">
-                <div class="val" style="font-size: 14px;">{packaging_label}</div>
-                <div class="lbl">Formato Embalaje</div>
             </div>
         </div>
 
@@ -458,14 +432,13 @@ def render_remito_html(shipment: dict, items: list, branding: dict = None) -> st
             <strong>Observaciones de Colecta / Chofer:</strong> {html.escape(notas)}
         </div>
 
-        <!-- Tabla de Productos y Bultos -->
+        <!-- Tabla de productos -->
         <table class="items-table">
             <thead>
                 <tr>
                     <th style="width: 30px; text-align: center;">#</th>
                     <th style="width: 130px;">SKU / Inv ID</th>
                     <th>Descripción de la Publicación</th>
-                    <th style="width: 140px; text-align: center;">Rotulación Bulto</th>
                     <th style="width: 90px; text-align: right;">Cantidad</th>
                     <th style="width: 45px; text-align: center;" title="Control de Recepción en Depósito">Check</th>
                 </tr>
@@ -493,7 +466,7 @@ def render_remito_html(shipment: dict, items: list, branding: dict = None) -> st
 
         <!-- Pie legal -->
         <div class="footer-notes">
-            Generado automáticamente por el Módulo de Colectas de <strong>EnvioBot Full</strong> ({code}). Los bultos deben viajar identificados según la normativa de empaque de Mercado Libre Fulfillment.
+            Generado automáticamente por el Módulo de Colectas de <strong>EnvioBot Full</strong> ({code}).
         </div>
     </div>
 
