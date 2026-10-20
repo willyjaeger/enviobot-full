@@ -135,7 +135,10 @@ def es_de_colecta(asunto, cuerpo, remitente=""):
 
 # ── Datos del mail y análisis con IA (Gemini 2.5 Flash) ──────────────────────────────
 
-_RE_FRANJA = re.compile(r"entre\s+las\s+(\d{1,2})[:.](\d{2})\s*(?:y|a)\s*las\s+(\d{1,2})[:.](\d{2})", re.I)
+_RE_FRANJA = re.compile(
+    r"(?:entre(?:\s+las)?|de(?:\s+las)?)\s+(\d{1,2})(?:[:.](\d{2}))?\s*(?:hs?\s*)?(?:y|a)(?:\s+las)?\s+(\d{1,2})(?:[:.](\d{2}))?(?:\s*hs|\b)",
+    re.I,
+)
 _RE_FECHA = re.compile(r"(?:el\s+)?(\d{1,2}\s+de\s+[a-záéíóúñ]+(?:\s+de\s+\d{4})?)", re.I)
 _RE_CODIGO = re.compile(r"c[oó]d(?:igo|\.)?\s*(?:de\s+)?autorizaci[oó]n\s*[:\-]?\s*([A-Z0-9]{5,12})\b", re.I)
 _RE_PATENTE = re.compile(r"Patente\s*[:\-]?\s*([A-Z]{2}\s?\d{3}\s?[A-Z]{2}|[A-Z]{3}\s?\d{3})\b", re.I)
@@ -148,7 +151,7 @@ _RE_TRANSPORTADORA = re.compile(
     r"Transportadora\s*[:\-]?\s*([^\n.]+?)(?=\s+(?:Patente|Transportista|Domicilio|C[oó]d)\b|[.\n]|$)",
     re.I,
 )
-_RE_ENVIO = re.compile(r"Env[ií]o\s*(?:N\.?\s*[º°o]?\s*|#\s*)(\d{6,})", re.I)
+_RE_ENVIO = re.compile(r"Env[ií]os?\s*(?:Full\s*)?(?:N\.?\s*[º°o]?\s*|#\s*)(\d{6,})", re.I)
 _FRASES_RETIRADA = (
     "retiramos tu colecta",
     "retiramos la colecta",
@@ -160,14 +163,23 @@ _FRASES_RETIRADA = (
     "retiro realizado",
     "retiraron la colecta",
     "retiraron la mercaderia",
+    "colectamos tus envios",
+    "colectamos tu envio",
+    "tu remito ya esta disponible",
+    "pallets colectados",
+    "bultos colectados",
+    "bultos y/o pallets colectados",
     "en camino al centro de almacenamiento",
     "en camino a full",
 )
 _FRASES_NO_RETIRADA = (
     "no pudimos retirar",
     "no se pudo retirar",
+    "no fueron colectados",
     "pasaremos a retirar",
     "vamos a retirar",
+    "vamos a enviarte una nueva colecta",
+    "vamos a enviarte una colecta extra",
     "reprogram",
 )
 
@@ -175,7 +187,7 @@ _PROMPT_IA = """Analizá este mensaje de Mercado Libre sobre una colecta de Merc
 Devolvé ÚNICAMENTE un objeto JSON válido con estas claves (usá "" si un dato no aparece):
 {
   "resumen": "Resumen claro y directo en español argentino (1 a 3 oraciones máximo, ideal para WhatsApp) explicando qué informa el mensaje (ej: horario de retiro confirmado, código de autorización, colecta ya retirada, reprogramación o demora). No incluyas saludos genéricos ni texto legal.",
-  "evento": "Usá 'retirada' si el mensaje confirma que el camión YA retiró la mercadería/colecta; 'programada' si informa fecha/horario futuro; 'reprogramada' o 'incidencia' si hubo un problema o cambio; o '' si es otro aviso.",
+  "evento": "Usá 'retirada' si el mensaje confirma que el camión YA retiró/colectó la mercadería (ej: 'Colectamos tus envíos Full', 'Tu remito ya está disponible'); 'programada' si informa fecha/horario futuro o en camino; 'reprogramada' o 'incidencia' si hubo un problema o colecta extra; o '' si es otro aviso.",
   "fecha": "Fecha de la colecta si la menciona (ej: '19 de octubre')",
   "desde": "Hora de inicio de la franja en formato HH:MM (ej: '16:00')",
   "hasta": "Hora de fin de la franja en formato HH:MM (ej: '18:00')",
@@ -189,11 +201,11 @@ Devolvé ÚNICAMENTE un objeto JSON válido con estas claves (usá "" si un dato
 
 def es_confirmacion_retiro(texto, datos=None):
     """True si el texto o el análisis de IA indican que la colecta ya fue retirada por el transporte."""
-    if datos and str(datos.get("evento") or "").strip().lower() == "retirada":
-        return True
     limpio = _sin_acentos(texto or "")
     if any(f in limpio for f in _FRASES_NO_RETIRADA):
         return False
+    if datos and str(datos.get("evento") or "").strip().lower() == "retirada":
+        return True
     return any(f in limpio for f in _FRASES_RETIRADA)
 
 
@@ -201,14 +213,20 @@ def extraer_datos(texto):
     """Lo que se pueda sacar del texto; lo que no aparece queda afuera (el formato del mail puede cambiar)."""
     d = {}
     texto = texto or ""
-    f = _RE_FRANJA.search(texto)
-    if f:
-        d["desde"] = "%02d:%s" % (int(f.group(1)), f.group(2))
-        d["hasta"] = "%02d:%s" % (int(f.group(3)), f.group(4))
-        antes = texto[max(0, f.start() - 80):f.start()]
-        fechas = _RE_FECHA.findall(antes)
-        if fechas:
-            d["fecha"] = fechas[-1].strip()
+    for f in _RE_FRANJA.finditer(texto):
+        h1, m1, h2, m2 = int(f.group(1)), f.group(2), int(f.group(3)), f.group(4)
+        # Evita confundir "19 de octubre ... y 2 bultos" con una franja horaria cuando no tiene :MM ni dice hs/las
+        frag = f.group(0).lower()
+        if not m1 and not m2 and "hs" not in frag and "las" not in frag:
+            continue
+        if 0 <= h1 <= 23 and 0 <= h2 <= 23:
+            d["desde"] = "%02d:%s" % (h1, m1 or "00")
+            d["hasta"] = "%02d:%s" % (h2, m2 or "00")
+            antes = texto[max(0, f.start() - 80):f.start()]
+            fechas = _RE_FECHA.findall(antes)
+            if fechas:
+                d["fecha"] = fechas[-1].strip()
+            break
     for clave, rx in (
         ("codigo", _RE_CODIGO),
         ("patente", _RE_PATENTE),
