@@ -2063,3 +2063,5 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-comparativa .pc-table td { vertical-align: middle; }
 .pc-cmp-igual { color: var(--good); font-weight: 600; }
 .pc-cmp-nd { color: var(--text2); font-size: 12px; }
+/* Cobertura: son 2 dígitos, no necesita el ancho mínimo de 180 px de .filter-input. */
+#colectaDiasInput { flex: none; min-width: 0; width: 56px; }
