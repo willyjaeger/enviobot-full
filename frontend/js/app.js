@@ -4323,6 +4323,9 @@ async function abrirModalEditarEnvio(shipmentId) {
             box_count: parseInt(it.box_count, 10) || 1
         }));
 
+        itemsOriginalesEdicion = itemsEnEdicion.map(it => Object.assign({}, it));   // para saber qué hay que cambiar en Mercado Libre
+        codigoEnvioEnEdicion = String(sh.shipment_code || '');
+
         // Llenar cabecera del modal
         const headerCode = document.getElementById('editarEnvioCodigoHeader');
         if (headerCode) headerCode.textContent = sh.shipment_code;
@@ -4637,6 +4640,72 @@ function quitarItemDeEdicion(idx) {
 }
 window.quitarItemDeEdicion = quitarItemDeEdicion;
 
+// ── Cambios para hacer en Mercado Libre ──────────────────────────────────────────
+// Mercado Libre no deja modificar un envío por API: lo que se cambia acá se guarda en EnvioBot, y el envío de ML hay
+// que corregirlo a mano en su pantalla. Esta lista dice exactamente qué tocar (producto, código y unidades).
+let itemsOriginalesEdicion = [];
+let codigoEnvioEnEdicion = '';
+
+function calcularCambiosML(originales, actuales) {
+    const clave = it => String(it.inventory_id || '') || ('i:' + String(it.item_id || '') + '|' + String(it.variation_id || ''));
+    const unidades = it => parseInt(it.units_to_send, 10) || 0;
+    const antes = new Map();
+    (originales || []).forEach(it => antes.set(clave(it), it));
+    const ahora = new Map();
+    (actuales || []).forEach(it => ahora.set(clave(it), it));
+    const dato = (it, tipo, uAntes, uAhora) => ({
+        tipo: tipo, sku: it.sku || '', codigo_ml: it.inventory_id || '', titulo: it.title || '', antes: uAntes, ahora: uAhora
+    });
+    const cambios = [];
+    ahora.forEach((it, k) => {
+        const o = antes.get(k);
+        if (!o) cambios.push(dato(it, 'agregar', 0, unidades(it)));
+        else if (unidades(o) !== unidades(it)) cambios.push(dato(it, 'cambiar', unidades(o), unidades(it)));
+    });
+    antes.forEach((o, k) => { if (!ahora.has(k)) cambios.push(dato(o, 'quitar', unidades(o), 0)); });
+    return cambios;
+}
+
+function textoCambiosML(cambios, codigoEnvio) {
+    const m = /^ML-(\d+)/i.exec(String(codigoEnvio || ''));
+    const lineas = [`Cambios para hacer en el envío${m ? ' #' + m[1] : ''} de Mercado Libre:`];
+    cambios.forEach(c => {
+        const quien = [c.sku ? `SKU ${c.sku}` : '', c.codigo_ml ? `Código ML ${c.codigo_ml}` : ''].filter(Boolean).join(' | ');
+        const que = c.tipo === 'agregar' ? `AGREGAR ${c.ahora} u.`
+            : c.tipo === 'quitar' ? `QUITAR (tenía ${c.antes} u.)`
+            : `CAMBIAR de ${c.antes} a ${c.ahora} u.`;
+        lineas.push(`- ${que} | ${quien} | ${c.titulo}`);
+    });
+    return lineas.join('\n');
+}
+
+function renderizarCambiosML() {
+    const caja = document.getElementById('editarEnvioCambiosML');
+    if (!caja) return;
+    const cambios = edicionCerrada ? [] : calcularCambiosML(itemsOriginalesEdicion, itemsEnEdicion);
+    if (cambios.length === 0) { caja.style.display = 'none'; caja.innerHTML = ''; return; }
+    const m = /^ML-(\d+)/i.exec(codigoEnvioEnEdicion);
+    const etiqueta = { agregar: 'Agregar', cambiar: 'Cambiar', quitar: 'Quitar' };
+    const detalle = c => c.tipo === 'agregar' ? `${escapeHtml(c.ahora)} u.` : c.tipo === 'quitar' ? `tenía ${escapeHtml(c.antes)} u.` : `de ${escapeHtml(c.antes)} a ${escapeHtml(c.ahora)} u.`;
+    caja.style.display = 'block';
+    caja.innerHTML = `<div class="cambios-ml-titulo">Cambios para hacer en Mercado Libre</div>
+        <div class="cambios-ml-sub">Guardar acá no modifica el envío de Mercado Libre: hay que corregirlo en su pantalla, antes del límite que ahí figura.</div>
+        <ul class="cambios-ml-lista">${cambios.map(c => `<li><strong>${etiqueta[c.tipo]}</strong> ${detalle(c)} <span class="cambios-ml-cod">${escapeHtml([c.sku ? 'SKU ' + c.sku : '', c.codigo_ml ? 'Código ML ' + c.codigo_ml : ''].filter(Boolean).join(' · '))}</span> ${escapeHtml(c.titulo)}</li>`).join('')}</ul>
+        <div class="cambios-ml-acciones">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="copiarCambiosML()">Copiar cambios</button>
+            ${m ? `<a class="btn btn-secondary btn-sm" href="https://vendedores.mercadolibre.com.ar/shipping/inbounds/${m[1]}/units" target="_blank" rel="noopener">Abrir el envío en Mercado Libre</a>` : ''}
+        </div>`;
+}
+
+function copiarCambiosML() {
+    const cambios = calcularCambiosML(itemsOriginalesEdicion, itemsEnEdicion);
+    if (cambios.length === 0) return;
+    navigator.clipboard.writeText(textoCambiosML(cambios, codigoEnvioEnEdicion))
+        .then(() => showToast('Cambios copiados.', 'success'))
+        .catch(() => showToast('No se pudo copiar automáticamente.', 'error'));
+}
+window.copiarCambiosML = copiarCambiosML;
+
 function actualizarTotalesEdicion() {
     const totalItems = itemsEnEdicion.length;
     const totalUnits = itemsEnEdicion.reduce((acc, it) => acc + (it.units_to_send || 0), 0);
@@ -4649,6 +4718,7 @@ function actualizarTotalesEdicion() {
     if (elItems) elItems.textContent = totalItems;
     if (elUnits) elUnits.textContent = `${totalUnits} un.`;
     if (elBoxes) elBoxes.textContent = `${totalBoxes} cajas`;
+    renderizarCambiosML();
 }
 
 function onBuscarArticuloParaAgregar(query) {

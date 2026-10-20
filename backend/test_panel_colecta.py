@@ -993,3 +993,45 @@ class TestSumarACoLectaAbierta(unittest.TestCase):
         cuerpo = js[js.index('async function sumarAColectaAbierta'):js.index('window.sumarAColectaAbierta')]
         self.assertIn('abrirModalEditarEnvio(col.id)', cuerpo)
         self.assertNotIn('method:', cuerpo)
+
+
+class TestCambiosParaML(unittest.TestCase):
+    """Pedido de Guillermo (2026-10-20): ML no deja modificar un envío por API, así que se le dice qué cambiar a mano."""
+
+    def _ejecutar(self, originales, actuales, codigo='ML-79759779'):
+        import json
+        import subprocess
+        js = _leer(os.path.join('js', 'app.js'))
+        fn = js[js.index('function calcularCambiosML'):js.index('function renderizarCambiosML')]
+        codigo_js = fn + "\nconst o = %s, a = %s;\nconst c = calcularCambiosML(o, a);\nconsole.log(JSON.stringify({c, t: textoCambiosML(c, %s)}));" % (
+            json.dumps(originales), json.dumps(actuales), json.dumps(codigo))
+        r = subprocess.run(['node', '-e', codigo_js], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def _it(self, inv, sku, u):
+        return {'inventory_id': inv, 'item_id': 'MLA' + inv, 'sku': sku, 'title': 'Producto ' + sku, 'units_to_send': u}
+
+    def test_sin_cambios_no_hay_nada_que_hacer_en_ml(self):
+        a = [self._it('AAAA11111', '01011', 10)]
+        self.assertEqual(self._ejecutar(a, a)['c'], [])
+
+    def test_detecta_agregar_cambiar_y_quitar(self):
+        orig = [self._it('AAAA11111', '01011', 10), self._it('BBBB22222', '02022', 5)]
+        nuevo = [self._it('AAAA11111', '01011', 25), self._it('CCCC33333', '03033', 7)]
+        r = self._ejecutar(orig, nuevo)['c']
+        por_tipo = {x['tipo']: x for x in r}
+        self.assertEqual((por_tipo['cambiar']['antes'], por_tipo['cambiar']['ahora']), (10, 25))
+        self.assertEqual(por_tipo['agregar']['ahora'], 7)
+        self.assertEqual(por_tipo['quitar']['antes'], 5)
+
+    def test_el_texto_trae_el_numero_de_envio_el_sku_y_el_codigo_ml(self):
+        t = self._ejecutar([], [self._it('GYWY38682', '05012', 13)])['t']
+        for esperado in ('#79759779', 'AGREGAR 13 u.', 'SKU 05012', 'Código ML GYWY38682'):
+            self.assertIn(esperado, t)
+
+    def test_la_ventana_muestra_la_lista_solo_si_la_colecta_sigue_abierta(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        cuerpo = js[js.index('function renderizarCambiosML'):js.index('function copiarCambiosML')]
+        self.assertIn('edicionCerrada ? []', cuerpo)
+        self.assertIn('shipping/inbounds/${m[1]}/units', cuerpo)
