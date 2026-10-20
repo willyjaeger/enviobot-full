@@ -2128,6 +2128,46 @@ def guardar_horario_destinatario(recipient_id):
 _RE_EMAIL = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
 
 
+@app.route("/api/full/ml/notificaciones", methods=["POST"])
+def notificaciones_ml():
+    """Receptor de las notificaciones de ML (tema fbm_stock_operations). Pública: la llama Mercado Libre.
+
+    Siempre responde 200 enseguida (ML desactiva el tema si tarda más de 500 ms); lo que no es nuestro se ignora."""
+    import notificaciones_ml as _nml
+    payload = request.get_json(silent=True)
+    try:
+        conn = get_db()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT DISTINCT ml_user_id FROM ml_credentials WHERE ml_user_id IS NOT NULL")
+                conocidos = [r["ml_user_id"] for r in cur.fetchall()]
+        finally:
+            conn.close()
+        ok, motivo = _nml.validar(payload, ML_CLIENT_ID, conocidos)
+        if not ok:
+            app.logger.info("[ML stock] Notificación ignorada (%s)", motivo)
+            return "", 200
+
+        def _token(ml_user_id):
+            c = get_db()
+            try:
+                with c.cursor() as cur:
+                    cur.execute("SELECT ml_access_token FROM ml_credentials WHERE ml_user_id=%s ORDER BY updated_at DESC LIMIT 1", (ml_user_id,))
+                    fila = cur.fetchone()
+                return fila["ml_access_token"] if fila else None
+            finally:
+                c.close()
+
+        def _consultar(ruta, token):
+            r = requests.get("https://api.mercadolibre.com" + ruta, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+            return r.status_code, (r.json() if r.content else None)
+
+        threading.Thread(target=_nml.procesar, args=(payload, _token, _consultar), daemon=True).start()
+    except Exception:
+        app.logger.exception("[ML stock] Error al recibir la notificación")
+    return "", 200
+
+
 @app.route("/api/full/settings/colecta-mail", methods=["GET", "PUT"])
 @jwt_required()
 @_equipo.requiere_rol('admin')
