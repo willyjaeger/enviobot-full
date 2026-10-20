@@ -6,3 +6,4 @@ PyMySQL>=1.1.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 pypdf>=4.0.0
+anthropic>=1.16.0   # asistente de colectas (opcional: sin el paquete o sin ANTHROPIC_API_KEY queda apagado)

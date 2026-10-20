@@ -1072,3 +1072,51 @@ class TestBotonUnicoSubirAML(unittest.TestCase):
         js = _leer(os.path.join('js', 'app.js'))
         cuerpo = js[js.index('async function abrirModalColecta'):js.index('function cerrarModalColecta')]
         self.assertIn("getElementById('colectaPlanillaListo')", cuerpo)
+
+
+class TestAsistenteEnElPanel(unittest.TestCase):
+    """El asistente propone; el usuario aplica. Nada que diga la IA se interpreta como HTML ni se guarda solo."""
+
+    def _bloque(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        return js[js.index('// ── Asistente de colectas'):js.index('// ── Confirmar y Despachar Envío')]
+
+    def test_el_texto_de_la_ia_nunca_se_inserta_como_html(self):
+        b = self._bloque()
+        self.assertNotIn('innerHTML', b)
+        self.assertIn('textContent', b)
+
+    def test_aplicar_una_propuesta_no_guarda_nada_solo(self):
+        b = self._bloque()
+        aplicar = b[b.index('async function aplicarPropuestaAsistente'):b.index('window.alternarAsistente')]
+        self.assertNotIn('method:', aplicar)          # ningún POST/PUT
+        self.assertNotIn('guardarEdicionEnvio', aplicar)
+        self.assertNotIn('confirmarDespachoColecta', aplicar)
+        self.assertIn('abrirModalEditarEnvio(p.shipment_id)', aplicar)
+        self.assertIn('abrirModalColecta()', aplicar)
+
+    def test_el_boton_solo_aparece_si_el_servidor_lo_tiene_y_el_usuario_tiene_el_modulo(self):
+        b = self._bloque()
+        self.assertIn('data.disponible && tieneModulo', b)
+        self.assertIn('userInboundEnabled || userIsAdmin', b)
+        html = _leer('index.html')
+        self.assertIn('id="btnAsistente" style="display: none;"', html)
+
+    def test_manda_solo_texto_de_la_conversacion(self):
+        b = self._bloque()
+        self.assertIn('historialAsistente.slice(-10)', b)
+        self.assertIn("role: 'user'", b)
+        self.assertIn("role: 'assistant'", b)
+
+    def test_cada_tipo_de_cambio_se_describe(self):
+        import json
+        import subprocess
+        b = self._bloque()
+        fn = b[b.index('function textoCambioPropuesto'):b.index('function agregarPropuestaAsistente')]
+        codigo = fn + "\nconsole.log(JSON.stringify([textoCambioPropuesto({accion:'agregar',sku:'05142',titulo:'Pistacho',despues:13}), textoCambioPropuesto({accion:'quitar',sku:'07011',titulo:'Mix',antes:20}), textoCambioPropuesto({accion:'cambiar',sku:'01011',titulo:'Nueces',antes:200,despues:250})]));"
+        r = subprocess.run(['node', '-e', codigo], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        agregar, quitar, cambiar = json.loads(r.stdout)
+        self.assertIn('Agregar 13 u. de 05142', agregar)
+        self.assertIn('tenía 20 u.', quitar)
+        self.assertIn('de 200 a 250 u.', cambiar)

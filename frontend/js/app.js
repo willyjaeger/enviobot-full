@@ -3746,6 +3746,169 @@ function mostrarPlanillaLista(r, pestanaBloqueada) {
         <div class="planilla-lista-acciones"><a class="btn btn-secondary btn-sm" href="${URL_ML_SUBIR_PLANILLA}" target="_blank" rel="noopener">Abrir Mercado Libre</a><button type="button" class="btn btn-secondary btn-sm" onclick="descargarPlanillaML()">Descargar la planilla otra vez</button></div>`;
 }
 
+// ── Asistente de colectas ────────────────────────────────────────────────────────────
+// Una IA que lee tus números y PROPONE; no cambia nada sola. Cada propuesta tiene su botón: aplicarla abre la colecta (o Armar colecta)
+// con los cambios ya cargados y vos revisás y guardás. Mercado Libre no se toca desde acá: después queda la lista de cambios para hacer allá.
+let historialAsistente = [];
+let asistenteOcupado = false;
+let propuestasAsistente = [];
+
+async function iniciarAsistente() {
+    if (!getToken()) return;
+    try {
+        const resp = await fetch(`${API_BASE}/full/asistente/estado`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
+        const data = await resp.json();
+        const tieneModulo = userInboundEnabled || userIsAdmin;
+        const boton = document.getElementById('btnAsistente');
+        if (boton) boton.style.display = (data.disponible && tieneModulo) ? 'flex' : 'none';
+    } catch (e) { /* sin conexión: el botón simplemente no aparece */ }
+}
+setTimeout(iniciarAsistente, 3000);
+
+function alternarAsistente() {
+    const panel = document.getElementById('panelAsistente');
+    if (!panel) return;
+    const abrir = panel.style.display === 'none';
+    panel.style.display = abrir ? 'flex' : 'none';
+    if (abrir) {
+        if (!document.getElementById('asistenteMensajes').children.length) {
+            agregarMensajeAsistente('ia', 'Hola. Puedo decirte qué conviene mandar y preparar cambios para tus colectas. Yo propongo, vos aplicás.');
+        }
+        const entrada = document.getElementById('asistenteEntrada');
+        if (entrada) entrada.focus();
+    }
+}
+
+function agregarMensajeAsistente(quien, texto, clase) {
+    const caja = document.getElementById('asistenteMensajes');
+    const div = document.createElement('div');
+    div.className = `asistente-msg ${quien}${clase ? ' ' + clase : ''}`;
+    div.textContent = texto;
+    caja.appendChild(div);
+    caja.scrollTop = caja.scrollHeight;
+    return div;
+}
+
+function textoCambioPropuesto(c) {
+    const nombre = `${c.sku || ''} ${c.titulo ? '· ' + c.titulo : ''}`.trim();
+    if (c.accion === 'agregar') return `Agregar ${c.despues} u. de ${nombre}`;
+    if (c.accion === 'quitar') return `Quitar ${nombre} (tenía ${c.antes} u.)`;
+    return `Cambiar ${nombre}: de ${c.antes} a ${c.despues} u.`;
+}
+
+function agregarPropuestaAsistente(propuesta) {
+    const indice = propuestasAsistente.push(propuesta) - 1;
+    const caja = document.getElementById('asistenteMensajes');
+    const div = document.createElement('div');
+    div.className = 'asistente-propuesta';
+    const titulo = document.createElement('h4');
+    const lista = document.createElement('ul');
+    if (propuesta.tipo === 'nueva') {
+        titulo.textContent = 'Propuesta: colecta nueva';
+        (propuesta.items || []).forEach(i => { const li = document.createElement('li'); li.textContent = `${i.unidades} u. de ${i.sku} · ${i.titulo || ''}`; lista.appendChild(li); });
+    } else {
+        titulo.textContent = `Propuesta: cambios en la colecta ${propuesta.codigo || ''}`.trim();
+        (propuesta.cambios || []).forEach(c => { const li = document.createElement('li'); li.textContent = textoCambioPropuesto(c); lista.appendChild(li); });
+    }
+    div.appendChild(titulo);
+    if (propuesta.motivo) { const m = document.createElement('div'); m.className = 'motivo'; m.textContent = propuesta.motivo; div.appendChild(m); }
+    div.appendChild(lista);
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'btn btn-primary btn-sm';
+    boton.textContent = propuesta.tipo === 'nueva' ? 'Revisar en Armar colecta' : 'Revisar y aplicar';
+    boton.onclick = () => aplicarPropuestaAsistente(indice);
+    div.appendChild(boton);
+    caja.appendChild(div);
+    caja.scrollTop = caja.scrollHeight;
+}
+
+async function preguntarAsistente(texto) {
+    const entrada = document.getElementById('asistenteEntrada');
+    if (entrada) entrada.value = texto;
+    return enviarAsistente(null);
+}
+
+async function enviarAsistente(evento) {
+    if (evento) evento.preventDefault();
+    if (asistenteOcupado) return;
+    const entrada = document.getElementById('asistenteEntrada');
+    const mensaje = (entrada.value || '').trim();
+    if (!mensaje) return;
+    asistenteOcupado = true;
+    document.getElementById('asistenteEnviar').disabled = true;
+    document.getElementById('asistenteSugerencias').style.display = 'none';
+    entrada.value = '';
+    agregarMensajeAsistente('usuario', mensaje);
+    const pensando = agregarMensajeAsistente('ia', 'Pensando...', 'pensando');
+    try {
+        const resp = await fetch(`${API_BASE}/full/asistente/colecta`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+            body: JSON.stringify({ mensaje, historial: historialAsistente })
+        });
+        const data = await resp.json();
+        pensando.remove();
+        if (!data.ok) { agregarMensajeAsistente('ia', data.error || 'No pude responder ahora.'); return; }
+        agregarMensajeAsistente('ia', data.respuesta);
+        (data.propuestas || []).forEach(agregarPropuestaAsistente);
+        historialAsistente.push({ role: 'user', content: mensaje }, { role: 'assistant', content: data.respuesta });
+        historialAsistente = historialAsistente.slice(-10);
+    } catch (e) {
+        pensando.remove();
+        agregarMensajeAsistente('ia', 'No hay conexión con el servidor. Probá de nuevo.');
+    } finally {
+        asistenteOcupado = false;
+        document.getElementById('asistenteEnviar').disabled = false;
+    }
+}
+
+// Aplica una propuesta SOLO en pantalla: abre la colecta con los cambios cargados y el usuario revisa y guarda.
+async function aplicarPropuestaAsistente(indice) {
+    const p = propuestasAsistente[indice];
+    if (!p) return;
+    alternarAsistente();
+    if (p.tipo === 'nueva') {
+        await abrirModalColecta();
+        colectaSelectedItems.clear();
+        colectaBoxUnits.clear();
+        const faltan = [];
+        (p.items || []).forEach(i => {
+            const it = itemsData.find(x => x.id === i.producto_id);
+            if (!it) { faltan.push(i.sku); return; }
+            colectaSelectedItems.set(it.id, i.unidades);
+            colectaBoxUnits.set(it.id, it.units_per_box && it.units_per_box > 0 ? it.units_per_box : 0);
+        });
+        renderizarFilasColecta();
+        actualizarTotalColecta();
+        showToast(faltan.length ? `No encontré ${faltan.join(', ')} en tu lista.` : 'Revisá las cantidades y usá el botón amarillo para subir la colecta a Mercado Libre.', faltan.length ? 'error' : 'info', 5000);
+        return;
+    }
+    await abrirModalEditarEnvio(p.shipment_id);
+    if (edicionCerrada) { showToast('Esa colecta ya cerró: no se puede cambiar.', 'error'); return; }
+    const fallidos = [];
+    (p.cambios || []).forEach(c => {
+        const clave = x => String(x.inventory_id || '') === String(c.inventory_id || '');
+        const idx = itemsEnEdicion.findIndex(clave);
+        if (c.accion === 'agregar') {
+            if (idx >= 0) return;
+            if (itemsData.find(x => x.id === c.producto_id)) agregarItemCriticoAEdicion(c.producto_id, c.despues); else fallidos.push(c.sku);
+        } else if (idx < 0) {
+            fallidos.push(c.sku);
+        } else if (c.accion === 'cambiar') {
+            onAjustarSugeridoEdicion(idx, c.despues);
+        } else if (c.accion === 'quitar') {
+            itemsEnEdicion.splice(idx, 1);
+            renderizarItemsEdicion();
+        }
+    });
+    showToast(fallidos.length ? `No pude aplicar: ${fallidos.join(', ')}.` : 'Cambios cargados. Revisalos y apretá Guardar cambios.', fallidos.length ? 'error' : 'info', 5000);
+}
+window.alternarAsistente = alternarAsistente;
+window.enviarAsistente = enviarAsistente;
+window.preguntarAsistente = preguntarAsistente;
+window.aplicarPropuestaAsistente = aplicarPropuestaAsistente;
+
 // ── Confirmar y Despachar Envío a Backend (Etapa 2) ───────────────────
 async function confirmarDespachoColecta() {
     let totalUnits = 0;

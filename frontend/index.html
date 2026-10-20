@@ -46,7 +46,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261020_4">
+    <link rel="stylesheet" href="css/style.css?v=20261020_5">
 </head>
 <body>
 
@@ -1937,6 +1937,27 @@
         </div>
     </div>
 
+    <!-- Asistente de colectas (solo aparece si el servidor lo tiene activado y el usuario tiene el módulo de colectas) -->
+    <button type="button" class="asistente-boton" id="btnAsistente" style="display: none;" onclick="alternarAsistente()" aria-label="Abrir el asistente de colectas">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Asistente</span>
+    </button>
+    <section class="asistente-panel" id="panelAsistente" style="display: none;" role="dialog" aria-label="Asistente de colectas">
+        <header class="asistente-cabecera">
+            <div><strong>Asistente de colectas</strong><span>Te propone; vos aplicás.</span></div>
+            <button type="button" class="asistente-cerrar" onclick="alternarAsistente()" aria-label="Cerrar el asistente">&times;</button>
+        </header>
+        <div class="asistente-mensajes" id="asistenteMensajes" aria-live="polite"></div>
+        <div class="asistente-sugerencias" id="asistenteSugerencias">
+            <button type="button" onclick="preguntarAsistente('¿Qué productos necesito mandar en la próxima colecta?')">¿Qué necesito mandar?</button>
+            <button type="button" onclick="preguntarAsistente('Mirá mi colecta abierta y decime si conviene sumarle productos.')">Revisar mi colecta abierta</button>
+        </div>
+        <form class="asistente-form" onsubmit="enviarAsistente(event)">
+            <input type="text" id="asistenteEntrada" maxlength="1000" placeholder="Ej: sumá 13 u. de pistacho a la colecta del 28" autocomplete="off">
+            <button type="submit" class="btn btn-primary btn-sm" id="asistenteEnviar">Enviar</button>
+        </form>
+    </section>
+
     <!-- Scripts -->
     <div class="scroll-nav" id="scrollNav">
         <button type="button" onclick="window.scrollTo({top: 0, behavior: 'smooth'})" title="Ir arriba" aria-label="Ir arriba"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"></polyline></svg></button>
@@ -1946,6 +1967,6 @@
     <script src="js/teclado-formularios.js?v=20261017_2"></script>
     <script src="js/theme.js?v=20261013_4"></script>
     <script src="js/notifications.js?v=20261013_4"></script>
-    <script src="js/app.js?v=20261020_6"></script>
+    <script src="js/app.js?v=20261020_7"></script>
 </body>
 </html>

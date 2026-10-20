@@ -2128,6 +2128,66 @@ def guardar_horario_destinatario(recipient_id):
 _RE_EMAIL = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
 
 
+@app.route("/api/full/asistente/estado", methods=["GET"])
+@jwt_required()
+def asistente_estado():
+    """¿Está activado el asistente de colectas en este servidor? (el panel muestra u oculta el botón)."""
+    import asistente_colecta as _asi
+    disponible, motivo = _asi.estado()
+    return jsonify({"ok": True, "disponible": disponible, "motivo": motivo})
+
+
+@app.route("/api/full/asistente/colecta", methods=["POST"])
+@jwt_required()
+@_equipo.requiere_rol('operator')
+def asistente_colecta():
+    """Una consulta al asistente de colectas. La IA solo lee y propone: aplicar una propuesta lo hace el usuario con sus botones."""
+    import asistente_colecta as _asi
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    try:
+        account_id = get_account_user_id(user_id, conn)
+        sub = get_user_full_subscription(account_id, conn)
+    finally:
+        conn.close()
+    if not (bool(sub.get("has_inbound", False)) or is_admin_user(user_id)):
+        return jsonify({"ok": False, "requires_upgrade": True,
+                        "error": "El asistente es parte del Módulo de Colectas y Envíos a Full."}), 403
+    disponible, motivo = _asi.estado()
+    if not disponible:
+        return jsonify({"ok": False, "error": motivo}), 503
+    if not _asi.dentro_del_limite(user_id):
+        return jsonify({"ok": False, "error": "Hiciste muchas consultas seguidas. Esperá unos minutos y seguimos."}), 429
+    data = request.get_json(silent=True) or {}
+
+    # Lee con las mismas rutas (y la misma sesión) que usa el panel: ve exactamente los números del usuario.
+    auth = request.headers.get("Authorization", "")
+    cli = app.test_client()
+
+    def _leer(ruta):
+        r = cli.get(ruta, headers={"Authorization": auth})
+        return r.get_json() if r.status_code == 200 else None
+
+    herramientas = _asi.Herramientas(
+        productos=lambda: (_leer("/api/full/items") or {}).get("items") or [],
+        colectas=lambda: (_leer("/api/full/inbound/shipments") or {}).get("shipments") or [],
+        detalle=lambda sid: _leer(f"/api/full/inbound/shipments/{int(sid)}") or {},
+    )
+    try:
+        r = _asi.conversar(_asi.crear_cliente(), data.get("mensaje"), data.get("historial"), herramientas)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:
+        import anthropic as _anthropic
+        app.logger.exception("[Asistente] Falló la consulta a Claude")
+        if isinstance(e, _anthropic.RateLimitError):
+            return jsonify({"ok": False, "error": "El asistente está con mucha demanda. Probá de nuevo en un minuto."}), 503
+        return jsonify({"ok": False, "error": "El asistente no pudo responder ahora. Probá de nuevo en un momento."}), 502
+    app.logger.info("[Asistente] usuario %s: %s tokens de entrada, %s de salida, %s propuestas",
+                    user_id, r["tokens"]["entrada"], r["tokens"]["salida"], len(r["propuestas"]))
+    return jsonify({"ok": True, **r})
+
+
 @app.route("/api/full/inbound/planilla-ml", methods=["POST"])
 @jwt_required()
 @_equipo.requiere_rol('operator')
