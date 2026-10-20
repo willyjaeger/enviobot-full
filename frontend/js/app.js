@@ -808,14 +808,12 @@ function ocultarDetalleSegmento() {
     document.querySelectorAll('.pc-seg-activo').forEach(e => e.classList.remove('pc-seg-activo'));
 }
 
-// Qué quiere decir cada color de la barra, en una línea (solo de los que aparecen).
-function explicacionBarra(tranquilos, pronto, urgentes) {
-    const partes = [];
-    if (tranquilos > 0) partes.push('<b>Tranquilos:</b> tienen stock suficiente, o ya hay una colecta en camino que los cubre y solo falta esperar que entre.');
-    if (pronto > 0) partes.push('<b>Conviene mandar pronto:</b> hoy tienen stock, pero se les va a acabar y ninguna colecta los cubre.');
-    if (urgentes > 0) partes.push('<b>Urgentes:</b> están por quedarse sin stock (o ya no tienen) y no están en ninguna colecta.');
-    return partes.join(' ');
-}
+// Qué quiere decir cada color de la dona: aparece como tooltip de cada etiqueta, no escrito en pantalla.
+const EXPLICACION_ESTADO = {
+    ok: 'Tienen stock suficiente, o ya hay una colecta en camino que los cubre y solo falta esperar que entre.',
+    warning: 'Hoy tienen stock, pero se les va a acabar y ninguna colecta los cubre.',
+    critical: 'Están por quedarse sin stock (o ya no tienen) y no están en ninguna colecta.'
+};
 
 function tarjetaEstadoGeneral(g, total) {
     const accion = g.urgentes.length + g.pronto.length;
@@ -854,7 +852,7 @@ function tarjetaEstadoGeneral(g, total) {
     }).join('');
     const dona = `<svg class="pc-dona" width="128" height="128" viewBox="0 0 120 120" role="img" aria-label="${escapeHtml(`${tranquilosTodos.length} tranquilos, ${g.pronto.length} conviene mandar pronto, ${g.urgentes.length} urgentes`)}">${arcos}<text x="60" y="60" text-anchor="middle" class="pc-dona-num">${escapeHtml(total)}</text><text x="60" y="78" text-anchor="middle" class="pc-dona-txt">${total === 1 ? 'producto' : 'productos'}</text></svg>`;
     const dato = (n, color, texto, estado) => n > 0
-        ? `<span class="pc-leyenda-item${estado ? ' pc-click' : ''}"${estado ? ` onclick="irAEstado('${estado}')"` : ''}><span class="pc-ley-num" style="color: var(${color});">${escapeHtml(n)}</span> ${escapeHtml(texto)}</span>` : '';
+        ? `<span class="pc-leyenda-item pc-ayuda${estado ? ' pc-click' : ''}" tabindex="0" data-ayuda="${escapeHtml(EXPLICACION_ESTADO[estado] || '')}"${estado ? ` onclick="irAEstado('${estado}')"` : ''}><span class="pc-ley-num" style="color: var(${color});">${escapeHtml(n)}</span> ${escapeHtml(texto)}</span>` : '';
     return `<div class="pc-hero ${clase}">
         <div class="pc-hero-top"><span class="pc-hero-icono">${icono.replace('margin-right: 4px;', '')}</span>
             <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub}</div></div></div>
@@ -865,7 +863,6 @@ function tarjetaEstadoGeneral(g, total) {
                     ${dato(g.pronto.length, '--warn', 'conviene mandar pronto', 'warning')}
                     ${dato(g.urgentes.length, '--danger', 'urgentes', 'critical')}
                 </div>
-                <div class="pc-leyenda-expl">${explicacionBarra(tranquilosTodos.length, g.pronto.length, g.urgentes.length)}</div>
             </div></div></div>`;
 }
 

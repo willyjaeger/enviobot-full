@@ -1878,8 +1878,11 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .pc-g-tip-nota { color: var(--text2); margin-top: 4px; white-space: nowrap; }
 .pc-g-tip-aviso { color: var(--warn); font-weight: 600; white-space: nowrap; }
 .pc-g-tip-pie { color: var(--text2); font-size: 11px; margin-top: 6px; border-top: 1px solid var(--border); padding-top: 4px; }
-.pc-leyenda-expl { margin-top: 8px; font-size: 12px; line-height: 1.5; color: var(--text2); }
-.pc-leyenda-expl b { color: var(--text); font-weight: 600; }
+/* Tooltip de las etiquetas de la dona: el texto vive en data-ayuda y se ve al pasar el mouse, con el teclado o al tocar. */
+.pc-ayuda { position: relative; text-decoration: underline dotted var(--text2); text-underline-offset: 3px; }
+.pc-ayuda::after { content: attr(data-ayuda); position: absolute; left: 0; top: calc(100% + 6px); width: max-content; max-width: min(280px, 80vw); padding: 8px 10px; border-radius: 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,0.25); font-size: 12px; line-height: 1.45; text-decoration: none; white-space: normal; z-index: 30; opacity: 0; pointer-events: none; transition: opacity .12s; }
+.pc-ayuda:hover::after, .pc-ayuda:focus::after { opacity: 1; }
+.pc-ayuda[data-ayuda=""]::after { display: none; }
 
 /* Publicaciones pausadas en Mercado Libre y resumen del listado */
 .resumen-publicaciones { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 0 0 14px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }

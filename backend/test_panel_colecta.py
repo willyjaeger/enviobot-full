@@ -178,15 +178,16 @@ process.stdout.write(JSON.stringify({
                       'abrirGraficoDeProducto(7)', 'En Full 4.000 u.', 'vendés 6 u. por día', '4.000 ÷ 6 = 667 días'):
             self.assertIn(frase, html, frase)
 
-    def test_la_barra_explica_que_es_cada_color_solo_de_los_que_aparecen(self):
+    def test_la_explicacion_de_cada_color_es_un_tooltip_y_no_texto_a_la_vista(self):
         todo = self._correr([_item(), _item(status='critical', sugerido_al_ingreso=1), _item(status='warning', sugerido_al_ingreso=1)])['html']
-        self.assertIn('<b>Tranquilos:</b> tienen stock suficiente, o ya hay una colecta en camino que los cubre y solo falta esperar que entre.', todo)
-        self.assertIn('<b>Conviene mandar pronto:</b>', todo)
-        self.assertIn('<b>Urgentes:</b>', todo)
+        self.assertIn('data-ayuda="Tienen stock suficiente, o ya hay una colecta en camino que los cubre y solo falta esperar que entre."', todo)
+        self.assertIn('data-ayuda="Hoy tienen stock, pero se les va a acabar y ninguna colecta los cubre."', todo)
+        self.assertIn('data-ayuda="Están por quedarse sin stock (o ya no tienen) y no están en ninguna colecta."', todo)
+        self.assertNotIn('pc-leyenda-expl', todo)   # el párrafo de definiciones ya no se escribe en pantalla
         solo_ok = self._correr([_item(), _item()])['html']
-        self.assertIn('<b>Tranquilos:</b>', solo_ok)
-        self.assertNotIn('<b>Urgentes:</b>', solo_ok)
-        self.assertNotIn('<b>Conviene mandar pronto:</b>', solo_ok)
+        self.assertIn('Tienen stock suficiente', solo_ok)
+        self.assertNotIn('Están por quedarse sin stock', solo_ok)   # solo de los colores que aparecen
+        self.assertNotIn('se les va a acabar', solo_ok)
 
     def test_el_detalle_de_tranquilos_dice_que_los_cubre_la_colecta(self):
         harness = r"""
