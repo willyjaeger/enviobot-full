@@ -36,11 +36,15 @@ class TestPlanillaML(unittest.TestCase):
         self.assertIsInstance(hoja["A6"].value, str)
         self.assertEqual(hoja["A6"].value, "01011")
 
-    def test_sin_sku_usa_el_codigo_ml_y_con_sku_no_lo_repite(self):
+    def test_lleva_el_sku_y_el_codigo_ml_porque_el_sku_solo_no_alcanza(self):
         hoja = _abrir(p.generar(self.PRODS))[" Selección de productos"]
-        self.assertIsNone(hoja["C6"].value)
-        self.assertIsNone(hoja["A8"].value)
+        self.assertEqual([hoja["A6"].value, hoja["C6"].value], ["01011", "LZLB58855"])   # lo que ML pidió: un código más
+        self.assertIsNone(hoja["A8"].value)                  # sin SKU queda solo el código ML
         self.assertEqual(hoja["C8"].value, "ZZZZ99999")
+
+    def test_un_mismo_producto_no_se_repite_en_la_planilla(self):
+        dup = [{"sku": "01011", "inventory_id": "LZLB58855", "unidades": 5}, {"sku": "01011", "inventory_id": "LZLB58855", "unidades": 9}]
+        self.assertEqual(len(p.productos_validos(dup)), 1)
 
     def test_se_ignoran_cantidades_vacias_ceros_y_productos_sin_codigo(self):
         validos = p.productos_validos([{"sku": "A", "unidades": 0}, {"sku": "B", "unidades": -3}, {"sku": "C", "unidades": "x"},

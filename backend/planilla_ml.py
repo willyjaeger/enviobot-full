@@ -7,7 +7,9 @@ plantillas/ml_envio_full.xlsx) con lo que el cliente armó en "Armar colecta".
 Formato de la hoja " Selección de productos" (con el espacio adelante, así se llama en la planilla de ML):
   fila 4 = encabezados, fila 5 = ayudas, datos desde la fila 6
   A SKU | B Código universal | C Código ML | D Número de publicación | E Número de producto | F Cantidad de unidades
-ML pide al menos UN código por producto. Se usa el SKU; si un producto no lo tiene, el código ML (inventory_id).
+ML pide al menos DOS códigos por producto cuando el SKU está repetido (en tu cuenta cada SKU está en dos publicaciones del mismo
+producto y con el SKU solo ML responde "Agregá un código más para que podamos reconocer el producto"). Se cargan el SKU y el
+Código ML. Verificado el 2026-10-20: el "Código ML" que muestra ML es el inventory_id de la publicación.
 ML avisa que no hay que cambiar el orden de las columnas, por eso se parte de su planilla y solo se escriben datos.
 
 Se edita el XML de la hoja directamente (sin librerías): conserva intactos el resto de la planilla, el logo y los estilos.
@@ -35,8 +37,7 @@ def _fila(n, producto):
     celdas = []
     celdas.append(_texto(f"A{n}", sku, 62) if sku else f'<c r="A{n}" s="62"/>')
     celdas.append(f'<c r="B{n}" s="62"/>')
-    # El código ML solo se usa cuando no hay SKU: si los dos estuvieran, ML podría ver una contradicción.
-    celdas.append(_texto(f"C{n}", codigo_ml, 62) if (codigo_ml and not sku) else f'<c r="C{n}" s="62"/>')
+    celdas.append(_texto(f"C{n}", codigo_ml, 62) if codigo_ml else f'<c r="C{n}" s="62"/>')
     celdas.append(f'<c r="D{n}" s="62"/>')
     celdas.append(f'<c r="E{n}" s="63"/>')
     celdas.append(f'<c r="F{n}" s="62"><v>{int(producto["unidades"])}</v></c>')
@@ -44,8 +45,10 @@ def _fila(n, producto):
 
 
 def productos_validos(productos):
-    """Solo los que tienen cantidad entera mayor a cero y algún código para que ML los identifique."""
+    """Solo los que tienen cantidad entera mayor a cero y algún código para que ML los identifique.
+    Un mismo inventory_id no se repite: ML lo tomaría como el mismo producto dos veces."""
     salida = []
+    vistos = set()
     for p in productos or []:
         try:
             unidades = int(round(float(p.get("unidades"))))
@@ -55,6 +58,10 @@ def productos_validos(productos):
             continue
         if not (str(p.get("sku") or "").strip() or str(p.get("inventory_id") or "").strip()):
             continue
+        clave = str(p.get("inventory_id") or "").strip() or ("sku:" + str(p.get("sku")).strip())
+        if clave in vistos:
+            continue
+        vistos.add(clave)
         salida.append({"sku": p.get("sku"), "inventory_id": p.get("inventory_id"), "unidades": unidades})
     return salida
 
