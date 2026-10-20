@@ -12,6 +12,7 @@
     --accent:                #f5a623;
     --accent-text:           #f5a623;
     --accent-d:              #c97f10;
+    --on-accent:             #111;
     --text:                  #e8e9ed;
     --text2:                 #8a8d9a;
     --good:                  #4CAF50;
@@ -1954,13 +1955,13 @@ body:not(.sb-abierto) .sb-top { flex-direction: column; padding-bottom: 10px; }
 .sb-item { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 9px 12px; border: none; border-radius: 8px; background: transparent; color: var(--text); opacity: .82; font: inherit; font-size: 13.5px; font-weight: 600; text-align: left; white-space: nowrap; cursor: pointer; }
 .sb-item svg { flex-shrink: 0; }
 .sb-item:hover { background: var(--surf2); opacity: 1; }
-.sb-item.activa { background: var(--accent); color: #111; opacity: 1; }
-.sb-item.activa svg { color: #111; }
+.sb-item.activa { background: var(--accent); color: var(--on-accent); opacity: 1; }
+.sb-item.activa svg { color: var(--on-accent); }
 .sb-item:focus-visible, .sb-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .sb-txt { overflow: hidden; text-overflow: ellipsis; }
 .sb-badge { margin-left: auto; }
-.sb-badge.sb-badge-acento { background: var(--accent); color: #111; }
-.sb-item.activa .sb-badge { background: #111; color: var(--accent); }
+.sb-badge.sb-badge-acento { background: var(--accent); color: var(--on-accent); }
+.sb-item.activa .sb-badge { background: var(--on-accent); color: var(--accent); }
 #btnAvisosTop.sin-leer { border: none; }
 /* Angosto: solo el ícono; el nombre sale como globito y los contadores como puntito. */
 body:not(.sb-abierto) .sb-txt { display: none; }

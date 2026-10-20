@@ -762,7 +762,7 @@ process.stdout.write(creado ? creado.innerHTML : '');
         bien = _item(title='Nueces', in_preparation_stock=300, total_incoming=300, cobertura_post_colecta=26)
         out = self._correr([corto, bien], self._prox())
         self.assertIn('Ya en tu colecta, pero conviene ajustar', out['html'])
-        seccion = out['html'].split('Ya en tu colecta, pero conviene ajustar')[1]
+        seccion = out['html'].split('Ya en tu colecta, pero conviene ajustar')[-1]
         self.assertIn('Con 100 u. cubrís 9 días: convendría 170', seccion)
         self.assertNotIn('Nueces', seccion)
         self.assertIn('Todavía podés ajustarlo', seccion)
@@ -776,7 +776,7 @@ process.stdout.write(creado ? creado.innerHTML : '');
     def test_tienen_de_mas_lista_solo_los_marcados(self):
         out = self._correr([_item(title='Sobra mucho', sobrestock=True, covered_days_left=267), _item(title='Normal')])
         self.assertIn('Artículos con stock suficiente', out['html'])
-        seccion = out['html'].split('Artículos con stock suficiente')[1]
+        seccion = out['html'].split('Artículos con stock suficiente')[-1]
         self.assertIn('Sobra mucho', seccion)
         self.assertIn('Stock suficiente', seccion)
         self.assertNotIn('Stock suficiente:', seccion)
@@ -914,9 +914,10 @@ class TestBotonesVisibles(unittest.TestCase):
         self.assertLess(barra, html.index('id="cardStockPrincipal"'))
         zona = html[barra:html.index('id="panelColecta"')]
         self.assertIn('abrirModalColecta()', zona)
-        self.assertIn('abrirHistorialColectas()', zona)
         self.assertIn('Armar colecta', zona)
-        self.assertIn('Historial de envíos', zona)
+        # el historial pasó al menú lateral, siempre a la vista
+        self.assertIn('onclick="abrirHistorialColectas()"', html)
+        self.assertIn('data-label="Historial de envíos"', html)
 
     def test_el_contador_del_historial_sigue_existiendo_una_sola_vez(self):
         html = _leer('index.html')
