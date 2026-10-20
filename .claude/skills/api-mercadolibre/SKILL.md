@@ -20,6 +20,8 @@ Guillermo pidió expresamente que no se adivine con esta API ("cuando te pones a
 - `GET /stock/fulfillment/operations/search` (2026-10-20): la ruta existe pero respondió **429 over_quota** dos veces seguidas, también tras 45 s. Causa sin confirmar (cuota de la aplicación en cero o no habilitada). Pendiente revisar la aplicación en el devcenter.
 - `GET /marketplace/stock/fulfillment/operations/search`: **403 Invalid caller.id**. Es de Global Selling; no sirve para esta cuenta.
 
+- `GET /items/{id}` trae `user_product_id` (MLAU...). `GET /marketplace/fbm/user-products/{user_product_id}/replenishment?country=AR` (2026-10-20): **200 OK con la cuenta MISTERNUT**. Producto 01011: `total_stock` 583 contra 274 en nuestro stock disponible (la doc dice que `total_stock` suma lo almacenado, lo que espera arribo y lo reservado en transferencia), `shipping_urgency` NO_URGENCY, recomendación NO_REPLENISHMENT con cantidad 0, y ventas de 6 semanas con `days_out_of_stock`. La diferencia 583-274 podría ser la colecta en camino: SUPOSICIÓN, sin verificar.
+
 ## Según la documentación (no probado con la cuenta)
 - La documentación de Fulfillment (sitio de Brasil) dice que el envío de mercadería a los galpones lo hace el vendedor desde el Seller Center, y que por API solo se consulta stock y operaciones.
 - Las operaciones de stock tienen `type` (por ejemplo `inbound_reception`, `sale_confirmation`); la búsqueda filtra por vendedor, inventario, fechas, tipo y envío; por defecto 15 días, historial de 12 meses.
