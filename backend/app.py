@@ -32,6 +32,7 @@ from whatsapp_service import (
 from alerts_engine import procesar_alertas_usuario
 import horario_whatsapp as _horario
 from email_service import enviar_email, enviar_email_prueba, enviar_email_bienvenida_verificacion, get_welcome_smtp_config
+import pausa_avisos as _pausa_avisos
 import equipo as _equipo
 import proyeccion as _proy
 import avisos_tipos as _avisos
@@ -2309,6 +2310,8 @@ def add_recipient():
 @_equipo.requiere_rol('admin')
 def send_email_verification():
     """Envía el email de bienvenida con código de 6 dígitos."""
+    if not _pausa_avisos.codigo_email_activo():
+        return jsonify({"ok": False, "error": "El código de vinculación por correo está desactivado por ahora."}), 200
     user_id = int(get_jwt_identity())
     data = request.get_json() or {}
     email = data.get("email", "").strip()
@@ -2724,7 +2727,7 @@ def user_settings_route():
             user_name = u_row["full_name"]
 
         # Si se solicita o si hay nuevo email:
-        if new_email and send_welcome:
+        if new_email and send_welcome and _pausa_avisos.codigo_email_activo():
             email_code = str(secrets.randbelow(900000) + 100000)
             cur.execute("""
                 INSERT INTO verification_codes (user_id, channel, destination, code, is_verified)

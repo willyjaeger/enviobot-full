@@ -26,3 +26,9 @@ def avisos_pausados():
 
 def puede_enviar(tipo):
     return (not avisos_pausados()) or tipo in TIPOS_PERMITIDOS
+
+
+def codigo_email_activo():
+    """Los mails con el código de vinculación de correo están apagados por ahora (decisión de Guillermo, 2026-10-19):
+    llegaban de a decenas y no se entendían. Para volver a mandarlos: ENVIOBOT_CODIGO_EMAIL=activo en el .env del servidor."""
+    return os.getenv("ENVIOBOT_CODIGO_EMAIL", "apagado").strip().lower() == "activo"

@@ -68,5 +68,25 @@ class TestLosEnviosEstanProtegidos(unittest.TestCase):
         self.assertNotIn("return resultado\n    conn = get_db()", cuerpo)
 
 
+    def test_los_codigos_de_vinculacion_por_mail_estan_apagados_salvo_que_se_active(self):
+        import os
+        import pausa_avisos
+        previo = os.environ.pop("ENVIOBOT_CODIGO_EMAIL", None)
+        try:
+            self.assertFalse(pausa_avisos.codigo_email_activo())
+            os.environ["ENVIOBOT_CODIGO_EMAIL"] = "activo"
+            self.assertTrue(pausa_avisos.codigo_email_activo())
+            os.environ["ENVIOBOT_CODIGO_EMAIL"] = "si"
+            self.assertFalse(pausa_avisos.codigo_email_activo())
+        finally:
+            os.environ.pop("ENVIOBOT_CODIGO_EMAIL", None)
+            if previo is not None:
+                os.environ["ENVIOBOT_CODIGO_EMAIL"] = previo
+
+    def test_los_dos_lugares_que_mandan_el_codigo_preguntan_si_esta_activo(self):
+        fuente = self._fuente("app.py")
+        self.assertEqual(fuente.count("_pausa_avisos.codigo_email_activo()"), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
