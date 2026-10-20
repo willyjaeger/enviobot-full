@@ -3359,6 +3359,8 @@ async function abrirModalColecta(targetItemId = null, options = {}) {
         fechaRetiroInput.value = pickupDate.toISOString().split('T')[0];
     }
 
+    const cartelPlanilla = document.getElementById('colectaPlanillaListo');
+    if (cartelPlanilla) { cartelPlanilla.style.display = 'none'; cartelPlanilla.innerHTML = ''; }
     switchColectaTab('planificar');
     renderizarFilasColecta(targetItemId);
     modal.style.display = 'flex';
@@ -3687,7 +3689,7 @@ async function descargarPlanillaML() {
     });
     if (productos.length === 0) {
         showToast('Elegí al menos un producto con unidades para armar la planilla.', 'error');
-        return;
+        return { ok: false };
     }
     try {
         const resp = await fetch(`${API_BASE}/full/inbound/planilla-ml`, {
@@ -3699,7 +3701,7 @@ async function descargarPlanillaML() {
             let msg = 'No se pudo armar la planilla.';
             try { msg = (await resp.json()).error || msg; } catch (e) { /* respuesta sin cuerpo */ }
             showToast(msg, 'error');
-            return;
+            return { ok: false };
         }
         const url = URL.createObjectURL(await resp.blob());
         const link = document.createElement('a');
@@ -3709,10 +3711,39 @@ async function descargarPlanillaML() {
         link.click();
         document.body.removeChild(link);
         setTimeout(() => URL.revokeObjectURL(url), 5000);
-        showToast(`Planilla lista con ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'}. Subila en Mercado Libre.`, 'success');
+        const unidadesTotal = productos.reduce((acc, p) => acc + p.unidades, 0);
+        return { ok: true, nombre: link.download, productos: productos.length, unidades: unidadesTotal };
     } catch (e) {
         showToast('Error de conexión. Probá de nuevo.', 'error');
     }
+    return { ok: false };
+}
+
+// Un solo botón: baja la planilla de Mercado Libre ya completa Y abre la pantalla donde se sube. Como la pestaña de
+// Mercado Libre pasa al frente, el aviso de acá deja claro qué archivo se bajó y qué hacer allá.
+const URL_ML_SUBIR_PLANILLA = 'https://vendedores.mercadolibre.com.ar/shipping/import/excel/upload';
+async function subirColectaAML() {
+    const boton = document.getElementById('btnSubirColectaML');
+    if (boton) boton.disabled = true;
+    try {
+        const r = await descargarPlanillaML();
+        if (!r.ok) return;
+        const pestana = window.open(URL_ML_SUBIR_PLANILLA, '_blank', 'noopener');
+        mostrarPlanillaLista(r, !pestana);
+    } finally {
+        if (boton) boton.disabled = false;
+    }
+}
+window.subirColectaAML = subirColectaAML;
+
+function mostrarPlanillaLista(r, pestanaBloqueada) {
+    const cartel = document.getElementById('colectaPlanillaListo');
+    if (!cartel) return;
+    cartel.style.display = 'block';
+    cartel.innerHTML = `<div class="planilla-lista-titulo"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>Se descargó la planilla: ${escapeHtml(r.nombre)}</div>
+        <div class="planilla-lista-sub">${escapeHtml(r.productos)} ${r.productos === 1 ? 'producto' : 'productos'}, ${escapeHtml(r.unidades)} unidades. ${pestanaBloqueada ? 'Tu navegador bloqueó la pestaña de Mercado Libre: tocá "Abrir Mercado Libre".' : 'Se abrió Mercado Libre en otra pestaña.'}</div>
+        <ol class="planilla-lista-pasos"><li>En Mercado Libre tocá <strong>Adjuntá la planilla</strong> (o arrastrá el archivo).</li><li>Elegí <strong>${escapeHtml(r.nombre)}</strong>, que está en tus Descargas.</li><li>Revisá el plan que arma Mercado Libre y confirmalo ahí.</li></ol>
+        <div class="planilla-lista-acciones"><a class="btn btn-secondary btn-sm" href="${URL_ML_SUBIR_PLANILLA}" target="_blank" rel="noopener">Abrir Mercado Libre</a><button type="button" class="btn btn-secondary btn-sm" onclick="descargarPlanillaML()">Descargar la planilla otra vez</button></div>`;
 }
 
 // ── Confirmar y Despachar Envío a Backend (Etapa 2) ───────────────────

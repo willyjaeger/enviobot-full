@@ -765,6 +765,9 @@
                            class="filter-input" style="width: 100%; font-size: 12px; padding: 7px 12px;">
                 </div>
 
+                <!-- Aviso que queda a la vista después de bajar la planilla y abrir Mercado Libre -->
+                <div id="colectaPlanillaListo" class="planilla-lista" style="display: none;" role="status"></div>
+
                 <!-- Acciones Inferiores -->
                 <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 8px;">
                     <div style="display: flex; gap: 6px;">
@@ -774,17 +777,14 @@
                         <button type="button" class="btn btn-secondary btn-sm" onclick="exportarColectaCSV()">
                             Descargar CSV (Excel)
                         </button>
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="descargarPlanillaML()" title="Planilla de Mercado Libre ya completa, lista para subir en Planificar desde Excel">
-                            Planilla para Mercado Libre
-                        </button>
-                        <a class="btn btn-secondary btn-sm" href="https://vendedores.mercadolibre.com.ar/shipping/import/excel/upload" target="_blank" rel="noopener" title="Abre la pantalla de Mercado Libre donde se sube la planilla">
-                            Subir en Mercado Libre
-                        </a>
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
-                        <button type="button" class="btn" style="background: var(--accent); color: #111; font-weight: 800;" onclick="confirmarDespachoColecta()">
-                            Generar envío y hoja de despacho
+                        <button type="button" class="btn btn-secondary" onclick="confirmarDespachoColecta()" title="Registra la colecta en EnvioBot y arma la hoja de despacho. No la carga en Mercado Libre.">
+                            Generar hoja de despacho
+                        </button>
+                        <button type="button" class="btn" id="btnSubirColectaML" style="background: var(--accent); color: #111; font-weight: 800;" onclick="subirColectaAML()" title="Descarga la planilla de Mercado Libre ya completa y abre la pantalla de Mercado Libre donde se sube">
+                            Subir la colecta a Mercado Libre
                         </button>
                     </div>
                 </div>
@@ -1946,6 +1946,6 @@
     <script src="js/teclado-formularios.js?v=20261017_2"></script>
     <script src="js/theme.js?v=20261013_4"></script>
     <script src="js/notifications.js?v=20261013_4"></script>
-    <script src="js/app.js?v=20261020_5"></script>
+    <script src="js/app.js?v=20261020_6"></script>
 </body>
 </html>

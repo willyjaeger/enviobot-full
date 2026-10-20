@@ -1035,3 +1035,40 @@ class TestCambiosParaML(unittest.TestCase):
         cuerpo = js[js.index('function renderizarCambiosML'):js.index('function copiarCambiosML')]
         self.assertIn('edicionCerrada ? []', cuerpo)
         self.assertIn('shipping/inbounds/${m[1]}/units', cuerpo)
+
+
+class TestBotonUnicoSubirAML(unittest.TestCase):
+    """Pedido de Guillermo (2026-10-20): un solo botón baja la planilla de ML y abre la pantalla donde se sube."""
+
+    def test_el_boton_amarillo_es_el_de_subir_a_mercado_libre(self):
+        html = _leer('index.html')
+        i = html.index('id="btnSubirColectaML"')
+        boton = html[html.rindex('<button', 0, i):html.index('</button>', i)]
+        self.assertIn('background: var(--accent)', boton)           # el amarillo
+        self.assertIn('subirColectaAML()', boton)
+        self.assertIn('Subir la colecta a Mercado Libre', boton)
+        # lo que ya hacía el amarillo sigue existiendo, ahora como botón secundario
+        self.assertRegex(html, r'btn-secondary"[^>]*onclick="confirmarDespachoColecta\(\)"')
+        # los dos botones sueltos de la planilla ya no están
+        self.assertNotIn('Planilla para Mercado Libre', html)
+        self.assertNotIn('>\n                            Subir en Mercado Libre', html)
+
+    def test_un_clic_descarga_y_abre_mercado_libre_y_avisa(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        cuerpo = js[js.index('async function subirColectaAML'):js.index('window.subirColectaAML')]
+        self.assertLess(cuerpo.index('descargarPlanillaML()'), cuerpo.index('window.open(URL_ML_SUBIR_PLANILLA'))   # primero baja, después abre
+        self.assertIn('mostrarPlanillaLista(', cuerpo)
+        aviso = js[js.index('function mostrarPlanillaLista'):js.index('// ── Confirmar y Despachar Envío')]
+        for esperado in ('Se descargó la planilla', 'Adjuntá la planilla', 'Abrir Mercado Libre', 'bloqueó la pestaña'):
+            self.assertIn(esperado, aviso)
+        self.assertIn('shipping/import/excel/upload', js)
+
+    def test_si_la_planilla_falla_no_se_abre_mercado_libre(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        cuerpo = js[js.index('async function subirColectaAML'):js.index('window.subirColectaAML')]
+        self.assertIn('if (!r.ok) return;', cuerpo)
+
+    def test_el_aviso_arranca_oculto_cada_vez_que_se_abre_la_ventana(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        cuerpo = js[js.index('async function abrirModalColecta'):js.index('function cerrarModalColecta')]
+        self.assertIn("getElementById('colectaPlanillaListo')", cuerpo)
