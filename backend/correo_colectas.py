@@ -916,7 +916,7 @@ def asegurar_columnas_mail_directo(cur):
         if not esquema.tiene_columna(cur, "user_settings", col):
             try:
                 cur.execute(f"ALTER TABLE user_settings ADD COLUMN {col} {tipo}")
-                esquema._COLUMNAS.pop(("user_settings", col), None)
+                esquema.olvidar()
             except Exception as e:
                 logger.warning(f"[Mail colecta directo] No se pudo agregar columna {col}: {e}")
 
