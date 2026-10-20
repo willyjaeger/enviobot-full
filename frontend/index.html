@@ -46,7 +46,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261020_1">
+    <link rel="stylesheet" href="css/style.css?v=20261020_2">
 </head>
 <body>
 
@@ -633,22 +633,14 @@
     <!-- ── Modal de Armado y Gestión de Colectas Full (Etapa 2) ────────────────── -->
     <div class="modal-overlay" id="colectaModal">
         <div class="modal-card modal-card-large" id="colectaModalCard" style="max-width: 1040px; width: 96%; max-height: 90vh;">
-            <div class="modal-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-                <div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <h3 style="color: var(--accent); font-size: 21px; font-weight: 800; margin: 0;">Armar Colecta & Envío a Full</h3>
-                        <span class="plan-badge pro" style="font-size: 11px; padding: 2px 7px;">Villa Celina</span>
-                    </div>
-                    <p style="font-size: 13px; color: var(--text2); margin-top: 4px; margin-bottom: 0;">
-                        Planificación inteligente de reposición para el Centro de Distribución de Mercado Libre Full.
-                    </p>
+            <div class="modal-header" style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <h3 style="color: var(--accent); font-size: 21px; font-weight: 800; margin: 0;">Armar colecta</h3>
+                    <span class="plan-badge pro" style="font-size: 11px; padding: 2px 7px;">Villa Celina</span>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="irAHistorialDesdeColecta()" title="Ver historial de envíos generados">
-                        Ver Historial de Envíos (<span id="colectaHistorialBadge">0</span>)
-                    </button>
-                    <button type="button" class="btn btn-secondary btn-sm" id="btnToggleResumenColecta" onclick="toggleResumenColecta()" title="Plegar o desplegar métricas superiores para maximizar el espacio de los artículos">
-                        Plegar Resumen
+                        Historial de envíos (<span id="colectaHistorialBadge">0</span>)
                     </button>
                     <button type="button" class="btn btn-secondary btn-sm" id="btnColectaFullscreen" onclick="toggleColectaFullscreen()" title="Ver en pantalla completa">
                         <svg id="fsColectaIconExpand" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -657,27 +649,10 @@
                         <svg id="fsColectaIconCompress" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
                             <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
                         </svg>
-                        <span id="btnColectaFullscreenText">Pantalla Completa</span>
+                        <span id="btnColectaFullscreenText">Pantalla completa</span>
                     </button>
                     <button class="modal-close" onclick="cerrarModalColecta()">✕</button>
                 </div>
-            </div>
-
-            <!-- ── Banner de Seguridad Garantizada (Modo Interno) ── -->
-            <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 9px 13px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
-                <div style="display: flex; align-items: center; gap: 9px;">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                    </svg>
-                    <div style="font-size: 12px; color: var(--text); line-height: 1.4;">
-                        <strong style="color: var(--good);">Modo Seguro de Control Interno:</strong> 
-                        Esta hoja de despacho y conteo de cajas es para tu depósito y tu chofer. 
-                        <span style="color: var(--text2);"><strong>NO genera compromisos ni colectas en Mercado Libre.</strong> Cero riesgo de alterar tu cuenta oficial.</span>
-                    </div>
-                </div>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="abrirModalExplicacionColecta()" style="font-size: 11px; padding: 4px 10px; font-weight: 700; white-space: nowrap;">
-                    ¿Cómo funciona? (Paso previo)
-                </button>
             </div>
 
             <!-- ── Banner de Modo Evento Comercial Activo ── -->
@@ -696,40 +671,36 @@
 
             <!-- ── VISTA 1: Planificador de Colecta ── -->
             <div id="colectaTabPlanificar" style="display: flex; flex-direction: column; flex: 1; min-height: 0;">
-                <div class="colecta-summary-bar" style="flex-wrap: wrap; gap: 10px; padding: 10px 14px;">
-                    <div style="font-size: 13px;">
-                        <span>Destino: <strong id="colectaDestinoText" style="color: var(--accent);">Mercado Envíos Full (Villa Celina)</strong></span>
+                <!-- Barra única: cuánto se manda, cobertura y fecha. Lo demás queda en "Más información". -->
+                <div class="colecta-summary-bar colecta-barra">
+                    <div class="colecta-totales">
+                        <span><strong id="colectaTotalSkus" class="colecta-total-num">0</strong> productos</span>
+                        <span class="colecta-total-sep">·</span>
+                        <span><strong id="colectaTotalUnits" class="colecta-total-num colecta-total-acento">0 un.</strong> a mandar</span>
                     </div>
 
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <label style="font-size: 12px; color: var(--text2); font-weight: 600;">Cobertura deseada:</label>
-                        <div style="display: inline-flex; align-items: center; gap: 4px;">
-                            <input type="number" id="colectaDiasInput" value="15" min="1" max="180" 
-                                   oninput="onColectaDiasChange()" 
-                                   class="filter-input" style="width: 65px; padding: 4px 6px; font-size: 13px; font-weight: 700; text-align: center;">
-                            <span style="font-size: 12px; color: var(--text2);">días</span>
-                        </div>
-                        <div class="colecta-quick-presets" style="display: inline-flex; gap: 4px; margin-left: 4px;">
+                    <div class="colecta-barra-campo">
+                        <label for="colectaDiasInput">Cobertura</label>
+                        <input type="number" id="colectaDiasInput" value="15" min="1" max="180"
+                               oninput="onColectaDiasChange()"
+                               class="filter-input" style="width: 58px; padding: 4px 6px; font-size: 13px; font-weight: 700; text-align: center;">
+                        <span>días</span>
+                        <span class="colecta-quick-presets" style="display: inline-flex; gap: 4px;">
                             <button type="button" class="btn btn-secondary btn-xs" onclick="setColectaDiasPreset(15)">15d</button>
                             <button type="button" class="btn btn-secondary btn-xs" onclick="setColectaDiasPreset(20)">20d</button>
                             <button type="button" class="btn btn-secondary btn-xs" onclick="setColectaDiasPreset(30)">30d</button>
                             <button type="button" class="btn btn-secondary btn-xs" onclick="setColectaDiasPreset(45)">45d</button>
-                        </div>
+                        </span>
                     </div>
 
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <label style="font-size: 12px; color: var(--text2);">Formato embalaje:</label>
-                        <select id="colectaPackagingSelect" onchange="recalcularColecta()" class="filter-select" style="padding: 4px 8px; font-size: 12px;">
-                            <option value="cajas_master" selected>Cajas Máster Rotuladas</option>
-                            <option value="bultos_sueltos">Cajas / Bultos Mixtos</option>
-                            <option value="pallet">Pallet Filmado</option>
-                        </select>
-                    </div>
-
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <label style="font-size: 12px; color: var(--text2);">Fecha estimada retiro:</label>
+                    <div class="colecta-barra-campo">
+                        <label for="colectaFechaRetiroInput">Retiro</label>
                         <input type="date" id="colectaFechaRetiroInput" class="filter-select" style="padding: 3px 8px; font-size: 12px;">
                     </div>
+
+                    <button type="button" class="btn btn-secondary btn-sm colecta-mas" id="btnToggleResumenColecta" onclick="toggleResumenColecta()" aria-expanded="false" title="Ver u ocultar el cronograma y la información de la hoja de despacho">
+                        Más información
+                    </button>
                 </div>
 
                 <!-- Banner de Advertencia de Días Mínimos para no quebrar stock -->
@@ -737,34 +708,28 @@
                     <strong style="color: #ff8080;">Atención por quiebre inminente:</strong> Con <strong id="warnDiasElegidos">0</strong> días de cobertura no llegás a cubrir el ciclo de reposición. Entre preparar pedidos (<span id="warnLeadTime">0</span> d), colchón de seguridad (<span id="warnBuffer">0</span> d) y demora del flete (<span id="warnTransit">0</span> d), necesitás un mínimo de <strong><span id="warnMinDias">0</span> días</strong> para no quedarte sin stock antes de que el camión ingrese a Full.
                 </div>
 
-                <!-- Sección Colapsable de Métricas y Cronograma -->
-                <div id="colectaHeaderSummarySection">
-                    <!-- Métricas Rápidas en Vivo -->
-                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px;">
-                        <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
-                            <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">SKUs Seleccionados</div>
-                            <div id="colectaTotalSkus" style="font-size: 18px; font-weight: 800; color: var(--text);">0</div>
+                <!-- Información secundaria: escondida hasta que se pide, no se quita. -->
+                <div id="colectaHeaderSummarySection" style="display: none;">
+                    <div class="colecta-info-seguro">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                        <div>
+                            <strong style="color: var(--good);">Control interno.</strong>
+                            Esta hoja de despacho es para tu depósito y tu chofer. <strong>No crea colectas ni compromisos en Mercado Libre.</strong>
+                            Destino: <strong id="colectaDestinoText" style="color: var(--accent);">Mercado Envíos Full (Villa Celina)</strong>.
                         </div>
-                        <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
-                            <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">Unidades a Despachar</div>
-                            <div id="colectaTotalUnits" style="font-size: 18px; font-weight: 800; color: var(--accent);">0 un.</div>
-                        </div>
-                        <div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; text-align: center;">
-                            <div style="font-size: 11px; color: var(--text2); text-transform: uppercase; font-weight: 700;">Bultos / Cajas Estimadas</div>
-                            <div id="colectaTotalBoxes" style="font-size: 18px; font-weight: 800; color: #64b5f6;">0 cajas</div>
-                        </div>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="abrirModalExplicacionColecta()" style="white-space: nowrap;">¿Cómo funciona?</button>
                     </div>
 
                     <!-- Cronograma de Pasos para MercadoLibre -->
                     <div class="colecta-timeline-bar" id="colectaTimelineBar" style="margin-bottom: 10px; padding: 6px 12px;">
                         <div class="timeline-step">
                             <span class="step-num">1</span>
-                            <div><strong>Pedir Turno / Colecta</strong><br><span id="timelineAskDate" style="color: var(--accent); font-weight: 700;">HOY</span></div>
+                            <div><strong>Pedir turno / colecta</strong><br><span id="timelineAskDate" style="color: var(--accent); font-weight: 700;">HOY</span></div>
                         </div>
                         <div class="timeline-arrow">→</div>
                         <div class="timeline-step">
                             <span class="step-num">2</span>
-                            <div><strong>Retiro por Galpón</strong><br><span id="timelinePickupDate" style="color: var(--text2);">En 48 hs</span></div>
+                            <div><strong>Retiro por galpón</strong><br><span id="timelinePickupDate" style="color: var(--text2);">En 48 hs</span></div>
                         </div>
                         <div class="timeline-arrow">→</div>
                         <div class="timeline-step">
@@ -774,20 +739,18 @@
                     </div>
                 </div>
 
-                <div class="modal-body-scroll" style="margin: 6px 0 10px 0;">
+                <div class="modal-body-scroll colecta-lista" style="margin: 6px 0 10px 0;">
                     <table class="colecta-table">
                         <thead>
                             <tr>
                                 <th style="width: 35px; text-align: center;">
                                     <input type="checkbox" id="checkAllColecta" checked onchange="toggleSelectAllColecta(this.checked)">
                                 </th>
-                                <th>Producto / SKU / Publicación</th>
+                                <th>Producto / SKU / publicación</th>
                                 <th style="text-align: right; width: 85px;">Stock Full</th>
                                 <th style="text-align: right; width: 80px;">Ritmo (VPD)</th>
                                 <th style="text-align: right; width: 85px;">Sugerido</th>
-                                <th style="text-align: center; width: 105px;">Unidades a Mandar</th>
-                                <th style="text-align: center; width: 95px;" title="Unidades por caja máster">Un. / Caja</th>
-                                <th style="text-align: center; width: 85px;">Cajas Est.</th>
+                                <th style="text-align: center; width: 120px;">Unidades a mandar</th>
                             </tr>
                         </thead>
                         <tbody id="colectaTableBody">
@@ -806,7 +769,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 8px;">
                     <div style="display: flex; gap: 6px;">
                         <button type="button" class="btn btn-secondary btn-sm" onclick="copiarListaColecta()">
-                            Copiar Lista
+                            Copiar lista
                         </button>
                         <button type="button" class="btn btn-secondary btn-sm" onclick="exportarColectaCSV()">
                             Descargar CSV (Excel)
@@ -821,7 +784,7 @@
                     <div style="display: flex; gap: 8px;">
                         <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
                         <button type="button" class="btn" style="background: var(--accent); color: #111; font-weight: 800;" onclick="confirmarDespachoColecta()">
-                            Generar Envío y Hoja de Despacho
+                            Generar envío y hoja de despacho
                         </button>
                     </div>
                 </div>
@@ -929,7 +892,7 @@
                         <span id="editarEnvioStatusBadge" style="font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 700;"></span>
                     </div>
                     <p id="editarEnvioSubtitulo" style="font-size: 12.5px; color: var(--text2); margin-top: 4px; margin-bottom: 0;">
-                        Modificá fecha de retiro, agregá o quitá artículos, y ajustá cantidades o unidades por bulto antes de enviar a Villa Celina.
+                        Modificá fecha de retiro, agregá o quitá artículos, y y ajustá las cantidades antes de enviar a Villa Celina.
                     </p>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center;">
@@ -973,15 +936,6 @@
                 <div style="display: flex; flex-direction: column; gap: 4px;">
                     <label style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase;">Fecha de Retiro / Despacho</label>
                     <input type="date" id="editarEnvioFechaRetiro" class="filter-input" style="padding: 6px 10px; font-size: 13px; font-weight: 600; width: 160px;">
-                </div>
-
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <label style="font-size: 11px; font-weight: 700; color: var(--text2); text-transform: uppercase;">Tipo de Embalaje</label>
-                    <select id="editarEnvioPackaging" class="filter-select" style="padding: 6px 10px; font-size: 13px; font-weight: 600;">
-                        <option value="cajas_master">Cajas Máster Rotuladas</option>
-                        <option value="pallets">Pallets Completos</option>
-                        <option value="bultos_varios">Bultos Mixtos</option>
-                    </select>
                 </div>
 
                 <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 220px;">
@@ -1062,7 +1016,7 @@
                 </div>
                 <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                     <span style="color: var(--accent); font-weight: 700;">✓</span>
-                    <span><strong>Cálculo Inteligente de Cajas Máster y Bultos</strong> para recepción acelerada en Villa Celina.</span>
+                    <span><strong>Cálculo inteligente de unidades a mandar</strong> según tus ventas reales, para no quebrar stock.</span>
                 </div>
                 <div style="display: flex; gap: 8px; margin-bottom: 8px;">
                     <span style="color: var(--accent); font-weight: 700;">✓</span>
@@ -1109,9 +1063,9 @@
                 <div style="display: flex; gap: 12px; background: var(--surf2); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
                     <div style="background: var(--accent); color: #111; font-weight: 800; border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 14px;">1</div>
                     <div>
-                        <strong style="color: var(--text); font-size: 13.5px;">Cálculo Inteligente de Cajas y Unidades (EnvioBot)</strong>
+                        <strong style="color: var(--text); font-size: 13.5px;">Cálculo inteligente de unidades (EnvioBot)</strong>
                         <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0 0; line-height: 1.45;">
-                            EnvioBot cruza tus ventas reales de los últimos 30 días con tu stock en Full (restando lo que ya está en camino o por ingresar tras feriados). Te calcula cuántas unidades mandar y cuántas cajas master armar para no quebrar.
+                            EnvioBot cruza tus ventas reales de los últimos 30 días con tu stock en Full (restando lo que ya está en camino o por ingresar tras feriados). Te calcula cuántas unidades mandar para no quebrar.
                         </p>
                     </div>
                 </div>
@@ -1121,7 +1075,7 @@
                     <div>
                         <strong style="color: var(--text); font-size: 13.5px;">Generación de Hoja de Despacho A4 (Control Interno)</strong>
                         <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0 0; line-height: 1.45;">
-                            Al tocar "Generar Envío y Hoja de Despacho", se crea un documento de control con código de barras, bultos y chofer para tu depósito. <strong>Mercado Libre NO recibe ninguna orden en esta etapa.</strong> Tu cuenta queda intacta. En EnvioBot, estos artículos se marcan como <em>"En Tránsito"</em> para pausar las alarmas de quiebre.
+                            Al tocar "Generar envío y hoja de despacho", se crea un documento de control con código de barras, unidades y chofer para tu depósito. <strong>Mercado Libre NO recibe ninguna orden en esta etapa.</strong> Tu cuenta queda intacta. En EnvioBot, estos artículos se marcan como <em>"En Tránsito"</em> para pausar las alarmas de quiebre.
                         </p>
                     </div>
                 </div>
@@ -1131,7 +1085,7 @@
                     <div>
                         <strong style="color: var(--text); font-size: 13.5px;">Presentación en Mercado Libre (Vos tenés el control total)</strong>
                         <p style="font-size: 12px; color: var(--text2); margin: 4px 0 0 0; line-height: 1.45;">
-                            Con la hoja de despacho impresa: el chofer viaja con el documento de control de bultos. Si vas a pedir colecta oficial a MeLi, cargás las cajas calculadas en la sección oficial de MeLi cuando vos lo decidas. Nada se ejecuta en MeLi sin tu clic explícito.
+                            Con la hoja de despacho impresa: el chofer viaja con el documento de control. Si vas a pedir colecta oficial a MeLi, cargás las unidades calculadas en la sección oficial de MeLi cuando vos lo decidas. Nada se ejecuta en MeLi sin tu clic explícito.
                         </p>
                     </div>
                 </div>
@@ -1349,7 +1303,7 @@
                                         <input type="number" id="cfgLeadTime" class="input-days-2digit" value="5" min="0" max="99" oninput="if(this.value.length>2) this.value=this.value.slice(0,2);" required>
                                         <span style="color: var(--text2); font-size: 12px; font-weight: 600;">días</span>
                                     </div>
-                                    <small>Días que necesitás para fabricar, empaquetar y rotular los bultos antes del flete.</small>
+                                    <small>Días que necesitás para fabricar, preparar la mercadería antes del flete.</small>
                                 </div>
                                 <div class="form-group">
                                     <label>Colchón de seguridad general (Buffer)</label>
@@ -1357,7 +1311,7 @@
                                         <input type="number" id="cfgSafetyStock" class="input-days-2digit" value="2" min="0" max="99" oninput="if(this.value.length>2) this.value=this.value.slice(0,2);" required>
                                         <span style="color: var(--text2); font-size: 12px; font-weight: 600;">días</span>
                                     </div>
-                                    <small>Días de margen por si el camión se atrasa o MeLi demora en recepcionar los bultos.</small>
+                                    <small>Días de margen por si el camión se atrasa o MeLi demora en recepcionar la mercadería.</small>
                                 </div>
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
@@ -1990,6 +1944,6 @@
     <script src="js/teclado-formularios.js?v=20261017_2"></script>
     <script src="js/theme.js?v=20261013_4"></script>
     <script src="js/notifications.js?v=20261013_4"></script>
-    <script src="js/app.js?v=20261020_2"></script>
+    <script src="js/app.js?v=20261020_3"></script>
 </body>
 </html>

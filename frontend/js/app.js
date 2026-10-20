@@ -2140,7 +2140,7 @@ function renderizarPanelColecta() {
         htmlHacer = hacer.slice(0, maxFilas).map(({ it, urgente }) => filaConBarra(it, {
             icono: iconoSvg(urgente ? 'alerta' : 'reloj', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
             derecha: it.sugerido_al_ingreso > 0
-                ? (colAbierta ? `Agregar ${escapeHtml(it.sugerido_al_ingreso)} u. a la colecta del ${escapeHtml(formatearFechaCorta(colAbierta.fecha_retiro))}` : `Mandar ${escapeHtml(it.sugerido_al_ingreso)} u. en la próxima colecta`)
+                ? (colAbierta ? `Agregar ${escapeHtml(it.sugerido_al_ingreso)} u. a la colecta del ${escapeHtml(formatearFechaCorta(colAbierta.fecha_retiro))} <button type="button" class="pc-btn-sumar" onclick="event.stopPropagation(); sumarAColectaAbierta(${Number(it.id)})">Agregar</button>` : `Mandar ${escapeHtml(it.sugerido_al_ingreso)} u. en la próxima colecta`)
                 : 'Revisar',
             dias: it.current_stock > 0 ? it.days_left : 0,
             claseBarra: urgente ? 'pc-fill-danger' : 'pc-fill-warn',
@@ -3154,7 +3154,7 @@ function toggleColectaFullscreen() {
     card.classList.toggle('modal-fullscreen');
     const isFull = card.classList.contains('modal-fullscreen');
 
-    if (btnText) btnText.textContent = isFull ? 'Ventana Normal' : 'Pantalla Completa';
+    if (btnText) btnText.textContent = isFull ? 'Ventana normal' : 'Pantalla completa';
     if (iconExp && iconComp) {
         iconExp.style.display = isFull ? 'none' : 'inline-block';
         iconComp.style.display = isFull ? 'inline-block' : 'none';
@@ -3169,7 +3169,8 @@ function toggleResumenColecta() {
     const isHidden = sec.style.display === 'none';
     sec.style.display = isHidden ? 'block' : 'none';
     if (btn) {
-        btn.textContent = isHidden ? 'Plegar Resumen' : 'Mostrar Resumen';
+        btn.textContent = isHidden ? 'Menos información' : 'Más información';
+        btn.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
     }
 }
 
@@ -3412,26 +3413,6 @@ function cambiarUnidadesColecta(id, val) {
     actualizarTotalColecta();
 }
 
-function cambiarUnidadesPorCajaColecta(id, val) {
-    const cant = Math.max(0, parseInt(val, 10) || 0);
-    colectaBoxUnits.set(id, cant);
-
-    // Actualizar en memoria y persistir en base de datos
-    const it = itemsData.find(x => x.id === id);
-    if (it) it.units_per_box = cant;
-
-    const token = getToken();
-    if (token) {
-        fetch(`${API_BASE}/full/items/${id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify({ units_per_box: cant })
-        }).catch(e => console.warn("Aviso guardando units_per_box:", e));
-    }
-
-    actualizarTotalColecta();
-}
-
 function renderizarFilasColecta(highlightItemId = null) {
     const tbody = document.getElementById('colectaTableBody');
     if (!tbody) return;
@@ -3475,8 +3456,6 @@ function renderizarFilasColecta(highlightItemId = null) {
         const isSelected = colectaSelectedItems.has(it.id);
         let suggested = calcularSugeridoColectaItem(it, daysFactor);
         const unitsToSend = colectaSelectedItems.get(it.id) !== undefined ? colectaSelectedItems.get(it.id) : suggested;
-        const unitsPerBox = colectaBoxUnits.get(it.id) !== undefined ? colectaBoxUnits.get(it.id) : (it.units_per_box || 0);
-        const boxesEst = unitsPerBox > 0 ? Math.ceil(unitsToSend / unitsPerBox) : (unitsToSend > 0 ? 1 : 0);
 
         // Canales badges
         let channelBadges = '';
@@ -3520,7 +3499,7 @@ function renderizarFilasColecta(highlightItemId = null) {
                     ${thumbImg}
                     <div style="min-width: 0;">
                         <div style="display: flex; align-items: center; gap: 4px;">
-                            <strong style="color: var(--text); font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 380px;">${it.title}</strong>
+                            <strong style="color: var(--text); font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px;">${it.title}</strong>
                             ${urgenciaBadge}
                         </div>
                         <div style="font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; margin-top: 2px;">
@@ -3547,17 +3526,6 @@ function renderizarFilasColecta(highlightItemId = null) {
                        onchange="cambiarUnidadesColecta(${it.id}, this.value)"
                        style="width: 75px; text-align: center; font-weight: 700; ${isSelected && unitsToSend > 0 ? 'border-color: var(--accent);' : ''}">
             </td>
-            <td style="text-align: center; vertical-align: middle;">
-                <input type="number" min="0" class="unit-input-colecta" 
-                       value="${unitsPerBox}" 
-                       placeholder="0"
-                       title="Unidades por caja máster (0 para caja mixta)"
-                       onchange="cambiarUnidadesPorCajaColecta(${it.id}, this.value)"
-                       style="width: 65px; text-align: center; font-size: 12px;">
-            </td>
-            <td style="text-align: center; vertical-align: middle; font-weight: 700; color: #64b5f6;" id="rowBoxes_${it.id}">
-                ${boxesEst} cj.
-            </td>
         `;
         tbody.appendChild(tr);
     });
@@ -3577,28 +3545,19 @@ function renderizarFilasColecta(highlightItemId = null) {
 function actualizarTotalColecta() {
     let totalUnits = 0;
     let totalSkus = 0;
-    let totalBoxes = 0;
 
-    colectaSelectedItems.forEach((units, id) => {
+    colectaSelectedItems.forEach((units) => {
         if (units > 0) {
             totalUnits += units;
             totalSkus += 1;
-            const unitsPerBox = colectaBoxUnits.get(id) || 0;
-            const boxes = unitsPerBox > 0 ? Math.ceil(units / unitsPerBox) : 1;
-            totalBoxes += boxes;
-
-            const rowBoxEl = document.getElementById(`rowBoxes_${id}`);
-            if (rowBoxEl) rowBoxEl.textContent = `${boxes} cj.`;
         }
     });
 
     const skusEl = document.getElementById('colectaTotalSkus');
     const unitsEl = document.getElementById('colectaTotalUnits');
-    const boxesEl = document.getElementById('colectaTotalBoxes');
 
     if (skusEl) skusEl.textContent = totalSkus;
     if (unitsEl) unitsEl.textContent = `${totalUnits} un.`;
-    if (boxesEl) boxesEl.textContent = `${totalBoxes} cajas`;
 }
 
 function copiarListaColecta() {
@@ -3608,23 +3567,19 @@ function copiarListaColecta() {
     texto += `================================================\n`;
 
     let totalUnits = 0;
-    let totalBoxes = 0;
     itemsData.forEach(it => {
         if (colectaSelectedItems.has(it.id)) {
             const units = colectaSelectedItems.get(it.id) || 0;
             if (units > 0) {
-                const uBox = colectaBoxUnits.get(it.id) || 0;
-                const boxes = uBox > 0 ? Math.ceil(units / uBox) : 1;
                 totalUnits += units;
-                totalBoxes += boxes;
                 texto += `• [SKU: ${it.sku || it.item_id}] ${it.title}\n`;
-                texto += `  Cant: ${units} un. | Cajas: ${boxes} (${uBox > 0 ? `${uBox} un/cj` : 'Bulto mixto'})\n`;
+                texto += `  Cant: ${units} un.\n`;
             }
         }
     });
 
     texto += `================================================\n`;
-    texto += `TOTAL: ${totalUnits} unidades en ${totalBoxes} bultos\n`;
+    texto += `TOTAL: ${totalUnits} unidades\n`;
 
     navigator.clipboard.writeText(texto).then(() => {
         showToast("Lista de colecta copiada al portapapeles.", "success");
@@ -3635,15 +3590,13 @@ function copiarListaColecta() {
 
 function exportarColectaCSV() {
     const wh = (WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full).name;
-    let csv = `\uFEFFDestino,SKU,Item ID,Inventory ID,Titulo,Stock Actual Full,VPD,Unidades Despachar,Unidades x Caja,Cajas Estimadas\n`;
+    let csv = `\uFEFFDestino,SKU,Item ID,Inventory ID,Titulo,Stock Actual Full,VPD,Unidades Despachar\n`;
 
     itemsData.forEach(it => {
         if (colectaSelectedItems.has(it.id)) {
             const units = colectaSelectedItems.get(it.id) || 0;
             if (units > 0) {
-                const uBox = colectaBoxUnits.get(it.id) || 0;
-                const boxes = uBox > 0 ? Math.ceil(units / uBox) : 1;
-                csv += `"${wh}","${it.sku || ''}","${it.item_id}","${it.inventory_id || ''}","${(it.title || '').replace(/"/g, '""')}",${it.current_stock},${it.vpd},${units},${uBox},${boxes}\n`;
+                csv += `"${wh}","${it.sku || ''}","${it.item_id}","${it.inventory_id || ''}","${(it.title || '').replace(/"/g, '""')}",${it.current_stock},${it.vpd},${units}\n`;
             }
         }
     });
@@ -3729,8 +3682,6 @@ async function crearEnvioInboundBackend() {
         if (colectaSelectedItems.has(it.id)) {
             const units = colectaSelectedItems.get(it.id) || 0;
             if (units > 0) {
-                const unitsPerBox = colectaBoxUnits.get(it.id) || 0;
-                const boxCount = unitsPerBox > 0 ? Math.ceil(units / unitsPerBox) : 1;
                 itemsToSend.push({
                     item_id: it.item_id,
                     inventory_id: it.inventory_id,
@@ -3742,8 +3693,8 @@ async function crearEnvioInboundBackend() {
                     vpd: it.vpd,
                     suggested_units: Math.round(it.vpd * 30),
                     units_to_send: units,
-                    units_per_box: unitsPerBox,
-                    box_count: boxCount
+                    units_per_box: 0,
+                    box_count: 0
                 });
             }
         }
@@ -3754,7 +3705,7 @@ async function crearEnvioInboundBackend() {
         target_coverage_days: parseInt(document.getElementById('colectaDiasSelect')?.value, 10) || 30,
         lead_time_days: parseInt(document.getElementById('cfgLeadTime')?.value, 10) || 2,
         transit_days: (WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full).defaultTransit || 3,
-        packaging_type: document.getElementById('colectaPackagingSelect')?.value || 'cajas_master',
+        packaging_type: 'unidades',
         carrier_notes: document.getElementById('colectaCarrierNotes')?.value || '',
         pickup_date: document.getElementById('colectaFechaRetiroInput')?.value || null,
         items: itemsToSend
@@ -3782,7 +3733,7 @@ async function crearEnvioInboundBackend() {
         }
 
         const shipment = data.shipment;
-        showToast(`Colecta ${shipment.shipment_code} creada con éxito: ${shipment.total_units} unidades en ${shipment.total_boxes} bultos hacia Villa Celina.`, 'success');
+        showToast(`Colecta ${shipment.shipment_code} creada con éxito: ${shipment.total_units} unidades hacia Villa Celina.`, 'success');
 
         // Abrir Hoja de Despacho en pestaña nueva para imprimir (autenticado)
         abrirRemitoOficial(shipment.id);
@@ -4133,7 +4084,6 @@ async function cargarHistorialColectas(soloBadge = false) {
                         <div style="display: flex; gap: 16px; font-size: 12px; color: var(--text); padding-top: 8px; border-top: 1px dashed var(--border); flex-wrap: wrap;">
                             <div>Total SKUs: <strong>${sh.total_items}</strong></div>
                             <div>Unidades totales: <strong style="color: var(--accent);">${sh.total_units} un.</strong></div>
-                            <div>Bultos: <strong>${sh.total_boxes} cajas</strong> (${sh.packaging_type})</div>
                             ${sh.carrier_notes ? `<div>Obs: <em>${sh.carrier_notes}</em></div>` : ''}
                         </div>
 
@@ -4217,8 +4167,6 @@ async function toggleDetalleArticulosHistorial(shipmentId) {
                             <th style="padding: 4px 8px; text-align: center;">Stock Full</th>
                             <th style="padding: 4px 8px; text-align: center;">VPD</th>
                             <th style="padding: 4px 8px; text-align: center;">Unidades</th>
-                            <th style="padding: 4px 8px; text-align: center;">Unid./Caja</th>
-                            <th style="padding: 4px 8px; text-align: center;">Bultos</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -4229,8 +4177,6 @@ async function toggleDetalleArticulosHistorial(shipmentId) {
                                 <td style="padding: 6px 8px; text-align: center;">${it.current_full_stock}</td>
                                 <td style="padding: 6px 8px; text-align: center;">${it.vpd}</td>
                                 <td style="padding: 6px 8px; text-align: center; font-weight: 700; color: var(--accent);">${it.units_to_send}</td>
-                                <td style="padding: 6px 8px; text-align: center;">${it.units_per_box || '-'}</td>
-                                <td style="padding: 6px 8px; text-align: center; font-weight: 700; color: var(--good);">${it.box_count}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -4311,7 +4257,7 @@ function aplicarModoCerradoEdicion() {
     if (sub) {
         sub.textContent = edicionCerrada
             ? 'Esta colecta ya no se puede modificar. Podés ver lo que se mandó.'
-            : 'Modificá fecha de retiro, agregá o quitá artículos, y ajustá cantidades o unidades por bulto antes de enviar a Villa Celina.';
+            : 'Modificá fecha de retiro, agregá o quitá artículos, y ajustá las cantidades antes de enviar a Villa Celina.';
     }
     ['editarEnvioFechaRetiro', 'editarEnvioPackaging', 'editarEnvioNotas'].forEach(id => {
         const el = document.getElementById(id);
@@ -4404,11 +4350,6 @@ async function abrirModalEditarEnvio(shipmentId) {
             fechaInput.value = sh.pickup_date ? String(sh.pickup_date).split('T')[0] : '';
         }
 
-        const packSelect = document.getElementById('editarEnvioPackaging');
-        if (packSelect) {
-            packSelect.value = sh.packaging_type || 'cajas_master';
-        }
-
         const notasInput = document.getElementById('editarEnvioNotas');
         if (notasInput) {
             notasInput.value = sh.carrier_notes || '';
@@ -4481,7 +4422,7 @@ function verificarAlertasStockEdicion() {
             + criticosFuera.slice(0, 8).map(it => {
                 const vpd = parseFloat(it.vpd) || 0;
                 const stock = parseInt(it.current_stock, 10) || 0;
-                const sug = Math.max(1, Math.ceil((25 * vpd) - stock));
+                const sug = unidadesASumarEnEdicion(it);
                 const skuStr = it.sku ? `SKU: ${it.sku}` : 'Sin SKU';
                 return `<div style="background: var(--surf2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;">
                     <div style="font-weight: 700; color: var(--text); font-size: 12px;">${it.title}</div>
@@ -4502,11 +4443,10 @@ function verificarAlertasStockEdicion() {
     }
 
     alertBox.style.display = 'block';
-    listContainer.innerHTML = criticosFuera.slice(0, 5).map(it => {
+    listContainer.innerHTML = criticosFuera.slice(0, 8).map(it => {
         const vpd = parseFloat(it.vpd) || 0;
         const stock = parseInt(it.current_stock, 10) || 0;
-        let sug = Math.max(1, Math.ceil((25 * vpd) - stock));
-        if (sug <= 0) sug = Math.max(1, Math.round(vpd * 25) || 5);
+        const sug = unidadesASumarEnEdicion(it);
         const skuStr = it.sku ? `SKU: ${it.sku}` : 'Sin SKU';
 
         return `
@@ -4530,14 +4470,38 @@ function verificarAlertasStockEdicion() {
 }
 window.verificarAlertasStockEdicion = verificarAlertasStockEdicion;
 
+// Unidades a sumar a una colecta: las mismas que muestra el panel ("Agregar N u. a la colecta"). Si el panel no
+// tiene sugerencia para ese producto, la cuenta de siempre (25 días de ritmo menos el stock).
+function unidadesASumarEnEdicion(it) {
+    if ((it.sugerido_al_ingreso || 0) > 0) return Math.round(it.sugerido_al_ingreso);
+    const vpd = parseFloat(it.vpd) || 0;
+    const stock = parseInt(it.current_stock, 10) || 0;
+    return Math.max(1, Math.ceil((25 * vpd) - stock), Math.round(vpd * 25) || 5);
+}
+
+// Botón "Agregar" de una fila del panel: abre la colecta que sigue abierta con el producto ya sumado.
+// No guarda nada solo: queda para revisar y apretar Guardar.
+async function sumarAColectaAbierta(itemId) {
+    const col = colectaAbiertaVigente();
+    const it = itemsData.find(x => x.id === itemId);
+    if (!col || !it) return;
+    await abrirModalEditarEnvio(col.id);
+    if (edicionCerrada) { showToast('Esa colecta ya cerró: no se puede cambiar.', 'error'); return; }
+    if (itemsEnEdicion.some(x => String(x.item_id) === String(it.item_id || it.id))) {
+        showToast('Ese producto ya está en la colecta: ajustá las unidades.', 'info');
+        return;
+    }
+    agregarItemCriticoAEdicion(it.id, unidadesASumarEnEdicion(it));
+    showToast('Revisá las unidades y apretá Guardar para confirmar.', 'info');
+}
+window.sumarAColectaAbierta = sumarAColectaAbierta;
+
 function agregarItemCriticoAEdicion(itemId, sugUnits) {
     if (edicionCerrada) return;
     const it = itemsData.find(x => x.id === itemId);
     if (!it) return;
 
-    const upb = (it.units_per_box && it.units_per_box > 0) ? it.units_per_box : 0;
-    const unitsToSend = Math.max(1, sugUnits || upb || 10);
-    const boxCount = upb > 0 ? Math.ceil(unitsToSend / upb) : 1;
+    const unitsToSend = Math.max(1, sugUnits || 10);
 
     itemsEnEdicion.push({
         id: null,
@@ -4551,8 +4515,8 @@ function agregarItemCriticoAEdicion(itemId, sugUnits) {
         vpd: parseFloat(it.vpd) || 0,
         suggested_units: unitsToSend,
         units_to_send: unitsToSend,
-        units_per_box: upb,
-        box_count: boxCount
+        units_per_box: 0,
+        box_count: 0
     });
 
     renderizarItemsEdicion();
@@ -4755,9 +4719,7 @@ function agregarItemAEdicion(itemId) {
     const it = itemsData.find(x => x.id === itemId);
     if (!it) return;
 
-    const upb = (it.units_per_box && it.units_per_box > 0) ? it.units_per_box : 0;
-    const unitsToSend = upb > 0 ? upb : 10;
-    const boxCount = upb > 0 ? Math.ceil(unitsToSend / upb) : 1;
+    const unitsToSend = 10;
 
     itemsEnEdicion.push({
         id: null,
@@ -4771,8 +4733,8 @@ function agregarItemAEdicion(itemId) {
         vpd: parseFloat(it.vpd) || 0,
         suggested_units: parseInt(it.suggested_units, 10) || 0,
         units_to_send: unitsToSend,
-        units_per_box: upb,
-        box_count: boxCount
+        units_per_box: 0,
+        box_count: 0
     });
 
     const searchInput = document.getElementById('editarEnvioBuscarInput');
@@ -4802,7 +4764,7 @@ async function guardarEdicionEnvio() {
     }
 
     const fechaRetiro = document.getElementById('editarEnvioFechaRetiro')?.value || null;
-    const packagingType = document.getElementById('editarEnvioPackaging')?.value || 'cajas_master';
+    const packagingType = 'unidades';
     const carrierNotes = (document.getElementById('editarEnvioNotas')?.value || '').trim();
 
     const payload = {
@@ -4820,8 +4782,8 @@ async function guardarEdicionEnvio() {
             vpd: it.vpd,
             suggested_units: it.suggested_units,
             units_to_send: it.units_to_send,
-            units_per_box: it.units_per_box,
-            box_count: it.box_count
+            units_per_box: 0,
+            box_count: 0
         }))
     };
 

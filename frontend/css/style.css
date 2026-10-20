@@ -2029,3 +2029,23 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
     .pc-fila-top { flex-wrap: wrap; }
     .pc-fila-top > .pc-accion, .pc-fila-top > .pc-info { white-space: normal; text-align: left; padding-left: 26px; }
 }
+
+/* ── Armar colecta (2026-10-20): una sola barra arriba y la lista de productos con todo el alto ── */
+.colecta-barra { gap: 10px 22px; padding: 8px 14px; margin-bottom: 8px; }
+.colecta-totales { display: flex; align-items: baseline; gap: 8px; font-size: 13px; color: var(--text2); }
+.colecta-total-num { font-size: 18px; font-weight: 800; color: var(--text); }
+.colecta-total-acento { color: var(--accent); }
+.colecta-total-sep { color: var(--border-hover); }
+.colecta-barra-campo { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text2); }
+.colecta-barra-campo label { font-weight: 600; }
+.colecta-mas { margin-left: auto; }
+.colecta-info-seguro { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 8px 12px; margin-bottom: 8px; font-size: 12px; line-height: 1.4; color: var(--text); }
+.colecta-info-seguro > div { flex: 1; min-width: 240px; }
+.colecta-lista { flex: 1 1 auto; min-height: 260px; }
+.colecta-lista .colecta-table td { padding: 8px 10px; }
+
+/* Botón "Agregar" de las filas de Qué hacer hoy: suma el producto a la colecta abierta. */
+.pc-btn-sumar { margin-left: 8px; padding: 3px 10px; border-radius: 6px; border: 1.5px solid var(--accent); background: transparent; color: var(--accent-text, var(--accent)); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.pc-btn-sumar:hover { background: var(--accent); color: var(--bg); }
+.colecta-totales span, .colecta-mas, .colecta-barra-campo { white-space: nowrap; }
+.colecta-totales { flex-wrap: nowrap; }

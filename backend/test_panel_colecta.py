@@ -970,3 +970,26 @@ class TestPanelEstatico(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestSumarACoLectaAbierta(unittest.TestCase):
+    """Pedido de Guillermo (2026-10-20): agregar a una colecta ya cargada los productos que el panel sugiere, con el mismo número."""
+
+    def _js(self):
+        return _leer(os.path.join('js', 'app.js'))
+
+    def test_la_ventana_de_edicion_usa_la_misma_sugerencia_que_el_panel(self):
+        js = self._js()
+        cuerpo = js[js.index('function verificarAlertasStockEdicion'):js.index('window.verificarAlertasStockEdicion')]
+        self.assertIn('unidadesASumarEnEdicion(it)', cuerpo)
+        self.assertNotIn('25 * vpd', cuerpo)   # la fórmula vieja ya no está duplicada ahí
+        helper = js[js.index('function unidadesASumarEnEdicion'):js.index('async function sumarAColectaAbierta')]
+        self.assertIn('sugerido_al_ingreso', helper)
+
+    def test_cada_fila_con_colecta_abierta_tiene_su_boton_agregar(self):
+        js = self._js()
+        self.assertIn('sumarAColectaAbierta(${Number(it.id)})', js)
+        # No guarda solo: abre la edición y deja el producto sumado para confirmar con Guardar.
+        cuerpo = js[js.index('async function sumarAColectaAbierta'):js.index('window.sumarAColectaAbierta')]
+        self.assertIn('abrirModalEditarEnvio(col.id)', cuerpo)
+        self.assertNotIn('method:', cuerpo)
