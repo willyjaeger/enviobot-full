@@ -2128,6 +2128,22 @@ def guardar_horario_destinatario(recipient_id):
 _RE_EMAIL = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
 
 
+@app.route("/api/full/inbound/planilla-ml", methods=["POST"])
+@jwt_required()
+@_equipo.requiere_rol('operator')
+def planilla_ml_envio_full():
+    """Planilla de Excel de Mercado Libre ("Planificar desde Excel") completa con los productos de la colecta armada.
+    No guarda nada: recibe [{sku, inventory_id, unidades}] y devuelve el .xlsx."""
+    import planilla_ml
+    productos = (request.get_json(silent=True) or {}).get("productos") or []
+    try:
+        datos = planilla_ml.generar(productos)
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    return Response(datos, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{planilla_ml.NOMBRE_ARCHIVO}"'})
+
+
 @app.route("/api/full/ml/notificaciones", methods=["POST"])
 def notificaciones_ml():
     """Receptor de las notificaciones de ML (tema fbm_stock_operations). Pública: la llama Mercado Libre.

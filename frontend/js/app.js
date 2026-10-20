@@ -3658,6 +3658,44 @@ function exportarColectaCSV() {
     document.body.removeChild(link);
 }
 
+// Planilla de Excel de Mercado Libre ("Planificar desde Excel") completa con lo que se armó acá.
+// Mercado Libre no permite crear el envío por API: se sube esta planilla en su pantalla de carga.
+async function descargarPlanillaML() {
+    const productos = [];
+    itemsData.forEach(it => {
+        const units = colectaSelectedItems.get(it.id) || 0;
+        if (units > 0) productos.push({ sku: it.sku || '', inventory_id: it.inventory_id || '', unidades: units });
+    });
+    if (productos.length === 0) {
+        showToast('Elegí al menos un producto con unidades para armar la planilla.', 'error');
+        return;
+    }
+    try {
+        const resp = await fetch(`${API_BASE}/full/inbound/planilla-ml`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+            body: JSON.stringify({ productos })
+        });
+        if (!resp.ok) {
+            let msg = 'No se pudo armar la planilla.';
+            try { msg = (await resp.json()).error || msg; } catch (e) { /* respuesta sin cuerpo */ }
+            showToast(msg, 'error');
+            return;
+        }
+        const url = URL.createObjectURL(await resp.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `Envio-de-stock-Full-${new Date().toISOString().split('T')[0]}.xlsx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast(`Planilla lista con ${productos.length} ${productos.length === 1 ? 'producto' : 'productos'}. Subila en Mercado Libre.`, 'success');
+    } catch (e) {
+        showToast('Error de conexión. Probá de nuevo.', 'error');
+    }
+}
+
 // ── Confirmar y Despachar Envío a Backend (Etapa 2) ───────────────────
 async function confirmarDespachoColecta() {
     let totalUnits = 0;
