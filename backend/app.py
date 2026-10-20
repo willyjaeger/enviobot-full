@@ -1732,8 +1732,20 @@ def get_full_items():
             por_col = {}
             for r in cur.fetchall():
                 por_col.setdefault(r["shipment_id"], []).append(r)
-            colectas = [_proy.armar_colecta(f, por_col.get(f["id"], []), hora=hora_limite)
-                        for f in filas_col if f.get("pickup_date")]
+            # Lo que Mercado Libre ya recibió y está procesando, por SKU: dice si una colecta ya llegó.
+            en_proceso_sku = {}
+            for ci in consolidated.values():
+                k = (ci.get("sku") or "").strip().upper()
+                if k:
+                    en_proceso_sku[k] = en_proceso_sku.get(k, 0) + int(ci.get("in_process_stock") or 0)
+            colectas = []
+            for f in filas_col:
+                if not f.get("pickup_date"):
+                    continue
+                prods = por_col.get(f["id"], [])
+                en_proceso = sum(min(en_proceso_sku.get((p.get("sku") or "").strip().upper(), 0),
+                                     int(p.get("units_to_send") or 0)) for p in prods)
+                colectas.append(_proy.armar_colecta(f, prods, hora=hora_limite, en_proceso=en_proceso))
 
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()

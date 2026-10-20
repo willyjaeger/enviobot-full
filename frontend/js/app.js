@@ -870,10 +870,11 @@ function tarjetaEstadoGeneral(g, total) {
 }
 
 // Los cuatro pasos de una colecta. Una cargada desde Mercado Libre (código ML-...) ya está en el paso 2.
-function pasosColecta(codigo) {
+function pasosColecta(codigo, etapa) {
     const armadaEnMl = String(codigo || '').indexOf('ML-') === 0;
     const pasos = ['Propuesta', 'Armada en ML', 'Retirada', 'Recibida'];
-    const actual = armadaEnMl ? 1 : 0;
+    const porEtapa = { propuesta: 0, armada: 1, retirada: 2, recibida: 3 };
+    const actual = porEtapa[etapa] !== undefined ? porEtapa[etapa] : (armadaEnMl ? 1 : 0);
     return '<ol class="pc-pasos">' + pasos.map(function (nombre, i) {
         const clase = i < actual ? 'pc-paso-hecho' : (i === actual ? 'pc-paso-actual' : '');
         return '<li class="' + clase + '">' + escapeHtml(nombre) + '</li>';
@@ -1982,7 +1983,13 @@ function tarjetaDeColecta(c) {
     const ms = programada ? new Date(c.limite_edicion).getTime() - Date.now() : 0;
     const clase = !programada ? '' : (!resto ? 'pc-cerrada' : (ms <= 3600000 ? 'pc-urgente' : ''));
     const lim = textoLimiteEdicion(c.limite_edicion);
-    const estado = !programada ? 'Ya salió: está en camino a Full.'
+    const enProceso = Number(c.unidades_en_proceso || 0);
+    const recibida = c.etapa === 'recibida';
+    const estado = recibida
+        ? (enProceso > 0
+            ? `Mercado Libre ya la recibió y la está procesando. Todavía faltan poner a la venta ${enProceso.toLocaleString('es-AR')} unidades.`
+            : 'Mercado Libre ya la recibió.')
+        : !programada ? 'Ya salió: está en camino a Full.'
         : (resto ? `Podés modificarla hasta el ${escapeHtml(lim)} (faltan ${escapeHtml(resto)}).`
                  : `Ya no se puede cambiar: cerró el ${escapeHtml(lim)}.`);
     const prods = c.productos || [];
@@ -1996,8 +2003,8 @@ function tarjetaDeColecta(c) {
         <span class="pc-banner-icon">${iconoSvg('camion', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">Colecta del ${escapeHtml(nombreDiaColecta(c.fecha_retiro))} <span class="pc-sku-inline">${escapeHtml(c.codigo)}</span></div>
-            <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado} Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))}.${c.de_ml ? '' : ' Falta cargarla en Mercado Libre.'}</div>
-            ${pasosColecta(c.codigo)}
+            <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado}${recibida ? '' : ` Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))}.`}${c.de_ml ? '' : ' Falta cargarla en Mercado Libre.'}</div>
+            ${pasosColecta(c.codigo, c.etapa)}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${boton}${botonesMlColecta(c.id, c.codigo)}</div>
         ${detalle}

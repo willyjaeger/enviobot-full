@@ -279,5 +279,28 @@ class TestPausaPorQuiebre(unittest.TestCase):
         self.assertFalse(p.pausa_por_quiebre([self._ch('paused', 'out_of_stock')], 5))
 
 
+
+class TestEtapaColecta(unittest.TestCase):
+    def test_sin_salir_es_propuesta_o_armada_segun_el_codigo(self):
+        self.assertEqual(p.etapa_colecta('COL-FULL-1', 'scheduled'), 'propuesta')
+        self.assertEqual(p.etapa_colecta('ML-78889570', 'scheduled'), 'armada')
+
+    def test_en_transito_es_retirada(self):
+        self.assertEqual(p.etapa_colecta('ML-1', 'in_transit', 0), 'retirada')
+
+    def test_en_transito_con_unidades_en_proceso_es_recibida(self):
+        self.assertEqual(p.etapa_colecta('ML-1', 'in_transit', 57), 'recibida')
+
+    def test_sin_salir_nunca_es_recibida_aunque_haya_stock_en_proceso(self):
+        # ese stock puede ser de una colecta anterior con los mismos productos
+        self.assertEqual(p.etapa_colecta('ML-2', 'scheduled', 500), 'armada')
+
+    def test_armar_colecta_acota_lo_en_proceso_a_lo_enviado(self):
+        fila = dict(TestArmarColecta.FILA, status='in_transit', shipment_code='ML-78889570')
+        c = p.armar_colecta(fila, TestArmarColecta.PROD, en_proceso=10**6)
+        self.assertEqual(c['etapa'], 'recibida')
+        self.assertEqual(c['unidades_en_proceso'], c['total_unidades'])
+        self.assertEqual(p.armar_colecta(dict(fila, status='scheduled'), TestArmarColecta.PROD, en_proceso=5)['unidades_en_proceso'], 0)
+
 if __name__ == '__main__':
     unittest.main()

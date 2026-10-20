@@ -263,6 +263,23 @@ process.stdout.write(tip.innerHTML);
         self.assertIn('https://vendedores.mercadolibre.com.ar/shipping/inbounds"', propia)
         self.assertIn('Gestión Full en ML ↗', propia)
 
+    def test_tarjeta_de_colecta_recibida_lo_dice_simple_y_marca_el_paso(self):
+        it = _item(in_preparation_stock=10, total_incoming=10, cobertura_post_colecta=20)
+        col = {'id': 3, 'codigo': 'ML-78889570', 'estado': 'in_transit', 'etapa': 'recibida', 'unidades_en_proceso': 57,
+               'fecha_retiro': '2026-10-19', 'fecha_ingreso': '2026-10-22', 'limite_edicion': '2020-10-16T09:44:00-03:00',
+               'abierta': False, 'de_ml': True, 'total_unidades': 785, 'productos': []}
+        html = self._correr([it], None, [col])['html']
+        self.assertIn('pc-paso-actual">Recibida', html)
+        self.assertIn('Mercado Libre ya la recibió y la está procesando', html)
+        self.assertIn('faltan poner a la venta 57 unidades', html)
+        self.assertNotIn('Entra a Full el', html)
+        self.assertNotIn('está en camino', html)
+        en_camino = dict(col, etapa='retirada', unidades_en_proceso=0)
+        html = self._correr([it], None, [en_camino])['html']
+        self.assertIn('pc-paso-actual">Retirada', html)
+        self.assertIn('Ya salió: está en camino a Full.', html)
+        self.assertIn('Entra a Full el', html)
+
     def test_comparar_con_la_propuesta(self):
         harness = (
             "const vm=require('vm');const ctx={document:{getElementById:()=>null},setInterval:()=>1,Date,Math,String,console};"

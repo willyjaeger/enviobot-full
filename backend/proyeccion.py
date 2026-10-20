@@ -145,9 +145,25 @@ def bloqueada_por_ml(codigo, fecha_retiro, ahora=None, hora=None):
     return not cuenta_regresiva(fecha_retiro, ahora=ahora, hora=hora)["abierta"]
 
 
-def armar_colecta(fila, productos, hora=None, ahora=None):
+def etapa_colecta(codigo, estado, en_proceso=0):
+    """En cuál de los cuatro pasos está la colecta: 'propuesta', 'armada', 'retirada' o 'recibida'.
+
+    Se deduce de lo que ya sabemos, sin adivinar: una colecta cargada desde Mercado Libre (ML-...) está al menos
+    armada; si ya salió (en tránsito) está retirada; y si Mercado Libre ya tiene en proceso unidades de esa colecta
+    (`en_proceso`, lo no disponible en Full) es que la recibió. Una colecta que todavía no salió nunca pasa a recibida:
+    ese stock en proceso puede ser de otra colecta anterior con los mismos productos."""
+    estado = estado or "scheduled"
+    if estado == "delivered":
+        return "recibida"
+    if estado == "in_transit":
+        return "recibida" if int(en_proceso or 0) > 0 else "retirada"
+    return "armada" if str(codigo or "").startswith("ML-") else "propuesta"
+
+
+def armar_colecta(fila, productos, hora=None, ahora=None, en_proceso=0):
     """Una colecta lista para mostrar: estado, fechas (retiro, límite de edición, ingreso a Full) y sus productos.
-    `fila` es el registro de inbound_shipments; `productos`, sus renglones (title, sku, units_to_send)."""
+    `fila` es el registro de inbound_shipments; `productos`, sus renglones (title, sku, units_to_send).
+    `en_proceso`: unidades de esta colecta que Mercado Libre ya recibió y todavía está procesando."""
     retiro = fila["pickup_date"]
     estado = fila.get("status") or "scheduled"
     base = cuenta_regresiva(retiro, ahora=ahora, hora=hora)
@@ -155,7 +171,10 @@ def armar_colecta(fila, productos, hora=None, ahora=None):
     if not ingreso:
         ingreso = retiro + timedelta(days=int(fila.get("transit_days") or 3))
     unidades = sum(int(p.get("units_to_send") or 0) for p in productos)
+    en_proceso = max(0, min(int(en_proceso or 0), unidades)) if estado == "in_transit" else 0
     return {
+        "etapa": etapa_colecta(fila.get("shipment_code"), estado, en_proceso),
+        "unidades_en_proceso": en_proceso,
         "id": fila.get("id"),
         "codigo": fila.get("shipment_code"),
         "estado": estado,
