@@ -3733,6 +3733,9 @@ def avisar_horario_colecta(shipment_id=None):
                     cur.execute("UPDATE inbound_shipments SET carrier_notes=%s, updated_at=NOW() WHERE id=%s AND user_id=%s",
                                 (nota_nueva[:250], fila_envio["id"], account_id))
 
+            if datos.get("evento") == "retirada":
+                _correo_col.marcar_colecta_retirada([account_id], datos, conn=conn)
+
             cur.execute("SELECT ml_nickname FROM ml_credentials WHERE user_id=%s AND ml_nickname IS NOT NULL ORDER BY id", (account_id,))
             nombres = [r["ml_nickname"] for r in cur.fetchall()]
             cur.execute("SELECT COALESCE(business_name, full_name) AS n FROM users WHERE id=%s", (account_id,))

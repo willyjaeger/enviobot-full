@@ -516,7 +516,64 @@ class TestWhatsAppColecta(unittest.TestCase):
         self.assertEqual((res2["ignorados"], res2["avisados"], enviados2), (1, 0, []))
 
 
+class _ConnRetiro:
+    def __init__(self, fila):
+        self.fila = dict(fila) if fila else None
+        self.updates = []
+        self.cerrada = False
+
+    def cursor(self):
+        return self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        pass
+
+    def execute(self, sql, params=()):
+        self._sql = sql
+        self._params = params
+        if sql.strip().upper().startswith("UPDATE INBOUND_SHIPMENTS"):
+            self.updates.append(params)
+            if self.fila:
+                self.fila["status"] = "in_transit"
+
+    def fetchone(self):
+        if "FROM inbound_shipments" in self._sql:
+            return self.fila
+        return None
+
+    def close(self):
+        self.cerrada = True
+
+
+class TestConfirmacionRetiro(unittest.TestCase):
+    def test_detecta_retiro_y_descarta_negativos_o_futuros(self):
+        self.assertTrue(c.es_confirmacion_retiro("Retiramos tu colecta del envío #78889570 rumbo a Full"))
+        self.assertTrue(c.es_confirmacion_retiro("Ya retiramos tus productos. Están en camino al centro de almacenamiento."))
+        self.assertFalse(c.es_confirmacion_retiro("Pasaremos a retirar tu colecta entre las 16:00 y 18:00 hs"))
+        self.assertFalse(c.es_confirmacion_retiro("No pudimos retirar tu colecta hoy, la reprogramamos"))
+
+    def test_marcar_colecta_retirada_pasa_de_scheduled_a_in_transit_y_arma_mensaje(self):
+        conn = _ConnRetiro({"id": 3, "shipment_code": "ML-78889570", "status": "scheduled"})
+        datos = c.extraer_datos("Asunto: Retiramos tu colecta\nEnvío #78889570 en camino a Full.")
+        self.assertEqual(datos.get("evento"), "retirada")
+        self.assertEqual(datos.get("envio"), "78889570")
+
+        cod = c.marcar_colecta_retirada([45], datos, ahora=LUNES_10, conn=conn)
+        self.assertEqual(cod, "ML-78889570")
+        self.assertEqual(datos.get("colecta_en_transito"), "ML-78889570")
+        self.assertEqual(len(conn.updates), 1)
+        self.assertEqual(conn.updates[0][1], 3)
+
+        msg = c.armar_mensaje("Retiramos tu colecta", "Envío #78889570 retirado.", datos, cuenta="MISTERNUT")
+        self.assertIn("Mercado Libre confirmó que retiraron la colecta de *MISTERNUT*", msg)
+        self.assertIn("Estado en EnvioBot: *ML-78889570* pasó a *En tránsito a Full*", msg)
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 

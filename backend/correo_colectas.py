@@ -149,11 +149,33 @@ _RE_TRANSPORTADORA = re.compile(
     re.I,
 )
 _RE_ENVIO = re.compile(r"Env[ií]o\s*(?:N\.?\s*[º°o]?\s*|#\s*)(\d{6,})", re.I)
+_FRASES_RETIRADA = (
+    "retiramos tu colecta",
+    "retiramos la colecta",
+    "retiramos tu envio",
+    "retiramos tus productos",
+    "ya retiramos",
+    "colecta retirada",
+    "fue retirada",
+    "retiro realizado",
+    "retiraron la colecta",
+    "retiraron la mercaderia",
+    "en camino al centro de almacenamiento",
+    "en camino a full",
+)
+_FRASES_NO_RETIRADA = (
+    "no pudimos retirar",
+    "no se pudo retirar",
+    "pasaremos a retirar",
+    "vamos a retirar",
+    "reprogram",
+)
 
 _PROMPT_IA = """Analizá este mensaje de Mercado Libre sobre una colecta de Mercado Envíos Full.
 Devolvé ÚNICAMENTE un objeto JSON válido con estas claves (usá "" si un dato no aparece):
 {
-  "resumen": "Resumen claro y directo en español argentino (1 a 3 oraciones máximo, ideal para WhatsApp) explicando qué informa el mensaje (ej: horario de retiro confirmado, código de autorización, reprogramación, demora o confirmación de colecta). No incluyas saludos genéricos ni texto legal.",
+  "resumen": "Resumen claro y directo en español argentino (1 a 3 oraciones máximo, ideal para WhatsApp) explicando qué informa el mensaje (ej: horario de retiro confirmado, código de autorización, colecta ya retirada, reprogramación o demora). No incluyas saludos genéricos ni texto legal.",
+  "evento": "Usá 'retirada' si el mensaje confirma que el camión YA retiró la mercadería/colecta; 'programada' si informa fecha/horario futuro; 'reprogramada' o 'incidencia' si hubo un problema o cambio; o '' si es otro aviso.",
   "fecha": "Fecha de la colecta si la menciona (ej: '19 de octubre')",
   "desde": "Hora de inicio de la franja en formato HH:MM (ej: '16:00')",
   "hasta": "Hora de fin de la franja en formato HH:MM (ej: '18:00')",
@@ -163,6 +185,16 @@ Devolvé ÚNICAMENTE un objeto JSON válido con estas claves (usá "" si un dato
   "transportadora": "Empresa transportadora si aparece (ej: 'Dos Haches')",
   "envio": "Número de envío de Mercado Libre (solo dígitos, ej: '78889570')"
 }"""
+
+
+def es_confirmacion_retiro(texto, datos=None):
+    """True si el texto o el análisis de IA indican que la colecta ya fue retirada por el transporte."""
+    if datos and str(datos.get("evento") or "").strip().lower() == "retirada":
+        return True
+    limpio = _sin_acentos(texto or "")
+    if any(f in limpio for f in _FRASES_NO_RETIRADA):
+        return False
+    return any(f in limpio for f in _FRASES_RETIRADA)
 
 
 def extraer_datos(texto):
@@ -188,6 +220,8 @@ def extraer_datos(texto):
         if m:
             val = re.sub(r"\s+", " ", m.group(1)).strip()
             d[clave] = val.upper() if clave in ("codigo", "patente") else val
+    if es_confirmacion_retiro(texto):
+        d["evento"] = "retirada"
     return d
 
 
@@ -299,12 +333,17 @@ def analizar_con_ia(asunto, cuerpo, env=None, post=None):
         return {}
 
     resultado = {}
-    for k in ("resumen", "fecha", "desde", "hasta", "codigo", "transportista", "patente", "transportadora", "envio"):
+    for k in ("resumen", "evento", "fecha", "desde", "hasta", "codigo", "transportista", "patente", "transportadora", "envio"):
         val = parsed.get(k)
         if isinstance(val, str):
             val = re.sub(r"\s+", " ", val).strip()
             if val:
-                resultado[k] = val.upper() if k in ("codigo", "patente") else val
+                if k in ("codigo", "patente"):
+                    resultado[k] = val.upper()
+                elif k == "evento":
+                    resultado[k] = val.lower()
+                else:
+                    resultado[k] = val
     if resultado.get("envio"):
         solo_digitos = re.sub(r"\D+", "", resultado["envio"])
         if solo_digitos:
@@ -314,20 +353,85 @@ def analizar_con_ia(asunto, cuerpo, env=None, post=None):
 
 def enriquecer_datos(asunto, cuerpo, env=None, post=None):
     """Combina los datos extraídos por expresiones regulares con el análisis de IA (si está activa)."""
-    datos = extraer_datos(cuerpo)
+    texto_completo = f"{asunto or ''}\n{cuerpo or ''}"
+    datos = extraer_datos(texto_completo)
     ia = analizar_con_ia(asunto, cuerpo, env=env, post=post)
     for k, v in ia.items():
         if v and not datos.get(k):
             datos[k] = v
     if ia.get("resumen"):
         datos["resumen"] = ia["resumen"]
+    if es_confirmacion_retiro(texto_completo, datos):
+        datos["evento"] = "retirada"
+    elif datos.get("evento") == "retirada":
+        datos.pop("evento", None)
     return datos
+
+
+def marcar_colecta_retirada(user_ids, datos, ahora=None, conn=None):
+    """Si `datos` confirma que la colecta fue retirada, pasa el envío correspondiente de `scheduled`
+    a `in_transit` y deja registrado `updated_at` para medir tiempos reales de tránsito a Full."""
+    if not datos or datos.get("evento") != "retirada" or not user_ids:
+        return None
+    ahora = ahora or datetime.now(proyeccion.HORA_BA)
+    cerrar = False
+    if conn is None:
+        import alerts_engine
+        conn = alerts_engine.get_db()
+        cerrar = True
+    try:
+        uids = tuple({int(u) for u in user_ids if u})
+        if not uids:
+            return None
+        placeholders = ",".join(["%s"] * len(uids))
+        envio_num = (datos.get("envio") or "").strip()
+        hoy = ahora.date()
+        hace_7_dias = hoy - timedelta(days=7)
+        with conn.cursor() as cur:
+            fila = None
+            if envio_num:
+                cur.execute(
+                    f"SELECT id, shipment_code, status FROM inbound_shipments "
+                    f"WHERE user_id IN ({placeholders}) AND (shipment_code=%s OR meli_inbound_id=%s) "
+                    f"ORDER BY id DESC LIMIT 1",
+                    uids + (f"ML-{envio_num}", envio_num),
+                )
+                fila = cur.fetchone()
+            if not fila:
+                cur.execute(
+                    f"SELECT id, shipment_code, status FROM inbound_shipments "
+                    f"WHERE user_id IN ({placeholders}) AND status IN ('scheduled', 'in_transit') "
+                    f"AND pickup_date BETWEEN %s AND %s "
+                    f"ORDER BY (CASE WHEN status='scheduled' THEN 0 ELSE 1 END), pickup_date DESC, id DESC LIMIT 1",
+                    uids + (hace_7_dias, hoy),
+                )
+                fila = cur.fetchone()
+            if not fila:
+                return None
+            if fila.get("status") == "scheduled":
+                cur.execute(
+                    "UPDATE inbound_shipments SET status='in_transit', meli_inbound_status='picked_up', updated_at=%s WHERE id=%s",
+                    (ahora.replace(tzinfo=None), fila["id"]),
+                )
+                logger.info(
+                    f"[Colecta retiro] Envío {fila['shipment_code']} (id={fila['id']}) pasó de scheduled a in_transit"
+                )
+            datos["colecta_en_transito"] = fila["shipment_code"]
+            return fila["shipment_code"]
+    except Exception as e:
+        logger.warning(f"[Colecta retiro] No se pudo actualizar estado a in_transit: {e}")
+        return None
+    finally:
+        if cerrar and conn is not None:
+            conn.close()
 
 
 def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
     """Texto de WhatsApp: de qué cuenta es, los datos que se pudieron leer y el resumen de IA (o extracto)."""
     de = f" de *{cuenta}*" if cuenta else ""
-    if datos.get("desde") and datos.get("hasta"):
+    if datos.get("evento") == "retirada":
+        lineas = [f"Mercado Libre confirmó que retiraron la colecta{de}"]
+    elif datos.get("desde") and datos.get("hasta"):
         cuando = f"el {datos['fecha']}, " if datos.get("fecha") else ""
         lineas = [f"La colecta{de} está programada para {cuando}entre las {datos['desde']} y las {datos['hasta']} hs"]
     else:
@@ -347,6 +451,8 @@ def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
     )
     if quien:
         lineas.append(quien)
+    if datos.get("colecta_en_transito"):
+        lineas.append(f"Estado en EnvioBot: *{datos['colecta_en_transito']}* pasó a *En tránsito a Full*")
     resumen_ia = (datos.get("resumen") or "").strip()
     if resumen_ia:
         if datos.get("codigo"):
@@ -432,6 +538,8 @@ def armar_mensaje_wa_colecta(texto, datos, cuenta=None, telefono_receptor=None, 
     )
     if quien:
         lineas.append(quien)
+    if datos.get("colecta_en_transito"):
+        lineas.append(f"Estado en EnvioBot: *{datos['colecta_en_transito']}* pasó a *En tránsito a Full*")
     resumen_ia = (datos.get("resumen") or "").strip()
     if resumen_ia:
         if datos.get("codigo"):
@@ -508,6 +616,9 @@ def procesar_wa_entrante(
     finally:
         conn.close()
 
+    datos = enriquecer_datos(f"WhatsApp {remitente_nombre or 'Mercado Libre'}", texto)
+    colecta_actualizada = marcar_colecta_retirada([user_id], datos, ahora=ahora)
+
     excluir = {
         normalizar_telefono(t)
         for t in (telefono_receptor, remitente_telefono)
@@ -518,9 +629,13 @@ def procesar_wa_entrante(
         if normalizar_telefono(t) not in excluir and en_horario(h, ahora)
     ]
     if not a_enviar:
-        return {"ok": True, "enviados": 0, "motivo": "sin_destinatarios_en_horario"}
+        return {
+            "ok": True,
+            "enviados": 0,
+            "motivo": "sin_destinatarios_en_horario",
+            "colecta_en_transito": colecta_actualizada,
+        }
 
-    datos = enriquecer_datos(f"WhatsApp {remitente_nombre or 'Mercado Libre'}", texto)
     mensaje = armar_mensaje_wa_colecta(
         texto,
         datos,
@@ -533,7 +648,13 @@ def procesar_wa_entrante(
     logger.info(
         f"[WA colecta] Reenviado WhatsApp de colecta ({nombre_cuenta}) a {ok_count}/{len(a_enviar)} destinatarios"
     )
-    return {"ok": True, "enviados": ok_count, "destinatarios": a_enviar, "mensaje": mensaje}
+    return {
+        "ok": True,
+        "enviados": ok_count,
+        "destinatarios": a_enviar,
+        "mensaje": mensaje,
+        "colecta_en_transito": colecta_actualizada,
+    }
 
 
 # ── Casilla y envío ───────────────────────────────────────────────────────────────
@@ -641,6 +762,33 @@ def cuentas_por_direccion(direcciones):
         conn.close()
 
 
+def user_ids_por_direccion(direcciones):
+    """Lista de user_id activos que configuraron alguna de esas direcciones en colecta_email."""
+    import alerts_engine
+    import esquema
+    if not direcciones:
+        return []
+    try:
+        conn = alerts_engine.get_db()
+    except Exception:
+        return []
+    try:
+        with conn.cursor() as cur:
+            if not esquema.tiene_columna(cur, "user_settings", "colecta_email"):
+                return []
+            cur.execute("""SELECT s.user_id, s.colecta_email FROM user_settings s JOIN users u ON u.id = s.user_id
+                           WHERE s.colecta_email IS NOT NULL AND s.colecta_email <> ''
+                             AND COALESCE(u.active, 1) = 1 AND COALESCE(u.is_blocked, 0) = 0""")
+            return [
+                f["user_id"] for f in cur.fetchall()
+                if direcciones & {d.strip().lower() for d in str(f["colecta_email"]).split(",") if d.strip()}
+            ]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
 def _descartar(imap, num, cfg):
     """Mail ya resuelto: se borra de la casilla (que solo es de paso) o, si se prefiere guardarlo, queda como leído."""
     imap.store(num, "+FLAGS", "\\Deleted" if cfg.get("borrar", True) else "\\Seen")
@@ -651,7 +799,7 @@ def _enviar_whatsapp(telefonos, texto):
     return enviar_lote_con_demora(telefonos, texto)
 
 
-def ejecutar(ahora=None, config=None, conectar=None, enviar=None, resolver=None):
+def ejecutar(ahora=None, config=None, conectar=None, enviar=None, resolver=None, actualizar_retiro=None):
     """Una pasada por la casilla. `conectar`, `enviar` y `resolver` se pueden reemplazar (tests).
 
     `resolver(direcciones)` devuelve [(nombre de la cuenta, {teléfono: horario})]."""
@@ -694,12 +842,20 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None, resolver=None)
                     continue
             except (TypeError, ValueError):
                 pass  # sin fecha legible se trata como reciente
-            cuentas = resolver(direcciones_del_mail(msg, propias=(cfg["user"],)))
+            dirs_mail = direcciones_del_mail(msg, propias=(cfg["user"],))
+            cuentas = resolver(dirs_mail)
             if not cuentas:
                 res["sin_cuenta"] += 1   # nadie configuró esa dirección: se deja, y caduca solo
                 logger.info(f"[Mail colecta] Mail de colecta sin cuenta asignada (¿falta cargar el mail en Configuración?): {asunto[:80]}")
                 continue
             datos_mail = enriquecer_datos(asunto, cuerpo)
+            if datos_mail.get("evento") == "retirada":
+                if actualizar_retiro is not None:
+                    actualizar_retiro(dirs_mail, datos_mail, ahora)
+                else:
+                    uids = user_ids_por_direccion(dirs_mail)
+                    if uids:
+                        marcar_colecta_retirada(uids, datos_mail, ahora=ahora)
             enviado = False
             hay_alguien = False
             for nombre, destinos in cuentas:
