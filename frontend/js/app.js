@@ -1975,6 +1975,66 @@ function botonesMlColecta(id, codigo) {
         `<button type="button" class="btn btn-secondary btn-sm" onclick="avisarHorarioColecta(${idNum}, '${codEsc}')" title="Pegar el horario de retiro de Mercado Libre y avisar por WhatsApp">Avisar horario WA</button>`;
 }
 
+// Comparativa de una colecta: lo que tiene cargado (el pedido de Mercado Libre) contra lo que propone EnvioBot.
+// La cuenta es la de impactoPorIngreso: unidades para llegar al objetivo de días cuando entra la colecta,
+// descontando el stock que queda para ese día y lo que ya viaja en otras colectas.
+function filasComparativaColecta(c, hoy) {
+    hoy = hoy || new Date();
+    const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    const dias = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(c.fecha_ingreso)));
+    return (c.productos || []).map(function (p) {
+        const unidades = Number(p.unidades) || 0;
+        const it = buscarItemPorSku(p.sku);
+        const vpd = it ? Number(it.vpd) : 0;
+        if (!it || !(vpd > 0)) return { titulo: p.titulo, sku: p.sku, ml: unidades, sinDatos: true };
+        const stock = Number(it.current_stock) || 0;
+        const objetivo = Number(it.target_stock_days) || 0;
+        const otros = Math.max(0, (Number(it.total_incoming) || 0) - unidades);
+        const propone = Math.max(0, Math.round(objetivo * vpd - Math.max(0, stock - vpd * dias) - otros));
+        return {
+            titulo: p.titulo,
+            sku: p.sku,
+            ml: unidades,
+            propone: propone,
+            dif: propone - unidades,
+            cubre: Math.round((Math.max(0, stock - vpd * dias) + otros + unidades) / vpd),
+            objetivo: objetivo
+        };
+    });
+}
+
+function htmlComparativaColecta(c) {
+    if (c.etapa === 'recibida' || !(c.productos || []).length) return '';
+    const filas = filasComparativaColecta(c);
+    const conDatos = filas.filter(f => !f.sinDatos);
+    if (!conDatos.length) return '';
+    const celdaDif = function (f) {
+        if (f.sinDatos) return '<span class="pc-cmp-nd">sin ventas para calcular</span>';
+        if (f.dif === 0) return '<span class="pc-cmp-igual">igual</span>';
+        return f.dif > 0
+            ? `<span class="pc-cmp-aviso">faltan ${escapeHtml(f.dif)} u.</span>`
+            : `<span class="pc-info">sobran ${escapeHtml(-f.dif)} u.</span>`;
+    };
+    const cuerpo = filas.map(f => `<tr>
+        <td>${escapeHtml(f.titulo)} <span class="pc-sku-inline">${escapeHtml(f.sku)}</span></td>
+        <td class="pc-num">${escapeHtml(f.ml)} u.</td>
+        <td class="pc-num">${f.sinDatos ? '—' : escapeHtml(f.propone) + ' u.'}</td>
+        <td class="pc-num">${celdaDif(f)}</td>
+        <td class="pc-num">${f.sinDatos ? '—' : escapeHtml(f.cubre) + ' de ' + escapeHtml(f.objetivo) + ' días'}</td>
+    </tr>`).join('');
+    const totMl = conDatos.reduce((a, f) => a + f.ml, 0);
+    const totEb = conDatos.reduce((a, f) => a + f.propone, 0);
+    const difTot = totEb - totMl;
+    const resumen = difTot === 0 ? 'Coinciden.'
+        : (difTot > 0 ? `EnvioBot propone ${difTot.toLocaleString('es-AR')} u. más.` : `EnvioBot propone ${(-difTot).toLocaleString('es-AR')} u. menos.`);
+    return `<details class="pc-detalle pc-comparativa"><summary>Comparar con lo que propone EnvioBot</summary>
+        <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">En la colecta</th><th class="pc-num">EnvioBot propone</th><th class="pc-num">Diferencia</th><th class="pc-num">Con lo cargado te dura</th></tr></thead>
+        <tbody>${cuerpo}</tbody></table>
+        <div class="pc-fila-nota" style="margin-top:6px;"><b>Total:</b> ${totMl.toLocaleString('es-AR')} u. en la colecta contra ${totEb.toLocaleString('es-AR')} u. propuestas${conDatos.length < filas.length ? ' (sin contar los que no tienen ventas)' : ''}. ${resumen}
+        La propuesta de EnvioBot lleva cada producto al objetivo de días cuando la colecta entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))}.</div>
+    </details>`;
+}
+
 function tarjetaDeColecta(c) {
     const programada = c.estado === 'scheduled';
     const resto = programada ? textoCuentaRegresiva(c.limite_edicion) : null;
@@ -2006,6 +2066,7 @@ function tarjetaDeColecta(c) {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${boton}${botonesMlColecta(c.id, c.codigo)}</div>
         ${detalle}
+        ${htmlComparativaColecta(c)}
         ${htmlProyeccionColecta(c)}
     </div>`;
 }
