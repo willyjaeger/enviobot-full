@@ -946,7 +946,7 @@ function eventosCalendario(colectas) {
     (colectas || []).forEach(function (c) {
         if (c.estado === 'scheduled') poner(String(c.limite_edicion || '').slice(0, 10), 'limite', c);
         poner(c.fecha_retiro, 'retiro', c);
-        poner(c.fecha_ingreso, 'ingreso', c);
+        poner(c.fecha_ingreso, c.etapa === 'recibida' ? 'recibida' : 'ingreso', c);
     });
     return por;
 }
@@ -954,7 +954,8 @@ function eventosCalendario(colectas) {
 const ETIQUETAS_EVENTO = {
     limite: { icono: 'candado', texto: 'Límite', largo: 'Último momento para modificar la colecta' },
     retiro: { icono: 'camion', texto: 'Retiro', largo: 'Retiran la colecta' },
-    ingreso: { icono: 'paquete', texto: 'Ingresa', largo: 'Entra a Full' }
+    ingreso: { icono: 'paquete', texto: 'Ingresa', largo: 'Entra a Full (fecha estimada)' },
+    recibida: { icono: 'paquete', texto: 'Recibida', largo: 'Mercado Libre la recibió (fecha real)' }
 };
 
 // El retiro se mueve mientras la colecta no salió; el ingreso también cuando ya va en camino. Aunque Mercado Libre
@@ -999,7 +1000,7 @@ function calendarioColectas(colectas, hoy) {
     }
     const cabecera = DIAS_CALENDARIO.map(function (n) { return '<div class="pc-cal-cab">' + n + '</div>'; }).join('');
     const leyenda = '<div class="pc-cal-leyenda">' +
-        ['limite', 'retiro', 'ingreso'].map(function (t) {
+        ['limite', 'retiro', 'ingreso'].concat((colectas || []).some(function (c) { return c.etapa === 'recibida'; }) ? ['recibida'] : []).map(function (t) {
             return '<span>' + iconoSvg(ETIQUETAS_EVENTO[t].icono, 13).replace('margin-right: 4px;', 'margin-right: 4px;') + escapeHtml(ETIQUETAS_EVENTO[t].largo) + '</span>';
         }).join('') + '<span class="pc-cal-ayuda">Arrastrá un retiro o un ingreso para proponer otra fecha.</span></div>';
     const cajaHtml = htmlCajaCambios();
@@ -2003,7 +2004,7 @@ function tarjetaDeColecta(c) {
         <span class="pc-banner-icon">${iconoSvg('camion', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">Colecta del ${escapeHtml(nombreDiaColecta(c.fecha_retiro))} <span class="pc-sku-inline">${escapeHtml(c.codigo)}</span></div>
-            <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado}${recibida ? '' : ` Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))}.`}${c.de_ml ? '' : ' Falta cargarla en Mercado Libre.'}</div>
+            <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado}${recibida ? '' : ` Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))} (fecha estimada).`}${c.de_ml ? '' : ' Falta cargarla en Mercado Libre.'}</div>
             ${pasosColecta(c.codigo, c.etapa)}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${boton}${botonesMlColecta(c.id, c.codigo)}</div>

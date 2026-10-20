@@ -145,35 +145,64 @@ def bloqueada_por_ml(codigo, fecha_retiro, ahora=None, hora=None):
     return not cuenta_regresiva(fecha_retiro, ahora=ahora, hora=hora)["abierta"]
 
 
-def etapa_colecta(codigo, estado, en_proceso=0):
+def etapa_colecta(codigo, estado, en_proceso=0, recibida_ml=False):
     """En cuál de los cuatro pasos está la colecta: 'propuesta', 'armada', 'retirada' o 'recibida'.
 
     Se deduce de lo que ya sabemos, sin adivinar: una colecta cargada desde Mercado Libre (ML-...) está al menos
-    armada; si ya salió (en tránsito) está retirada; y si Mercado Libre ya tiene en proceso unidades de esa colecta
-    (`en_proceso`, lo no disponible en Full) es que la recibió. Una colecta que todavía no salió nunca pasa a recibida:
-    ese stock en proceso puede ser de otra colecta anterior con los mismos productos."""
+    armada; si ya salió (en tránsito) está retirada; y es recibida si Mercado Libre ya tiene en proceso unidades de
+    esa colecta (`en_proceso`) o el sincronizador ya la marcó recibida (`recibida_ml`). Una colecta que todavía no
+    salió nunca pasa a recibida: ese stock en proceso puede ser de otra colecta anterior con los mismos productos."""
     estado = estado or "scheduled"
     if estado == "delivered":
         return "recibida"
     if estado == "in_transit":
-        return "recibida" if int(en_proceso or 0) > 0 else "retirada"
+        return "recibida" if (recibida_ml or int(en_proceso or 0) > 0) else "retirada"
     return "armada" if str(codigo or "").startswith("ML-") else "propuesta"
 
 
-def armar_colecta(fila, productos, hora=None, ahora=None, en_proceso=0):
+def demora_aprendida(muestras):
+    """Días que de verdad tarda una colecta del retiro a la recepción, según las últimas recibidas (la mediana,
+    para que una demora rara no la mueva). `muestras`: días reales, de la más reciente a la más vieja. None si
+    todavía no hay ninguna."""
+    dias = sorted([max(0, min(int(m), 14)) for m in (muestras or []) if m is not None][:5])
+    if not dias:
+        return None
+    n = len(dias)
+    medio = dias[n // 2] if n % 2 else (dias[n // 2 - 1] + dias[n // 2]) / 2
+    return int(medio + 0.5)
+
+
+def ingreso_estimado(fila, demora_real=None):
+    """Fecha de ingreso a Full de una colecta. Si ya fue recibida, es la real. Si no, la que se cargó a mano; y si
+    la fecha es la automática (retiro + demora supuesta), se corrige con la demora que de verdad tardaron las
+    colectas anteriores (`demora_real`). Nunca es un dato cierto hasta que Mercado Libre la recibe."""
+    retiro = fila["pickup_date"]
+    cargada = fila.get("estimated_arrival_date")
+    recibida = (fila.get("meli_inbound_status") or "") == "received" or fila.get("status") == "delivered"
+    supuesta = retiro + timedelta(days=int(fila.get("transit_days") or 3))
+    if recibida and cargada:
+        return cargada
+    if cargada and cargada != supuesta:
+        return cargada  # la movieron a mano: se respeta
+    if demora_real is not None:
+        return retiro + timedelta(days=int(demora_real))
+    return cargada or supuesta
+
+
+def armar_colecta(fila, productos, hora=None, ahora=None, en_proceso=0, demora_real=None):
     """Una colecta lista para mostrar: estado, fechas (retiro, límite de edición, ingreso a Full) y sus productos.
     `fila` es el registro de inbound_shipments; `productos`, sus renglones (title, sku, units_to_send).
     `en_proceso`: unidades de esta colecta que Mercado Libre ya recibió y todavía está procesando."""
     retiro = fila["pickup_date"]
     estado = fila.get("status") or "scheduled"
     base = cuenta_regresiva(retiro, ahora=ahora, hora=hora)
-    ingreso = fila.get("estimated_arrival_date")
-    if not ingreso:
-        ingreso = retiro + timedelta(days=int(fila.get("transit_days") or 3))
+    ingreso = ingreso_estimado(fila, demora_real)
+    recibida_ml = (fila.get("meli_inbound_status") or "") == "received"
     unidades = sum(int(p.get("units_to_send") or 0) for p in productos)
     en_proceso = max(0, min(int(en_proceso or 0), unidades)) if estado == "in_transit" else 0
     return {
-        "etapa": etapa_colecta(fila.get("shipment_code"), estado, en_proceso),
+        "etapa": etapa_colecta(fila.get("shipment_code"), estado, en_proceso, recibida_ml),
+        "ingreso_estimado": not (recibida_ml or estado == "delivered"),
         "unidades_en_proceso": en_proceso,
         "id": fila.get("id"),
         "codigo": fila.get("shipment_code"),

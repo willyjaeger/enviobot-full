@@ -280,6 +280,20 @@ process.stdout.write(tip.innerHTML);
         self.assertIn('Ya salió: está en camino a Full.', html)
         self.assertIn('Entra a Full el', html)
 
+    def test_el_calendario_marca_recibida_en_la_fecha_real_y_ingresa_en_la_estimada(self):
+        from datetime import date
+        it = _item(in_preparation_stock=10, total_incoming=10, cobertura_post_colecta=20)
+        hoy = date.today().isoformat()
+        base = {'id': 3, 'codigo': 'ML-78889570', 'estado': 'in_transit', 'fecha_retiro': hoy, 'fecha_ingreso': hoy,
+                'limite_edicion': '2020-10-16T09:44:00-03:00', 'abierta': False, 'de_ml': True, 'total_unidades': 10, 'productos': []}
+        recibida = self._correr([it], None, [dict(base, etapa='recibida', unidades_en_proceso=5, ingreso_estimado=False)])['html']
+        self.assertIn('Recibida 9570', recibida)
+        self.assertNotIn('Ingresa 9570', recibida)
+        self.assertIn('fecha real', recibida)
+        en_camino = self._correr([it], None, [dict(base, etapa='retirada', ingreso_estimado=True)])['html']
+        self.assertIn('Ingresa 9570', en_camino)
+        self.assertNotIn('Recibida 9570', en_camino)
+
     def test_comparar_con_la_propuesta(self):
         harness = (
             "const vm=require('vm');const ctx={document:{getElementById:()=>null},setInterval:()=>1,Date,Math,String,console};"

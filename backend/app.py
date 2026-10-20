@@ -1466,15 +1466,24 @@ def get_full_items():
 
         # ── Mercadería en Preparación vs Tránsito hacia Full (Envíos Activos EnvioBot) ────────
         cur.execute("""
-            SELECT s.status, isi.item_id, isi.inventory_id, isi.sku, SUM(isi.units_to_send) AS total_units,
-                   MIN(COALESCE(s.estimated_arrival_date,
-                                DATE_ADD(s.pickup_date, INTERVAL COALESCE(s.transit_days, 0) DAY))) AS arrival_date
+            SELECT s.id AS shipment_id, s.status, s.pickup_date, s.estimated_arrival_date, s.transit_days,
+                   s.meli_inbound_status,
+                   isi.item_id, isi.inventory_id, isi.sku, SUM(isi.units_to_send) AS total_units
             FROM inbound_shipment_items isi
             JOIN inbound_shipments s ON s.id = isi.shipment_id
             WHERE s.user_id = %s AND s.status IN ('scheduled', 'in_transit')
-            GROUP BY s.status, isi.item_id, isi.inventory_id, isi.sku
+            GROUP BY s.id, s.status, s.pickup_date, s.estimated_arrival_date, s.transit_days, s.meli_inbound_status,
+                     isi.item_id, isi.inventory_id, isi.sku
         """, (account_id,))
         shipment_rows = cur.fetchall()
+        # La fecha de ingreso estimada se corrige con lo que tardaron de verdad las colectas anteriores.
+        cur.execute("""
+            SELECT pickup_date, estimated_arrival_date FROM inbound_shipments
+            WHERE user_id = %s AND (meli_inbound_status = 'received' OR status = 'delivered')
+              AND pickup_date IS NOT NULL AND estimated_arrival_date IS NOT NULL
+            ORDER BY pickup_date DESC LIMIT 5
+        """, (account_id,))
+        demora_real_proy = _proy.demora_aprendida([(r["estimated_arrival_date"] - r["pickup_date"]).days for r in cur.fetchall()])
 
         prep_by_sku = {}
         prep_by_inv = {}
@@ -1503,7 +1512,7 @@ def get_full_items():
             if inv_k: target_inv_dict[inv_k] = target_inv_dict.get(inv_k, 0) + qty
             if item_k: target_item_dict[item_k] = target_item_dict.get(item_k, 0) + qty
 
-            llegada = r.get("arrival_date")
+            llegada = _proy.ingreso_estimado(r, demora_real_proy) if r.get("pickup_date") else r.get("estimated_arrival_date")
             if st == "scheduled" and llegada:
                 for dic, clave in ((arrival_by_sku, sku_k), (arrival_by_inv, inv_k), (arrival_by_item, item_k)):
                     if clave and (clave not in dic or llegada < dic[clave]):
@@ -1718,12 +1727,21 @@ def get_full_items():
 
         # Todas las colectas vigentes (programadas o en camino; las retiradas hace poco siguen a la vista) para el calendario.
         cur.execute("""
-            SELECT id, shipment_code, status, pickup_date, estimated_arrival_date, transit_days
+            SELECT id, shipment_code, status, pickup_date, estimated_arrival_date, transit_days, meli_inbound_status
             FROM inbound_shipments
-            WHERE user_id = %s AND status IN ('scheduled', 'in_transit') AND pickup_date >= %s
+            WHERE user_id = %s AND pickup_date >= %s
+              AND (status IN ('scheduled', 'in_transit') OR (status = 'delivered' AND pickup_date >= %s))
             ORDER BY pickup_date ASC, id ASC LIMIT 20
-        """, (account_id, today - timedelta(days=14)))
+        """, (account_id, today - timedelta(days=14), today - timedelta(days=7)))
         filas_col = cur.fetchall()
+        # Cuántos días tardaron de verdad las últimas colectas en ser recibidas: corrige la fecha estimada de ingreso.
+        cur.execute("""
+            SELECT pickup_date, estimated_arrival_date FROM inbound_shipments
+            WHERE user_id = %s AND (meli_inbound_status = 'received' OR status = 'delivered')
+              AND pickup_date IS NOT NULL AND estimated_arrival_date IS NOT NULL
+            ORDER BY pickup_date DESC LIMIT 5
+        """, (account_id,))
+        demora_real = _proy.demora_aprendida([(r["estimated_arrival_date"] - r["pickup_date"]).days for r in cur.fetchall()])
         colectas = []
         if filas_col:
             ids = [f["id"] for f in filas_col]
@@ -1745,7 +1763,7 @@ def get_full_items():
                 prods = por_col.get(f["id"], [])
                 en_proceso = sum(min(en_proceso_sku.get((p.get("sku") or "").strip().upper(), 0),
                                      int(p.get("units_to_send") or 0)) for p in prods)
-                colectas.append(_proy.armar_colecta(f, prods, hora=hora_limite, en_proceso=en_proceso))
+                colectas.append(_proy.armar_colecta(f, prods, hora=hora_limite, en_proceso=en_proceso, demora_real=demora_real))
 
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()

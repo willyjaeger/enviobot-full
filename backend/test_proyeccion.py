@@ -302,5 +302,42 @@ class TestEtapaColecta(unittest.TestCase):
         self.assertEqual(c['unidades_en_proceso'], c['total_unidades'])
         self.assertEqual(p.armar_colecta(dict(fila, status='scheduled'), TestArmarColecta.PROD, en_proceso=5)['unidades_en_proceso'], 0)
 
+
+class TestDemoraAprendida(unittest.TestCase):
+    def test_sin_muestras_no_hay_demora(self):
+        self.assertIsNone(p.demora_aprendida([]))
+        self.assertIsNone(p.demora_aprendida(None))
+
+    def test_una_muestra_es_esa_demora(self):
+        self.assertEqual(p.demora_aprendida([0]), 0)
+
+    def test_usa_la_mediana_y_no_se_deja_llevar_por_un_valor_raro(self):
+        self.assertEqual(p.demora_aprendida([1, 1, 2, 30, 1]), 1)
+
+    def test_solo_cuentan_las_ultimas_cinco(self):
+        self.assertEqual(p.demora_aprendida([1, 1, 1, 1, 1, 9, 9, 9]), 1)
+
+    FILA = {'pickup_date': date(2026, 10, 19), 'transit_days': 2, 'estimated_arrival_date': date(2026, 10, 21)}
+
+    def test_la_fecha_automatica_se_corrige_con_la_demora_real(self):
+        self.assertEqual(p.ingreso_estimado(self.FILA, 0), date(2026, 10, 19))
+        self.assertEqual(p.ingreso_estimado(self.FILA, None), date(2026, 10, 21))
+
+    def test_la_fecha_movida_a_mano_se_respeta(self):
+        mano = dict(self.FILA, estimated_arrival_date=date(2026, 10, 25))
+        self.assertEqual(p.ingreso_estimado(mano, 0), date(2026, 10, 25))
+
+    def test_recibida_deja_la_fecha_real(self):
+        real = dict(self.FILA, estimated_arrival_date=date(2026, 10, 19), meli_inbound_status='received')
+        self.assertEqual(p.ingreso_estimado(real, 5), date(2026, 10, 19))
+        c = p.armar_colecta(dict(real, id=1, shipment_code='ML-1', status='in_transit'), [], demora_real=5)
+        self.assertEqual(c['etapa'], 'recibida')
+        self.assertEqual(c['fecha_ingreso'], '2026-10-19')
+        self.assertFalse(c['ingreso_estimado'])
+
+    def test_recibida_sigue_recibida_aunque_ya_no_haya_stock_en_proceso(self):
+        self.assertEqual(p.etapa_colecta('ML-1', 'in_transit', 0, True), 'recibida')
+        self.assertEqual(p.etapa_colecta('ML-1', 'delivered', 0), 'recibida')
+
 if __name__ == '__main__':
     unittest.main()

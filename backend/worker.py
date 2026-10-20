@@ -470,6 +470,14 @@ def sync_all_accounts_for_user(user_id):
             sync_account_full_catalog(user_id, cred["id"], token, cred["ml_user_id"])
 
     try:
+        import recepcion_colectas
+        r = recepcion_colectas.actualizar(conn, user_id)
+        if r["recibidas"] or r["cerradas"]:
+            print(f"[{datetime.now()}] Colectas de user_id={user_id}: {r}")
+    except Exception as e:
+        print(f"[{datetime.now()}] Error marcando colectas recibidas para user_id={user_id}: {e}")
+
+    try:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO user_settings (user_id, last_sync_at) 
