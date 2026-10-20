@@ -42,6 +42,13 @@ class TestPlanillaML(unittest.TestCase):
         self.assertIsNone(hoja["A8"].value)                  # sin SKU queda solo el código ML
         self.assertEqual(hoja["C8"].value, "ZZZZ99999")
 
+    def test_lleva_el_numero_de_publicacion_sin_el_prefijo_mla(self):
+        prods = [{"sku": "01011", "inventory_id": "LZLB58855", "publicacion": "MLA1493630699", "unidades": 5},
+                 {"sku": "02022", "inventory_id": "BBBB22222", "unidades": 3}]
+        hoja = _abrir(p.generar(prods))[" Selección de productos"]
+        self.assertEqual(str(hoja["D6"].value), "1493630699")   # solo los dígitos, como el ejemplo de ML
+        self.assertIsNone(hoja["D7"].value)                     # sin publicación queda vacío
+
     def test_un_mismo_producto_no_se_repite_en_la_planilla(self):
         dup = [{"sku": "01011", "inventory_id": "LZLB58855", "unidades": 5}, {"sku": "01011", "inventory_id": "LZLB58855", "unidades": 9}]
         self.assertEqual(len(p.productos_validos(dup)), 1)

@@ -10,6 +10,11 @@ Formato de la hoja " Selección de productos" (con el espacio adelante, así se 
 ML pide al menos DOS códigos por producto cuando el SKU está repetido (en tu cuenta cada SKU está en dos publicaciones del mismo
 producto y con el SKU solo ML responde "Agregá un código más para que podamos reconocer el producto"). Se cargan el SKU y el
 Código ML. Verificado el 2026-10-20: el "Código ML" que muestra ML es el inventory_id de la publicación.
+
+Segunda prueba con ML (2026-10-20): con SKU + Código ML aceptó solo los productos que tienen UNA publicación y rechazó los que
+tienen dos publicaciones del mismo producto ("no está asociado a ninguna publicación"). La ayuda de ML dice que en ese caso hay
+que poner el Número de publicación, uno solo de los asociados al producto. Por eso también se carga la columna D, con los
+dígitos del MLA (MLA2793186102 -> 2793186102), tomando una publicación activa si la hay.
 ML avisa que no hay que cambiar el orden de las columnas, por eso se parte de su planilla y solo se escriben datos.
 
 Se edita el XML de la hoja directamente (sin librerías): conserva intactos el resto de la planilla, el logo y los estilos.
@@ -38,7 +43,8 @@ def _fila(n, producto):
     celdas.append(_texto(f"A{n}", sku, 62) if sku else f'<c r="A{n}" s="62"/>')
     celdas.append(f'<c r="B{n}" s="62"/>')
     celdas.append(_texto(f"C{n}", codigo_ml, 62) if codigo_ml else f'<c r="C{n}" s="62"/>')
-    celdas.append(f'<c r="D{n}" s="62"/>')
+    publicacion = re.sub(r"\D", "", str(producto.get("publicacion") or ""))
+    celdas.append(f'<c r="D{n}" s="62" t="inlineStr"><is><t>{publicacion}</t></is></c>' if publicacion else f'<c r="D{n}" s="62"/>')
     celdas.append(f'<c r="E{n}" s="63"/>')
     celdas.append(f'<c r="F{n}" s="62"><v>{int(producto["unidades"])}</v></c>')
     return f'<row r="{n}" ht="12.75" customHeight="1">{"".join(celdas)}</row>'
@@ -62,7 +68,7 @@ def productos_validos(productos):
         if clave in vistos:
             continue
         vistos.add(clave)
-        salida.append({"sku": p.get("sku"), "inventory_id": p.get("inventory_id"), "unidades": unidades})
+        salida.append({"sku": p.get("sku"), "inventory_id": p.get("inventory_id"), "publicacion": p.get("publicacion"), "unidades": unidades})
     return salida
 
 

@@ -3678,7 +3678,12 @@ async function descargarPlanillaML() {
     const productos = [];
     itemsData.forEach(it => {
         const units = colectaSelectedItems.get(it.id) || 0;
-        if (units > 0) productos.push({ sku: it.sku || '', inventory_id: it.inventory_id || '', unidades: units });
+        if (units > 0) {
+            // ML pide UN número de publicación cuando el producto tiene varias: se toma una activa si la hay.
+            const canales = it.channels || [];
+            const elegido = canales.find(ch => (ch.status || 'active') === 'active') || canales[0] || null;
+            productos.push({ sku: it.sku || '', inventory_id: it.inventory_id || '', publicacion: elegido ? elegido.item_id : (it.item_id || ''), unidades: units });
+        }
     });
     if (productos.length === 0) {
         showToast('Elegí al menos un producto con unidades para armar la planilla.', 'error');
