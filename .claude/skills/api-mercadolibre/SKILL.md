@@ -34,6 +34,12 @@ Guillermo pidió expresamente que no se adivine con esta API ("cuando te pones a
 - Sin ningún tema de notificaciones tildado y con la "Notificaciones callbacks URL" **vacía**. El tema `fbm stock operations` existe (grupo Shipments) pero no está activado. Receptor listo en `POST /api/full/ml/notificaciones` (`notificaciones_ml.py`); falta cargar la URL y tildar el tema.
 - Editar la aplicación pide verificación por código al celular del titular: la hace la persona.
 
+## Pantallas de ML (Seller Center), vistas en el navegador el 2026-10-20 con la cuenta LOGAX/MISTERNUT
+- Gestión de envíos Full: `vendedores.mercadolibre.com.ar/shipping/inbounds`. Detalle de un envío: `/shipping/inbounds/{n}/hub-v2`. Editar productos: `/shipping/inbounds/{n}/units`. Reserva: `/shipping/inbounds/{n}/appointment`. Carga por planilla: `/shipping/import/excel/upload` (plantilla en `/api/shipping/import/excel/template`).
+- Un envío en preparación se puede modificar (cantidades, agregar y quitar productos con un buscador, sin planilla) **hasta 1 día hábil antes de la reserva** (envío #79759779, retiro 28/10: hasta el 27/10 09:44). Enviar una cantidad distinta de la declarada, o cancelar la cita pasada esa hora, tiene **cargos por incumplimiento**.
+- La pantalla de edición muestra por producto "Aptas y en camino" (total, en camino, aptas para vender): confirma que el total que ML informa incluye lo que está en camino.
+- Todo esto es la interfaz web, NO una API documentada. No se automatiza (ver más arriba: sin evidencia de API para crear o modificar envíos).
+
 ## Sin evidencia (no afirmar que existe)
 - Crear o modificar la colecta (envío a Full), su franja horaria, transportista, código de autorización o patente por API.
 - Pausar/reactivar con `PUT /items/{id}` y cambiar precio: es de uso general, pero no lo usamos ni probamos en Full.
