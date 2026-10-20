@@ -5915,38 +5915,86 @@ function editarHorarioWA(id) {
     if (her) her.onclick = () => enviar({ inherit: true });
 }
 
-// Mail donde Mercado Libre avisa de las colectas de esta cuenta (migración 004).
+// Mail donde Mercado Libre avisa de las colectas de esta cuenta (conexión directa en modo Solo Lectura).
+function _renderBadgeColectaMail(connected, hasEmail) {
+    const badge = document.getElementById('colectaMailBadge');
+    if (!badge) return;
+    if (connected) {
+        badge.className = 'badge badge-ok';
+        badge.textContent = 'Conectado (Solo Lectura)';
+    } else if (hasEmail) {
+        badge.className = 'badge badge-warn';
+        badge.textContent = 'Falta contraseña del mail';
+    } else {
+        badge.className = 'badge badge-warn';
+        badge.textContent = 'Sin conectar';
+    }
+}
+
 async function cargarColectaMail() {
     const input = document.getElementById('colectaMailInput');
+    const passInput = document.getElementById('colectaMailPassInput');
     if (!input || !getToken()) return;
     try {
         const resp = await fetch(`${API_BASE}/full/settings/colecta-mail`, { headers: { 'Authorization': `Bearer ${getToken()}` } });
         const data = await resp.json();
         if (!data.ok) return;
         input.value = (data.emails || '').split(',').join(', ');
-        const buzon = document.getElementById('colectaMailBuzon');
-        if (buzon && data.buzon) buzon.textContent = data.buzon;
+        if (passInput) {
+            passInput.value = data.has_password ? '••••••••' : '';
+        }
         const editable = !!data.editable && puedeEditarDestinatarios;
         input.disabled = !editable;
+        if (passInput) passInput.disabled = !editable;
         document.getElementById('btnGuardarColectaMail').disabled = !editable;
-        document.getElementById('colectaMailEstado').textContent = data.editable ? '' : 'Se habilita al aplicar la actualización de la base.';
+        _renderBadgeColectaMail(!!data.connected, !!data.emails);
+        const est = document.getElementById('colectaMailEstado');
+        if (!data.editable) {
+            est.textContent = 'Se habilita al aplicar la actualización de la base.';
+        } else if (data.connected) {
+            est.style.color = '#22c55e';
+            est.textContent = `Conectado en modo Solo Lectura (${data.imap_host || 'IMAP SSL'}). No tenés que configurar ningún reenvío.`;
+        } else if (data.emails) {
+            est.style.color = 'var(--text2)';
+            est.textContent = 'Ingresá la contraseña de este mail y tocá "Conectar y Guardar" para que EnvioBot lo lea directo sin reenvíos.';
+        } else {
+            est.textContent = '';
+        }
     } catch (e) { console.error('No se pudo leer el mail de colectas', e); }
 }
 
 async function guardarColectaMail() {
     const estado = document.getElementById('colectaMailEstado');
+    const passInput = document.getElementById('colectaMailPassInput');
+    const emailsVal = document.getElementById('colectaMailInput').value;
+    const passVal = passInput ? passInput.value : '';
     estado.style.color = 'var(--text2)';
-    estado.textContent = 'Guardando...';
+    estado.textContent = passVal && passVal !== '••••••••' ? 'Verificando conexión con tu servidor de correo (modo Solo Lectura)...' : 'Guardando...';
     try {
         const resp = await fetch(`${API_BASE}/full/settings/colecta-mail`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
-            body: JSON.stringify({ emails: document.getElementById('colectaMailInput').value })
+            body: JSON.stringify({ emails: emailsVal, password: passVal })
         });
         const data = await resp.json();
-        if (!data.ok) { estado.style.color = '#ff7676'; estado.textContent = data.error || 'No se pudo guardar.'; return; }
+        if (!data.ok) {
+            estado.style.color = '#ff7676';
+            estado.textContent = data.error || 'No se pudo conectar.';
+            return;
+        }
         document.getElementById('colectaMailInput').value = (data.emails || '').split(',').join(', ');
-        estado.textContent = data.emails ? 'Guardado. Falta reenviar los mails de Mercado Libre a la casilla de arriba.' : 'Guardado: no se reenvía nada.';
+        if (passInput) passInput.value = data.has_password ? '••••••••' : '';
+        _renderBadgeColectaMail(!!data.connected, !!data.emails);
+        if (data.connected) {
+            estado.style.color = '#22c55e';
+            estado.textContent = `¡Listo! Conectado en modo Solo Lectura (${data.imap_host || 'IMAP SSL'}). No tenés que configurar ningún reenvío.`;
+        } else if (data.emails) {
+            estado.style.color = 'var(--text2)';
+            estado.textContent = 'Mail guardado. Ingresá su contraseña para conectarlo directo sin reenvíos.';
+        } else {
+            estado.style.color = 'var(--text2)';
+            estado.textContent = 'Desconectado.';
+        }
     } catch (e) {
         estado.style.color = '#ff7676';
         estado.textContent = 'Error de conexión. Probá de nuevo.';

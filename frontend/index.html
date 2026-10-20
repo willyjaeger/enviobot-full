@@ -1428,17 +1428,29 @@
 
                         <!-- Mail donde Mercado Libre avisa de las colectas de ESTA cuenta -->
                         <div id="cardColectaMail" style="background: var(--surf2); padding: 12px; border-radius: 6px; border: 1px solid var(--border); margin-bottom: 12px;">
-                            <div style="font-size: 12px; font-weight: 700; color: var(--text);">Avisos de colecta por mail</div>
-                            <div style="font-size: 11px; color: var(--text2); margin: 2px 0 8px;">
-                                Mercado Libre te escribe a un mail cuando programa una colecta (código de autorización y horario). Escribí acá ese mail y reenviá lo de Mercado Libre a
-                                <strong id="colectaMailBuzon" style="color: var(--text);">colectas@enviobot.com.ar</strong>:
-                                avisamos por WhatsApp a los números de abajo que tengan marcado <em>Mails de ML</em> en su menú de Avisos.
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <span style="font-size: 12px; font-weight: 700; color: var(--text);">Avisos de colecta por mail (Conexión directa)</span>
+                                    <span id="colectaMailBadge" class="badge badge-warn" style="font-size: 10.5px;">Sin conectar</span>
+                                </div>
+                            </div>
+                            <div style="font-size: 11px; color: var(--text2); margin: 4px 0 10px; line-height: 1.45;">
+                                Ingresá el mail donde recibís los avisos de Mercado Libre y su contraseña. EnvioBot se conecta solo, resume cada aviso con IA, pasa la colecta a <strong>En tránsito a Full</strong> cuando la retiran y les avisa por WhatsApp a los números de abajo.
                             </div>
                             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                                <input type="text" id="colectaMailInput" class="filter-input" style="flex: 1; min-width: 240px;" placeholder="mail@tuempresa.com (hasta 3, separados por coma)" autocomplete="off">
-                                <button type="button" class="btn btn-secondary btn-sm" id="btnGuardarColectaMail" onclick="guardarColectaMail()" style="font-size: 11px; padding: 6px 14px;">Guardar</button>
+                                <input type="email" id="colectaMailInput" class="filter-input" style="flex: 1.2; min-width: 210px;" placeholder="ej: ventasml@tuempresa.com.ar" autocomplete="off">
+                                <input type="password" id="colectaMailPassInput" class="filter-input" style="flex: 1; min-width: 190px;" placeholder="Contraseña de ese mail" autocomplete="new-password">
+                                <button type="button" class="btn btn-primary btn-sm" id="btnGuardarColectaMail" onclick="guardarColectaMail()" style="font-size: 11px; padding: 6px 14px; white-space: nowrap;">Conectar y Guardar</button>
                             </div>
                             <div id="colectaMailEstado" style="font-size: 11px; color: var(--text2); min-height: 14px; margin-top: 6px;"></div>
+                            <div style="margin-top: 10px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; font-size: 11px; color: var(--text2); line-height: 1.5;">
+                                <div style="font-weight: 700; color: var(--text); margin-bottom: 4px;">¿Por qué te pedimos la contraseña de este mail?</div>
+                                <ul style="margin: 0; padding-left: 16px;">
+                                    <li><strong>Datos que Mercado Libre solo manda por correo:</strong> la API oficial de Mercado Libre no informa el horario en que pasa el camión, el nombre del chofer, el código de autorización ni el aviso inmediato cuando retiran la mercadería.</li>
+                                    <li><strong>Cero configuraciones técnicas para vos:</strong> con tu mail y clave, EnvioBot se conecta directo sin que tengas que configurar reenvíos ni listas blancas en tu servidor de correo.</li>
+                                    <li><strong>Modo Solo Lectura y 100% Privado:</strong> EnvioBot mira únicamente los correos de Mercado Libre sobre colectas Full, <strong>no borra nada, no marca tus correos como leídos</strong> y no guarda tus mails en nuestros servidores.</li>
+                                </ul>
+                            </div>
                         </div>
 
                         <!-- WhatsApp donde Mercado Libre o el transporte escribe por la colecta -->

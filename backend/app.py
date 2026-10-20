@@ -2102,25 +2102,46 @@ _RE_EMAIL = re.compile(r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")
 @jwt_required()
 @_equipo.requiere_rol('admin')
 def colecta_mail():
-    """Mail donde Mercado Libre le avisa a este cliente de sus colectas (código de autorización, horario).
-    El cliente lo reenvía a la casilla de EnvioBot y correo_colectas.py reparte el aviso por WhatsApp a su agenda."""
+    """Mail donde Mercado Libre le avisa a este cliente de sus colectas (código de autorización, horario, retiro).
+    Con contraseña: EnvioBot se conecta directo por IMAP en modo SOLO LECTURA sin que el cliente tenga que reenviar nada."""
+    import correo_colectas as _correo_col
     user_id = int(get_jwt_identity())
     buzon = os.getenv("COLECTAS_IMAP_USER", "colectas@enviobot.com.ar")
     conn = get_db()
     with conn.cursor() as cur:
         editable = _esquema.tiene_columna(cur, "user_settings", "colecta_email")   # migración 004
+        if editable:
+            _correo_col.asegurar_columnas_mail_directo(cur)
         if request.method == "GET":
             actual = ""
+            has_password = False
+            imap_host = ""
             if editable:
-                cur.execute("SELECT colecta_email FROM user_settings WHERE user_id=%s", (user_id,))
-                fila = cur.fetchone()
-                actual = (fila or {}).get("colecta_email") or ""
+                cur.execute(
+                    "SELECT colecta_email, colecta_email_password, colecta_imap_host FROM user_settings WHERE user_id=%s",
+                    (user_id,),
+                )
+                fila = cur.fetchone() or {}
+                actual = fila.get("colecta_email") or ""
+                has_password = bool((fila.get("colecta_email_password") or "").strip())
+                imap_host = fila.get("colecta_imap_host") or ""
             conn.close()
-            return jsonify({"ok": True, "editable": editable, "emails": actual, "buzon": buzon}), 200
+            return jsonify({
+                "ok": True,
+                "editable": editable,
+                "emails": actual,
+                "buzon": buzon,
+                "has_password": has_password,
+                "imap_host": imap_host,
+                "connected": bool(actual and has_password),
+            }), 200
         if not editable:
             conn.close()
             return jsonify({"ok": False, "error": "Todavía no está habilitado: falta aplicar la actualización de la base (migración 004)."}), 409
-        crudo = str((request.get_json() or {}).get("emails") or "")
+        body = request.get_json() or {}
+        crudo = str(body.get("emails") or "")
+        password_in = str(body.get("password") or "").strip()
+        clear_password = bool(body.get("clear_password"))
         direcciones = []
         for d in re.split(r"[,;\s]+", crudo.lower()):
             if not d:
@@ -2136,13 +2157,46 @@ def colecta_mail():
         if buzon.lower() in direcciones:
             conn.close()
             return jsonify({"ok": False, "error": "Ahí va la dirección donde Mercado Libre te escribe, no la casilla de EnvioBot."}), 400
-        cur.execute("SELECT user_id FROM user_settings WHERE user_id=%s", (user_id,))
-        if not cur.fetchone():
+        cur.execute(
+            "SELECT user_id, colecta_email_password, colecta_imap_host FROM user_settings WHERE user_id=%s",
+            (user_id,),
+        )
+        fila_actual = cur.fetchone()
+        if not fila_actual:
             conn.close()
             return jsonify({"ok": False, "error": "Guardá primero la configuración de alertas."}), 404
-        cur.execute("UPDATE user_settings SET colecta_email=%s WHERE user_id=%s", (",".join(direcciones) or None, user_id))
+
+        clave_guardada = (fila_actual.get("colecta_email_password") or "").strip()
+        host_guardado = (fila_actual.get("colecta_imap_host") or "").strip()
+
+        if not direcciones or clear_password:
+            nueva_clave = None
+            nuevo_host = None
+        elif password_in and set(password_in) != {"•"}:
+            ok_imap, host_det, err_imap = _correo_col.verificar_conexion_imap(
+                direcciones[0], password_in, host_preferido=host_guardado
+            )
+            if not ok_imap:
+                conn.close()
+                return jsonify({"ok": False, "error": err_imap}), 400
+            nueva_clave = password_in
+            nuevo_host = host_det
+        else:
+            nueva_clave = clave_guardada or None
+            nuevo_host = host_guardado or None
+
+        cur.execute(
+            "UPDATE user_settings SET colecta_email=%s, colecta_email_password=%s, colecta_imap_host=%s WHERE user_id=%s",
+            (",".join(direcciones) or None, nueva_clave, nuevo_host, user_id),
+        )
     conn.close()
-    return jsonify({"ok": True, "emails": ",".join(direcciones)}), 200
+    return jsonify({
+        "ok": True,
+        "emails": ",".join(direcciones),
+        "has_password": bool(nueva_clave),
+        "imap_host": nuevo_host or "",
+        "connected": bool(direcciones and nueva_clave),
+    }), 200
 
 
 _WA_COLECTA_GATEWAY = os.getenv("WA_GATEWAY_BASE_URL", "http://127.0.0.1:8085").rstrip("/")

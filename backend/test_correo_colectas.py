@@ -572,8 +572,52 @@ class TestConfirmacionRetiro(unittest.TestCase):
         self.assertIn("Estado en EnvioBot: *ML-78889570* pasó a *En tránsito a Full*", msg)
 
 
+class _ImapSoloLectura:
+    def __init__(self, mails):
+        self.mails = {b"%d" % (i + 1): m for i, m in enumerate(mails)}
+        self.readonly_usado = None
+        self.flags_tocados = []
+
+    def login(self, user, pwd):
+        return "OK", [b"logged in"]
+
+    def select(self, box="INBOX", readonly=False):
+        self.readonly_usado = readonly
+        return "OK", [b"%d" % len(self.mails)]
+
+    def search(self, charset, criterio):
+        return "OK", [b" ".join(self.mails.keys())]
+
+    def fetch(self, num, partes):
+        return "OK", [(b"1 (BODY[] {100})", self.mails[num])]
+
+    def store(self, num, op, flag):
+        self.flags_tocados.append((num, op, flag))
+        return "OK", []
+
+    def logout(self):
+        return "BYE", []
+
+
+class TestCasillaDirectaSoloLectura(unittest.TestCase):
+    def test_candidatos_y_verificacion_en_modo_solo_lectura(self):
+        self.assertEqual(c.candidatos_imap("ventasml@logax.com.ar"), ["mail.logax.com.ar", "imap.logax.com.ar", "logax.com.ar"])
+        imap_fake = _ImapSoloLectura([])
+        ok, host, err = c.verificar_conexion_imap(
+            "ventasml@logax.com.ar",
+            "clave123",
+            conectar_ssl=lambda h, p, t: imap_fake,
+        )
+        self.assertTrue(ok)
+        self.assertEqual(host, "mail.logax.com.ar")
+        self.assertIsNone(err)
+        self.assertTrue(imap_fake.readonly_usado)
+        self.assertEqual(imap_fake.flags_tocados, [])
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

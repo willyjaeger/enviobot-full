@@ -700,7 +700,8 @@ def direcciones_del_mail(msg, propias=()):
 
 def es_remitente_confiable(msg, propias=()):
     """Evita que un tercero mande un mail falso con Cc al colecta_email del cliente:
-    - Si hay cabeceras Authentication-Results con dkim=fail o dmarc=fail, se rechaza.
+    - Si hay cabeceras Authentication-Results con dkim=fail (y sin dkim=pass), se rechaza.
+      (En un reenvío automático es normal que spf dé fail porque reenvía otro servidor, pero dkim se mantiene).
     - Si el From tiene dirección de correo, su dominio debe ser de Mercado Libre o coincidir
       con alguno de los dominios destinatarios del propio cliente."""
     auth_headers = " ".join(
@@ -708,7 +709,7 @@ def es_remitente_confiable(msg, propias=()):
         for h in ("Authentication-Results", "ARC-Authentication-Results")
         for v in msg.get_all(h, [])
     )
-    if "dkim=fail" in auth_headers or "dmarc=fail" in auth_headers or "spf=fail" in auth_headers:
+    if "dkim=fail" in auth_headers and "dkim=pass" not in auth_headers:
         return False
     remitentes = [a.strip().lower() for _n, a in getaddresses([str(v) for v in msg.get_all("From", [])]) if a and "@" in a]
     if not remitentes:
@@ -887,6 +888,271 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None, resolver=None,
     return res
 
 
+# ── Lectura directa en modo SOLO LECTURA de la casilla del cliente (sin reenvíos) ──
+
+_PROVEEDORES_IMAP = {
+    "gmail.com": ["imap.gmail.com"],
+    "googlemail.com": ["imap.gmail.com"],
+    "outlook.com": ["outlook.office365.com"],
+    "hotmail.com": ["outlook.office365.com"],
+    "live.com": ["outlook.office365.com"],
+    "live.com.ar": ["outlook.office365.com"],
+    "msn.com": ["outlook.office365.com"],
+    "yahoo.com": ["imap.mail.yahoo.com"],
+    "yahoo.com.ar": ["imap.mail.yahoo.com"],
+    "icloud.com": ["imap.mail.me.com"],
+}
+
+
+def asegurar_columnas_mail_directo(cur):
+    """Asegura las columnas en user_settings para conexión directa IMAP de solo lectura."""
+    import esquema
+    definiciones = (
+        ("colecta_email_password", "VARCHAR(255) NULL"),
+        ("colecta_imap_host", "VARCHAR(255) NULL"),
+        ("colecta_mail_vistos", "TEXT NULL"),
+    )
+    for col, tipo in definiciones:
+        if not esquema.tiene_columna(cur, "user_settings", col):
+            try:
+                cur.execute(f"ALTER TABLE user_settings ADD COLUMN {col} {tipo}")
+                esquema._COLUMNAS.pop(("user_settings", col), None)
+            except Exception as e:
+                logger.warning(f"[Mail colecta directo] No se pudo agregar columna {col}: {e}")
+
+
+def candidatos_imap(email_addr, host_preferido=None):
+    """Devuelve la lista ordenada de servidores IMAP SSL (puerto 993) posibles para un mail."""
+    email_addr = (email_addr or "").strip().lower()
+    if "@" not in email_addr:
+        return []
+    dom = email_addr.rsplit("@", 1)[-1]
+    lista = []
+    if host_preferido and host_preferido.strip():
+        lista.append(host_preferido.strip().lower())
+    for h in _PROVEEDORES_IMAP.get(dom, []):
+        if h not in lista:
+            lista.append(h)
+    for h in (f"mail.{dom}", f"imap.{dom}", dom):
+        if h not in lista:
+            lista.append(h)
+    return lista
+
+
+def _conectar_imap_ssl(host, port=993, timeout=6):
+    return imaplib.IMAP4_SSL(host, port, timeout=timeout)
+
+
+def verificar_conexion_imap(email_addr, password, host_preferido=None, conectar_ssl=None):
+    """Prueba conectarse en modo SOLO LECTURA (`readonly=True`) a la casilla del cliente.
+    Devuelve `(ok, host_detectado, error_msg)`."""
+    email_addr = (email_addr or "").strip().lower()
+    password = (password or "").strip()
+    if not email_addr or not password:
+        return False, None, "Completá el mail y la contraseña."
+    conectar_fn = conectar_ssl or _conectar_imap_ssl
+    candidatos = candidatos_imap(email_addr, host_preferido=host_preferido)
+    if not candidatos:
+        return False, None, "El mail no es válido."
+
+    ultimo_error = ""
+    error_credenciales = False
+    for host in candidatos:
+        imap = None
+        try:
+            imap = conectar_fn(host, 993, 6)
+            imap.login(email_addr, password)
+            tipo, _ = imap.select("INBOX", readonly=True)
+            if tipo == "OK":
+                return True, host, None
+        except imaplib.IMAP4.error as e:
+            error_credenciales = True
+            ultimo_error = str(e)
+        except Exception as e:
+            ultimo_error = str(e)
+        finally:
+            if imap is not None:
+                try:
+                    imap.logout()
+                except Exception:
+                    pass
+    if error_credenciales:
+        if "gmail.com" in email_addr:
+            return False, None, "Contraseña rechazada por Gmail. Si tenés verificación en 2 pasos, usá una Contraseña de Aplicación de Google."
+        return False, None, "El servidor de correo rechazó la contraseña. Revisá que sea la clave con la que entrás a tu Webmail."
+    return False, None, f"No pudimos conectar con el servidor de correo ({ultimo_error or 'sin respuesta'})."
+
+
+def _id_unico_mail(msg, num_bytes):
+    mid = str(msg.get("Message-ID") or "").strip()
+    if mid:
+        return mid[:180]
+    fecha = str(msg.get("Date") or "").strip()
+    asunto = str(msg.get("Subject") or "").strip()[:60]
+    num_str = num_bytes.decode("utf-8", errors="ignore") if isinstance(num_bytes, bytes) else str(num_bytes)
+    return f"uid:{num_str}:{fecha}:{asunto}"[:180]
+
+
+def ejecutar_casillas_directas(ahora=None, enviar=None, conectar_ssl=None, max_horas=MAX_HORAS_DEFECTO):
+    """Lee en modo SOLO LECTURA (`readonly=True`) las casillas de los clientes que guardaron su contraseña.
+    No borra, no marca como leído ni descarga nada a disco; guarda solo los Message-ID ya avisados."""
+    res = {"cuentas": 0, "leidos": 0, "avisados": 0, "pendientes": 0, "errores": 0}
+    if not pausa_avisos.puede_enviar(pausa_avisos.MAIL_COLECTA):
+        res["pausado"] = True
+        return res
+
+    import alerts_engine
+    from aviso_limite_colecta import _destinatarios
+
+    ahora = ahora or datetime.now(proyeccion.HORA_BA)
+    enviar = enviar or _enviar_whatsapp
+    conectar_fn = conectar_ssl or _conectar_imap_ssl
+
+    try:
+        conn = alerts_engine.get_db()
+    except Exception:
+        return res
+
+    try:
+        with conn.cursor() as cur:
+            asegurar_columnas_mail_directo(cur)
+            cur.execute("""
+                SELECT s.*
+                FROM user_settings s
+                JOIN users u ON u.id = s.user_id
+                WHERE s.colecta_email IS NOT NULL AND s.colecta_email <> ''
+                  AND s.colecta_email_password IS NOT NULL AND s.colecta_email_password <> ''
+                  AND COALESCE(u.active, 1) = 1 AND COALESCE(u.is_blocked, 0) = 0
+            """)
+            filas = cur.fetchall() or []
+    finally:
+        conn.close()
+
+    for f in filas:
+        user_id = f["user_id"]
+        email_principal = str(f["colecta_email"]).split(",")[0].strip().lower()
+        password = str(f.get("colecta_email_password") or "").strip()
+        host_guardado = (f.get("colecta_imap_host") or "").strip()
+        if not email_principal or not password:
+            continue
+
+        res["cuentas"] += 1
+        try:
+            vistos = json.loads(f.get("colecta_mail_vistos") or "[]")
+            if not isinstance(vistos, list):
+                vistos = []
+        except Exception:
+            vistos = []
+        vistos_set = set(vistos)
+        vistos_modificado = False
+
+        hosts = candidatos_imap(email_principal, host_preferido=host_guardado)
+        imap = None
+        host_ok = None
+        for h in hosts:
+            try:
+                imap = conectar_fn(h, 993, 8)
+                imap.login(email_principal, password)
+                tipo, _ = imap.select("INBOX", readonly=True)
+                if tipo == "OK":
+                    host_ok = h
+                    break
+            except Exception:
+                if imap is not None:
+                    try:
+                        imap.logout()
+                    except Exception:
+                        pass
+                    imap = None
+
+        if not imap or not host_ok:
+            res["errores"] += 1
+            logger.warning(f"[Mail colecta directo] No se pudo conectar a {email_principal} (user_id={user_id})")
+            continue
+
+        try:
+            tipo, datos = imap.search(None, "ALL")
+            todos_ids = datos[0].split() if tipo == "OK" and datos and datos[0] else []
+            ultimos_ids = todos_ids[-25:]  # solo los últimos 25 correos de la bandeja
+
+            conn_u = alerts_engine.get_db()
+            try:
+                with conn_u.cursor() as cur:
+                    if host_ok != host_guardado:
+                        cur.execute("UPDATE user_settings SET colecta_imap_host=%s WHERE user_id=%s", (host_ok, user_id))
+                    cur.execute("SELECT ml_nickname FROM ml_credentials WHERE user_id=%s AND ml_nickname IS NOT NULL ORDER BY id", (user_id,))
+                    nombres = [r["ml_nickname"] for r in cur.fetchall()]
+                    cur.execute("SELECT COALESCE(business_name, full_name) AS n FROM users WHERE id=%s", (user_id,))
+                    u = cur.fetchone() or {}
+                    nombre_cuenta = " / ".join(nombres) or u.get("n") or "tu cuenta"
+                    destinos = _destinatarios(conn_u, user_id, f, pausa_avisos.MAIL_COLECTA)
+            finally:
+                conn_u.close()
+
+            for num in ultimos_ids:
+                tipo_f, partes = imap.fetch(num, "(BODY.PEEK[])")
+                if tipo_f != "OK" or not partes or not partes[0]:
+                    continue
+                msg = email.message_from_bytes(partes[0][1], policy=email.policy.default)
+                mid = _id_unico_mail(msg, num)
+                if mid in vistos_set:
+                    continue
+
+                try:
+                    fecha_mail = parsedate_to_datetime(str(msg.get("Date")))
+                    if fecha_mail.tzinfo is None:
+                        fecha_mail = fecha_mail.replace(tzinfo=ahora.tzinfo)
+                    if ahora - fecha_mail > timedelta(hours=max_horas):
+                        continue
+                except (TypeError, ValueError):
+                    pass
+
+                asunto = str(msg.get("Subject") or "")
+                cuerpo = texto_del_mail(msg)
+                if not es_de_colecta(asunto, cuerpo, str(msg.get("From") or "")) or not es_remitente_confiable(msg):
+                    continue
+
+                res["leidos"] += 1
+                datos_mail = enriquecer_datos(asunto, cuerpo)
+                if datos_mail.get("evento") == "retirada":
+                    marcar_colecta_retirada([user_id], datos_mail, ahora=ahora)
+
+                a_enviar = [t for t, h in destinos.items() if en_horario(h, ahora)]
+                if not a_enviar:
+                    res["pendientes"] += 1
+                    continue
+
+                resultados = enviar(a_enviar, armar_mensaje(asunto, cuerpo, datos_mail, nombre_cuenta))
+                if any((r.get("result") or {}).get("ok") for r in (resultados or [])):
+                    res["avisados"] += 1
+                    vistos.append(mid)
+                    vistos_set.add(mid)
+                    vistos_modificado = True
+                    logger.info(f"[Mail colecta directo] Avisado por WhatsApp ({nombre_cuenta}): {asunto[:80]}")
+
+            if vistos_modificado:
+                vistos_recortados = vistos[-80:]
+                conn_v = alerts_engine.get_db()
+                try:
+                    with conn_v.cursor() as cur:
+                        cur.execute(
+                            "UPDATE user_settings SET colecta_mail_vistos=%s WHERE user_id=%s",
+                            (json.dumps(vistos_recortados), user_id),
+                        )
+                finally:
+                    conn_v.close()
+        finally:
+            try:
+                imap.logout()
+            except Exception:
+                pass
+
+    return res
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    print(ejecutar())
+    r_buzon = ejecutar()
+    r_directo = ejecutar_casillas_directas()
+    print({"buzon": r_buzon, "directas": r_directo})
+
