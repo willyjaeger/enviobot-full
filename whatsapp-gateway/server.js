@@ -27,7 +27,6 @@ if (!fs.existsSync(COLECTA_AUTH_BASE)) {
 
 function readInternalSecret() {
     if (process.env.WA_INTERNAL_SECRET) return process.env.WA_INTERNAL_SECRET.trim();
-    if (process.env.JWT_SECRET_KEY) return process.env.JWT_SECRET_KEY.trim();
     const candidates = [
         '/var/www/enviobot-full/backend/.env',
         path.join(__dirname, '..', 'backend', '.env'),
@@ -36,15 +35,12 @@ function readInternalSecret() {
         try {
             if (!fs.existsSync(envPath)) continue;
             const raw = fs.readFileSync(envPath, 'utf8');
-            let jwtSecret = '';
             for (const line of raw.split(/\r?\n/)) {
-                const m = line.match(/^\s*(WA_INTERNAL_SECRET|JWT_SECRET_KEY)\s*=\s*(.+)\s*$/);
+                const m = line.match(/^\s*WA_INTERNAL_SECRET\s*=\s*(.+)\s*$/);
                 if (!m) continue;
-                const val = m[2].replace(/^['"]|['"]$/g, '').trim();
-                if (m[1] === 'WA_INTERNAL_SECRET' && val) return val;
-                if (m[1] === 'JWT_SECRET_KEY' && val) jwtSecret = val;
+                const val = m[1].replace(/^['"]|['"]$/g, '').trim();
+                if (val) return val;
             }
-            if (jwtSecret) return jwtSecret;
         } catch (_) {}
     }
     return '';

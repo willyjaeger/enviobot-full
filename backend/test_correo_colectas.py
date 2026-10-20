@@ -431,29 +431,29 @@ class TestWhatsAppColecta(unittest.TestCase):
         self.assertTrue(all(ord(ch) < 0x1F000 for ch in msg))
 
     def test_webhook_interno_rechaza_trafico_de_nginx_o_sin_token(self):
-        env = {"JWT_SECRET_KEY": "secreto-prueba-123"}
+        env = {"WA_INTERNAL_SECRET": "secreto-wa-exclusivo-123", "JWT_SECRET_KEY": "jwt-distinto"}
         # Detrás de nginx viene X-Forwarded-For aunque remote_addr sea 127.0.0.1
         self.assertFalse(c.autorizado_webhook_interno(
             "127.0.0.1",
-            {"X-Forwarded-For": "190.1.2.3", "X-Internal-Token": "secreto-prueba-123"},
+            {"X-Forwarded-For": "190.1.2.3", "X-Internal-Token": "secreto-wa-exclusivo-123"},
             env=env,
         ))
         self.assertFalse(c.autorizado_webhook_interno(
             "127.0.0.1",
-            {"X-Real-IP": "190.1.2.3", "X-Internal-Token": "secreto-prueba-123"},
+            {"X-Real-IP": "190.1.2.3", "X-Internal-Token": "secreto-wa-exclusivo-123"},
             env=env,
         ))
-        # Sin token o con token incorrecto
+        # No acepta JWT_SECRET_KEY ni llamadas sin token
         self.assertFalse(c.autorizado_webhook_interno("127.0.0.1", {}, env=env))
         self.assertFalse(c.autorizado_webhook_interno(
             "127.0.0.1",
-            {"X-Internal-Token": "otro"},
+            {"X-Internal-Token": "jwt-distinto"},
             env=env,
         ))
-        # Local directo con token correcto
+        # Local directo con WA_INTERNAL_SECRET correcto
         self.assertTrue(c.autorizado_webhook_interno(
             "127.0.0.1",
-            {"X-Internal-Token": "secreto-prueba-123"},
+            {"X-Internal-Token": "secreto-wa-exclusivo-123"},
             env=env,
         ))
 
@@ -492,6 +492,28 @@ class TestWhatsAppColecta(unittest.TestCase):
             policy=c.email.policy.default,
         )
         self.assertEqual(c.direcciones_del_mail(m, propias=("colectas@enviobot.com.ar",)), set())
+
+    def test_rechaza_mail_falso_de_tercero_o_con_dkim_fail(self):
+        # Un tercero ajeno manda un mail con To: ventasml@logax.com.ar nombrando a Mercado Libre
+        falso_tercero = _mail(
+            asunto="Colecta de Mercado Libre",
+            cuerpo=CUERPO_ML + "\nMercado Libre",
+            de="Impostor <atacante@gmail.com>",
+            para="ventasml@logax.com.ar",
+        )
+        res, enviados, _ = _correr([falso_tercero])
+        self.assertEqual((res["ignorados"], res["avisados"], enviados), (1, 0, []))
+
+        # Alguien falsifica From: no-responder@mercadolibre.com pero el servidor marca dmarc=fail
+        m = EmailMessage()
+        m["Subject"] = "Tu colecta de Full"
+        m["From"] = "Mercado Libre <no-responder@mercadolibre.com>"
+        m["To"] = "ventasml@logax.com.ar"
+        m["Date"] = format_datetime(LUNES_10 - timedelta(minutes=5))
+        m["Authentication-Results"] = "ferozo.com; spf=fail; dkim=fail; dmarc=fail"
+        m.set_content(CUERPO_ML)
+        res2, enviados2, _ = _correr([m.as_bytes()])
+        self.assertEqual((res2["ignorados"], res2["avisados"], enviados2), (1, 0, []))
 
 
 if __name__ == "__main__":

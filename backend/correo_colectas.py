@@ -452,7 +452,7 @@ def armar_mensaje_wa_colecta(texto, datos, cuenta=None, telefono_receptor=None, 
 
 def autorizado_webhook_interno(remote_addr, headers, env=None):
     """Valida que el llamado al webhook interno venga directo de localhost (no vía proxy nginx)
-    y traiga el token compartido X-Internal-Token."""
+    y traiga el token compartido propio WA_INTERNAL_SECRET en X-Internal-Token."""
     import hmac
     env = os.environ if env is None else env
     headers = headers or {}
@@ -461,7 +461,7 @@ def autorizado_webhook_interno(remote_addr, headers, env=None):
     # Detrás de nginx, cualquier petición externa trae X-Forwarded-For / X-Real-IP
     if headers.get("X-Forwarded-For") or headers.get("X-Real-IP"):
         return False
-    secreto = (env.get("WA_INTERNAL_SECRET") or env.get("JWT_SECRET_KEY") or "").strip()
+    secreto = (env.get("WA_INTERNAL_SECRET") or "").strip()
     token = str(headers.get("X-Internal-Token") or "").strip()
     if not secreto or not token:
         return False
@@ -562,6 +562,9 @@ def _conectar(cfg):
     return imap
 
 
+_RE_DOMINIO_ML = re.compile(r"^(?:[a-z0-9.-]+\.)?mercado(?:libre|envios)\.com(?:\.[a-z]{2,3})?$", re.I)
+
+
 def direcciones_del_mail(msg, propias=()):
     """Direcciones a las que llegó el mail (en minúscula), sin las de la casilla común de EnvioBot.
 
@@ -572,6 +575,29 @@ def direcciones_del_mail(msg, propias=()):
         valores += [str(v) for v in msg.get_all(h, [])]
     direcciones = {a.strip().lower() for _n, a in getaddresses(valores) if a}
     return direcciones - {p.lower() for p in propias}
+
+
+def es_remitente_confiable(msg, propias=()):
+    """Evita que un tercero mande un mail falso con Cc al colecta_email del cliente:
+    - Si hay cabeceras Authentication-Results con dkim=fail o dmarc=fail, se rechaza.
+    - Si el From tiene dirección de correo, su dominio debe ser de Mercado Libre o coincidir
+      con alguno de los dominios destinatarios del propio cliente."""
+    auth_headers = " ".join(
+        str(v).lower()
+        for h in ("Authentication-Results", "ARC-Authentication-Results")
+        for v in msg.get_all(h, [])
+    )
+    if "dkim=fail" in auth_headers or "dmarc=fail" in auth_headers or "spf=fail" in auth_headers:
+        return False
+    remitentes = [a.strip().lower() for _n, a in getaddresses([str(v) for v in msg.get_all("From", [])]) if a and "@" in a]
+    if not remitentes:
+        return True
+    dom_from = remitentes[0].rsplit("@", 1)[-1]
+    if _RE_DOMINIO_ML.match(dom_from):
+        return True
+    destinos = direcciones_del_mail(msg, propias=propias)
+    dominios_destino = {d.rsplit("@", 1)[-1] for d in destinos if "@" in d}
+    return dom_from in dominios_destino
 
 
 def cuentas_por_direccion(direcciones):
@@ -654,7 +680,7 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None, resolver=None)
             res["leidos"] += 1
             asunto = str(msg.get("Subject") or "")
             cuerpo = texto_del_mail(msg)
-            if not es_de_colecta(asunto, cuerpo, str(msg.get("From") or "")):
+            if not es_de_colecta(asunto, cuerpo, str(msg.get("From") or "")) or not es_remitente_confiable(msg, propias=(cfg["user"],)):
                 _descartar(imap, num, cfg)
                 res["ignorados"] += 1
                 continue
