@@ -303,6 +303,28 @@ class TestEtapaColecta(unittest.TestCase):
         self.assertEqual(p.armar_colecta(dict(fila, status='scheduled'), TestArmarColecta.PROD, en_proceso=5)['unidades_en_proceso'], 0)
 
 
+class TestRepartirEntrante(unittest.TestCase):
+    def test_sin_colectas_recibidas_da_lo_mismo_que_antes(self):
+        self.assertEqual(p.repartir_entrante(0, 0, 100), (0, 100))
+        self.assertEqual(p.repartir_entrante(30, 0, 100), (30, 70))     # lo no disponible sale de lo que venía
+        self.assertEqual(p.repartir_entrante(150, 0, 100), (150, 0))
+        self.assertEqual(p.repartir_entrante(0, 0, 0), (0, 0))
+
+    def test_lo_que_ml_ya_recibio_esta_en_procesamiento_no_en_camino(self):
+        # colecta 78889570: ML la recibió (100 u.) pero todavía no figuran como no disponibles
+        self.assertEqual(p.repartir_entrante(0, 100, 0), (100, 0))
+        # además viaja otra colecta de 40 u.
+        self.assertEqual(p.repartir_entrante(0, 100, 40), (100, 40))
+
+    def test_no_se_cuenta_dos_veces_lo_recibido_y_lo_no_disponible(self):
+        self.assertEqual(p.repartir_entrante(100, 100, 0), (100, 0))
+        self.assertEqual(p.repartir_entrante(120, 100, 40), (120, 20))   # 20 u. no disponibles más allá de lo recibido
+
+    def test_datos_raros_no_rompen(self):
+        self.assertEqual(p.repartir_entrante(None, None, None), (0, 0))
+        self.assertEqual(p.repartir_entrante(-5, 0, 10), (0, 10))
+
+
 class TestDemoraAprendida(unittest.TestCase):
     def test_sin_muestras_no_hay_demora(self):
         self.assertIsNone(p.demora_aprendida([]))

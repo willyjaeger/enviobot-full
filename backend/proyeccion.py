@@ -160,6 +160,21 @@ def etapa_colecta(codigo, estado, en_proceso=0, recibida_ml=False):
     return "armada" if str(codigo or "").startswith("ML-") else "propuesta"
 
 
+def repartir_entrante(no_disponible, recibidas, en_transito):
+    """Reparte lo que viene hacia Full entre 'en procesamiento en ML' y 'en camino'.
+
+    `no_disponible`: unidades que ML informa como no disponibles (las está procesando).
+    `recibidas`: unidades de colectas que ML ya marcó como recibidas (siguen 'en tránsito' para EnvioBot hasta que se cierren).
+    `en_transito`: unidades de colectas en tránsito que ML todavía no recibió.
+    Lo recibido por ML ya no está en camino: está en procesamiento. Lo que ML informa como no disponible por encima de
+    lo recibido sale de lo que todavía venía en camino. Sin colectas recibidas da lo mismo que antes.
+    Devuelve (en_proceso, en_camino)."""
+    no_disponible, recibidas, en_transito = (max(0, int(x or 0)) for x in (no_disponible, recibidas, en_transito))
+    en_proceso = max(no_disponible, recibidas)
+    resto_no_disponible = max(0, no_disponible - recibidas)
+    return en_proceso, max(0, en_transito - resto_no_disponible)
+
+
 def demora_aprendida(muestras):
     """Días que de verdad tarda una colecta del retiro a la recepción, según las últimas recibidas (la mediana,
     para que una demora rara no la mueva). `muestras`: días reales, de la más reciente a la más vieja. None si

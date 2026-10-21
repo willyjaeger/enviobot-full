@@ -1496,6 +1496,10 @@ def get_full_items():
         transit_by_sku = {}
         transit_by_inv = {}
         transit_by_item = {}
+        # Colectas que Mercado Libre ya recibió (siguen en tránsito para nosotros): están en procesamiento, no en camino.
+        recibidas_by_sku = {}
+        recibidas_by_inv = {}
+        recibidas_by_item = {}
 
         for r in shipment_rows:
             qty = int(r.get("total_units") or 0)
@@ -1504,9 +1508,13 @@ def get_full_items():
             inv_k = (r.get("inventory_id") or "").strip()
             item_k = (r.get("item_id") or "").strip()
 
-            target_sku_dict = prep_by_sku if st == "scheduled" else transit_by_sku
-            target_inv_dict = prep_by_inv if st == "scheduled" else transit_by_inv
-            target_item_dict = prep_by_item if st == "scheduled" else transit_by_item
+            recibida_ml = st == "in_transit" and (r.get("meli_inbound_status") or "") == "received"
+            if st == "scheduled":
+                target_sku_dict, target_inv_dict, target_item_dict = prep_by_sku, prep_by_inv, prep_by_item
+            elif recibida_ml:
+                target_sku_dict, target_inv_dict, target_item_dict = recibidas_by_sku, recibidas_by_inv, recibidas_by_item
+            else:
+                target_sku_dict, target_inv_dict, target_item_dict = transit_by_sku, transit_by_inv, transit_by_item
 
             if sku_k: target_sku_dict[sku_k] = target_sku_dict.get(sku_k, 0) + qty
             if inv_k: target_inv_dict[inv_k] = target_inv_dict.get(inv_k, 0) + qty
@@ -1570,10 +1578,11 @@ def get_full_items():
 
             prep_units = prep_by_inv.get(inv_key, 0) or prep_by_sku.get(sku_key, 0) or prep_by_item.get(item_key, 0)
             raw_transit_units = transit_by_inv.get(inv_key, 0) or transit_by_sku.get(sku_key, 0) or transit_by_item.get(item_key, 0)
-            in_process_units = c_item.get("not_available_stock_full", 0)
+            recibidas_units = recibidas_by_inv.get(inv_key, 0) or recibidas_by_sku.get(sku_key, 0) or recibidas_by_item.get(item_key, 0)
 
-            # Si el usuario despachó unidades en tránsito y MeLi ya empezó a recibir en muelle:
-            remaining_transit = max(0, raw_transit_units - in_process_units) if raw_transit_units > 0 else 0
+            # Lo que ML ya recibió está en procesamiento; lo que informa como no disponible sale de lo que venía en camino.
+            in_process_units, remaining_transit = _proy.repartir_entrante(
+                c_item.get("not_available_stock_full", 0), recibidas_units, raw_transit_units)
 
             c_item["in_process_stock"] = in_process_units
             c_item["in_preparation_stock"] = prep_units
