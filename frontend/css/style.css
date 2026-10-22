@@ -2112,3 +2112,4 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-recibida-top { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; font-size: 13px; color: var(--text2); }
 .pc-recibida-top b { color: var(--text); }
 .pc-recibidas-pie { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.pc-modal-chica { max-width: 460px; }

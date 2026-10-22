@@ -1751,6 +1751,11 @@ def get_full_items():
             ORDER BY pickup_date DESC LIMIT 5
         """, (account_id,))
         demora_real = _proy.demora_aprendida([(r["estimated_arrival_date"] - r["pickup_date"]).days for r in cur.fetchall()])
+        cuenta_por_sku = {}
+        for ci in consolidated.values():
+            k = (ci.get("sku") or "").strip().upper()
+            if k and ci.get("account_nickname"):
+                cuenta_por_sku[k] = ci["account_nickname"]
         colectas = []
         if filas_col:
             ids = [f["id"] for f in filas_col]
@@ -1773,9 +1778,12 @@ def get_full_items():
                 en_proceso = sum(min(en_proceso_sku.get((p.get("sku") or "").strip().upper(), 0),
                                      int(p.get("units_to_send") or 0)) for p in prods)
                 colectas.append(_proy.armar_colecta(f, prods, hora=hora_limite, en_proceso=en_proceso, demora_real=demora_real))
+                colectas[-1]["cuenta_ml"] = _cuenta_ml_de_colecta(prods, cuenta_por_sku)
 
         # Las ya recibidas por Mercado Libre se muestran aparte y solo las del último mes.
         colectas_recibidas = _colectas_recibidas(cur, account_id, today - timedelta(days=DIAS_RECIBIDAS_A_LA_VISTA), hora_limite, demora_real)
+        for c in colectas_recibidas:
+            c["cuenta_ml"] = _cuenta_ml_de_colecta(c.get("productos") or [], cuenta_por_sku)
 
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()
@@ -1795,6 +1803,17 @@ def get_full_items():
 
 
 DIAS_RECIBIDAS_A_LA_VISTA = 30
+
+
+def _cuenta_ml_de_colecta(productos, cuenta_por_sku):
+    """Cuenta de Mercado Libre dueña de la colecta: la de la mayoría de sus productos (la colecta no guarda la cuenta).
+    Sirve para avisar con qué cuenta hay que entrar a ML para verla."""
+    cuentas = {}
+    for p in productos:
+        c = cuenta_por_sku.get((p.get("sku") or "").strip().upper())
+        if c:
+            cuentas[c] = cuentas.get(c, 0) + 1
+    return max(cuentas, key=cuentas.get) if cuentas else None
 
 
 def _colectas_recibidas(cur, account_id, desde, hora_limite=None, demora_real=None, hasta=None):

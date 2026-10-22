@@ -1967,19 +1967,50 @@ function urlEnvioMl(codigo) {
     return m ? `${URL_ML_INBOUNDS}/${m[1]}/details` : URL_ML_INBOUNDS;
 }
 
-function botonesMlColecta(id, codigo) {
+// Cuenta de Mercado Libre de una colecta, por su id (viene con cada colecta del servidor).
+function cuentaMlDeColecta(id) {
+    const c = (colectasData || []).concat(colectasRecibidasData || []).find(x => Number(x.id) === Number(id));
+    return c && c.cuenta_ml ? c.cuenta_ml : null;
+}
+
+function botonesMlColecta(id, codigo, cuenta) {
+    cuenta = cuenta || cuentaMlDeColecta(id);
     const url = urlEnvioMl(codigo);
     const esDetalle = url !== URL_ML_INBOUNDS;
     const textoMl = esDetalle ? 'Ver en ML' : 'Gestión Full en ML';
     const idNum = Number(id) > 0 ? Number(id) : 0;
     const codEsc = escapeHtml(String(codigo || ''));
-    return `<a class="btn btn-secondary btn-sm" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Abrir este envío en Mercado Libre Full">${textoMl} ↗</a>` +
+    // Si sabemos de qué cuenta es, avisamos antes de abrir: Mercado Libre solo muestra el envío con esa cuenta.
+    const abrir = cuenta
+        ? `<button type="button" class="btn btn-secondary btn-sm" onclick="abrirColectaEnMl('${escapeHtml(url)}', '${escapeHtml(String(cuenta).replace(/'/g, ''))}')" title="Abrir este envío en Mercado Libre (cuenta ${escapeHtml(String(cuenta))})">${textoMl} ↗</button>`
+        : `<a class="btn btn-secondary btn-sm" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="Abrir este envío en Mercado Libre Full">${textoMl} ↗</a>`;
+    return abrir +
         `<button type="button" class="btn btn-secondary btn-sm" onclick="avisarHorarioColecta(${idNum}, '${codEsc}')" title="Pegar el horario de retiro de Mercado Libre y avisar por WhatsApp">Avisar horario WA</button>`;
 }
 
-// Comparativa de una colecta: lo que tiene cargado (el pedido de Mercado Libre) contra lo que propone EnvioBot.
-// La cuenta es la de impactoPorIngreso: unidades para llegar al objetivo de días cuando entra la colecta,
-// descontando el stock que queda para ese día y lo que ya viaja en otras colectas.
+function cerrarColectaEnMl() {
+    const m = document.getElementById('pc-modal-ml');
+    if (m) m.remove();
+}
+
+// Ventana previa a abrir Mercado Libre: la colecta es de una cuenta y ML solo la muestra con esa cuenta.
+function abrirColectaEnMl(url, cuenta) {
+    const previo = document.getElementById('pc-modal-ml');
+    if (previo) previo.remove();
+    const modal = document.createElement('div');
+    modal.id = 'pc-modal-ml';
+    modal.className = 'pc-modal-fondo';
+    modal.setAttribute('onclick', 'cerrarColectaEnMl()');
+    modal.innerHTML = '<div class="pc-modal-caja pc-modal-chica" role="dialog" aria-modal="true" onclick="event.stopPropagation()">' +
+        '<div class="pc-modal-cab"><div><div class="pc-hero-titulo">Esta colecta es de la cuenta ' + escapeHtml(cuenta) + '</div></div>' +
+        '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarColectaEnMl()">Cerrar</button></div>' +
+        '<p class="pc-fila-nota">Mercado Libre solo muestra el envío si estás con esa cuenta. Si en esta computadora entraste con otra, copiá el link, abrí una ventana privada (Ctrl + Shift + N) y pegalo ahí; Mercado Libre te va a pedir que entres con la cuenta <b>' + escapeHtml(cuenta) + '</b>.</p>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">' +
+        '<button type="button" class="btn btn-sm" data-copiar="' + escapeHtml(url) + '" onclick="copiarTexto(event, this)">Copiar link</button>' +
+        '<a class="btn btn-secondary btn-sm" href="' + escapeHtml(url) + '" target="_blank" rel="noopener" onclick="cerrarColectaEnMl()">Abrir en esta ventana ↗</a></div></div>';
+    document.body.appendChild(modal);
+}
+
 function filasComparativaColecta(c, hoy) {
     hoy = hoy || new Date();
     const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
@@ -2066,7 +2097,7 @@ function tarjetaDeColecta(c) {
             <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado}${recibida ? '' : ` Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))} (fecha estimada).`}${c.de_ml ? '' : ' Falta cargarla en Mercado Libre.'}</div>
             ${pasosColecta(c.codigo, c.etapa)}
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${boton}${botonesMlColecta(c.id, c.codigo)}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${boton}${botonesMlColecta(c.id, c.codigo, c.cuenta_ml)}</div>
         ${detalle}
         ${htmlComparativaColecta(c)}
         ${htmlProyeccionColecta(c)}

@@ -212,6 +212,28 @@ process.stdout.write(vm.runInContext('htmlColectasRecibidas()', ctx));
         self.assertLess(cuerpo.index('a.click()'), cuerpo.index("method: 'DELETE'"))     # primero baja el archivo
         self.assertGreaterEqual(cuerpo.count('confirm('), 2)                           # y confirma dos veces antes de borrar
 
+    def test_ver_en_ml_avisa_con_que_cuenta_hay_que_entrar(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('colectasData = [{ id: 3, cuenta_ml: "MISTERNUT" }];', ctx);
+process.stdout.write(JSON.stringify({
+  con: vm.runInContext('botonesMlColecta(3, "ML-78889570")', ctx),
+  sin: vm.runInContext('botonesMlColecta(99, "ML-78889570")', ctx),
+  explicita: vm.runInContext('botonesMlColecta(99, "ML-78889570", "OTRA")', ctx)
+}));
+"""
+        r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertIn("abrirColectaEnMl('https://vendedores.mercadolibre.com.ar/shipping/inbounds/78889570/details', 'MISTERNUT')", d['con'])
+        self.assertIn('cuenta MISTERNUT', d['con'])
+        self.assertNotIn('<a class="btn btn-secondary btn-sm" href="https://vendedores', d['con'])   # no abre directo
+        self.assertIn('<a class="btn btn-secondary btn-sm" href="https://vendedores', d['sin'])      # sin cuenta conocida: link de siempre
+        self.assertIn("'OTRA')", d['explicita'])
+
     def test_cada_fila_se_puede_identificar_y_abre_su_grafico(self):
         it = _item(id=7, title='Granola', sku='06032', sobrestock=True, covered_days_left=667, current_stock=4000, vpd=6,
                    inventory_id='RCUM58244', item_id='MLA1', channels=[{'item_id': 'MLA1', 'listing_type': 'gold_pro', 'status': 'active'},
