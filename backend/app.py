@@ -1739,9 +1739,9 @@ def get_full_items():
             SELECT id, shipment_code, status, pickup_date, estimated_arrival_date, transit_days, meli_inbound_status
             FROM inbound_shipments
             WHERE user_id = %s AND pickup_date >= %s
-              AND (status IN ('scheduled', 'in_transit') OR (status = 'delivered' AND pickup_date >= %s))
+              AND status IN ('scheduled', 'in_transit') AND COALESCE(meli_inbound_status, '') <> 'received'
             ORDER BY pickup_date ASC, id ASC LIMIT 20
-        """, (account_id, today - timedelta(days=14), today - timedelta(days=7)))
+        """, (account_id, today - timedelta(days=14)))
         filas_col = cur.fetchall()
         # Cuántos días tardaron de verdad las últimas colectas en ser recibidas: corrige la fecha estimada de ingreso.
         cur.execute("""
@@ -1774,6 +1774,9 @@ def get_full_items():
                                      int(p.get("units_to_send") or 0)) for p in prods)
                 colectas.append(_proy.armar_colecta(f, prods, hora=hora_limite, en_proceso=en_proceso, demora_real=demora_real))
 
+        # Las ya recibidas por Mercado Libre se muestran aparte y solo las del último mes.
+        colectas_recibidas = _colectas_recibidas(cur, account_id, today - timedelta(days=DIAS_RECIBIDAS_A_LA_VISTA), hora_limite, demora_real)
+
     plan_info = get_user_plan_info(user_id, conn)
     conn.close()
 
@@ -1785,9 +1788,69 @@ def get_full_items():
         "summary": summary,
         "proxima_colecta": proxima_colecta,
         "colectas": colectas,
+        "colectas_recibidas": colectas_recibidas,
         "settings": settings,
         "plan_info": plan_info
     }), 200
+
+
+DIAS_RECIBIDAS_A_LA_VISTA = 30
+
+
+def _colectas_recibidas(cur, account_id, desde, hora_limite=None, demora_real=None, hasta=None):
+    """Colectas que Mercado Libre ya recibió (cerradas o con la marca de recibida), de `desde` en adelante
+    (o solo las anteriores a `hasta`), con sus productos. Las más nuevas primero."""
+    sql = ("SELECT id, shipment_code, status, pickup_date, estimated_arrival_date, transit_days, meli_inbound_status "
+           "FROM inbound_shipments WHERE user_id = %s AND pickup_date IS NOT NULL "
+           "AND (status = 'delivered' OR meli_inbound_status = 'received') ")
+    params = [account_id]
+    if hasta is not None:
+        sql += "AND pickup_date < %s "
+        params.append(hasta)
+    else:
+        sql += "AND pickup_date >= %s "
+        params.append(desde)
+    sql += "ORDER BY pickup_date DESC, id DESC LIMIT 200"
+    cur.execute(sql, tuple(params))
+    filas = cur.fetchall() or []
+    if not filas:
+        return []
+    ids = [f["id"] for f in filas]
+    cur.execute("SELECT shipment_id, title, sku, units_to_send FROM inbound_shipment_items WHERE shipment_id IN (" +
+                ",".join(["%s"] * len(ids)) + ") ORDER BY id ASC", tuple(ids))
+    por_col = {}
+    for r in cur.fetchall():
+        por_col.setdefault(r["shipment_id"], []).append(r)
+    return [_proy.armar_colecta(f, por_col.get(f["id"], []), hora=hora_limite, en_proceso=0, demora_real=demora_real) for f in filas]
+
+
+@app.route("/api/full/inbound/recibidas-viejas", methods=["GET", "DELETE"])
+@jwt_required()
+@_equipo.requiere_rol('admin')
+def recibidas_viejas():
+    """Colectas recibidas de hace más de 30 días. GET las devuelve (para que el usuario las baje a un archivo);
+    DELETE las borra de la base. El borrado lo pide el usuario después de bajar el archivo."""
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
+    corte = datetime.utcnow().date() - timedelta(days=DIAS_RECIBIDAS_A_LA_VISTA)
+    try:
+        with conn.cursor() as cur:
+            viejas = _colectas_recibidas(cur, account_id, None, hasta=corte)
+            if request.method == "GET":
+                return jsonify({"ok": True, "colectas": viejas, "corte": corte.isoformat()}), 200
+            ids = [c["id"] for c in viejas]
+            if ids:
+                marcas = ",".join(["%s"] * len(ids))
+                cur.execute("DELETE FROM inbound_shipments WHERE user_id = %s AND id IN (" + marcas + ")", (account_id,) + tuple(ids))
+                borradas = cur.rowcount
+            else:
+                borradas = 0
+        conn.commit()
+        return jsonify({"ok": True, "borradas": borradas}), 200
+    finally:
+        conn.close()
+
 
 PREP_ESTADOS = ("to_buy", "packing", "boxed")
 

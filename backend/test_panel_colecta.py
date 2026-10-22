@@ -169,6 +169,49 @@ process.stdout.write(JSON.stringify({
         self.assertNotIn('COL-X', d['html'])
         self.assertEqual(d['num'], ['#79759779', 'COL-FULL-20261012-002'])
 
+    def test_las_colectas_recibidas_van_plegadas_aparte_con_el_boton_de_archivar(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+vm.runInContext('colectasRecibidasData = ' + process.argv[2] + ';', ctx);
+process.stdout.write(vm.runInContext('htmlColectasRecibidas()', ctx));
+"""
+        cols = [{'id': 3, 'codigo': 'ML-78889570', 'fecha_retiro': '2026-10-19', 'total_unidades': 785,
+                 'productos': [{'sku': '01011', 'titulo': 'Nueces <b>', 'unidades': 300}]}]
+        r = subprocess.run([NODE, '-e', harness, self.src_path, json.dumps(cols)], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        h = r.stdout
+        self.assertIn('Colectas recibidas del último mes <b>1</b>', h)
+        self.assertIn('<b>#78889570</b>', h)
+        self.assertIn('785 u.', h)
+        self.assertNotIn('Nueces <b>', h)              # el título viene de afuera: escapado
+        self.assertIn('archivarRecibidasViejas()', h)
+        self.assertIn('<details class="pc-recibidas">', h)   # plegada por defecto
+        self.assertNotIn(' open', h.split('>')[0])
+
+    def test_el_archivo_de_colectas_viejas_es_un_csv_con_una_fila_por_producto(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        trozo = _corte(js, 'function csvColectasViejas', 'function irACrearColectaDesdeHistorial')
+        harness = "const vm = require('vm'); const ctx = {}; vm.createContext(ctx); vm.runInContext(process.argv[1], ctx); "                   "process.stdout.write(vm.runInContext('csvColectasViejas(' + process.argv[2] + ')', ctx));"
+        cols = [{'codigo': 'ML-1', 'fecha_retiro': '2026-09-01', 'fecha_ingreso': '2026-09-03', 'estado': 'delivered',
+                 'productos': [{'sku': 'A', 'titulo': 'Con "comillas"', 'unidades': 5}, {'sku': 'B', 'titulo': 'Otro', 'unidades': 7}]}]
+        r = subprocess.run([NODE, '-e', harness, 'function archivarRecibidasViejas(){}' + trozo[trozo.index('function csvColectasViejas'):], json.dumps(cols)],
+                           capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lineas = r.stdout.splitlines()
+        self.assertEqual(len(lineas), 3)
+        self.assertTrue(lineas[0].startswith('"Colecta";"Retiro"'))
+        self.assertIn('"Con ""comillas"""', lineas[1])
+        self.assertIn('"ML-1";"2026-09-01"', lineas[2])
+
+    def test_el_borrado_de_colectas_viejas_pide_el_archivo_y_confirmacion(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        cuerpo = _corte(js, 'async function archivarRecibidasViejas', 'function csvColectasViejas')
+        self.assertLess(cuerpo.index('a.click()'), cuerpo.index("method: 'DELETE'"))     # primero baja el archivo
+        self.assertGreaterEqual(cuerpo.count('confirm('), 2)                           # y confirma dos veces antes de borrar
+
     def test_cada_fila_se_puede_identificar_y_abre_su_grafico(self):
         it = _item(id=7, title='Granola', sku='06032', sobrestock=True, covered_days_left=667, current_stock=4000, vpd=6,
                    inventory_id='RCUM58244', item_id='MLA1', channels=[{'item_id': 'MLA1', 'listing_type': 'gold_pro', 'status': 'active'},

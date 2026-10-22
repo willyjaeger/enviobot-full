@@ -316,6 +316,7 @@ async function cargarDatos() {
                 mostrarUltimaSincronizacion(data.ultima_sincronizacion);
                 proximaColecta = data.proxima_colecta || null;
                 colectasData = data.colectas || [];
+                colectasRecibidasData = data.colectas_recibidas || [];
                 recalcularTodo();
                 renderizarPanelColecta();
                 return;
@@ -415,6 +416,7 @@ function adaptarItemDesdeBackend(raw) {
 // ── Panel de colecta: cuenta regresiva + colecta en preparación + radar ─────────
 let proximaColecta = null;
 let colectasData = [];
+let colectasRecibidasData = [];
 let panelColectaTimer = null;
 
 function textoCuentaRegresiva(limiteIso) {
@@ -2071,6 +2073,26 @@ function tarjetaDeColecta(c) {
     </div>`;
 }
 
+// ── Colectas recibidas (último mes) ──────────────────────────────────────────────
+// Las que Mercado Libre ya recibió salen de la lista de vigentes y quedan acá, plegadas. Las de más de un mes se bajan a un
+// archivo de la PC y se borran de la base (botón de abajo).
+function htmlColectasRecibidas() {
+    const lista = colectasRecibidasData || [];
+    const filas = lista.map(function (c) {
+        const prods = c.productos || [];
+        const detalle = prods.length
+            ? '<details class="pc-detalle"><summary>Ver los ' + prods.length + ' productos</summary><table class="pc-table"><tbody>' +
+              prods.map(p => '<tr><td>' + escapeHtml(p.titulo) + '</td><td class="pc-sku-inline">' + escapeHtml(p.sku) + '</td><td class="pc-num">' + escapeHtml(p.unidades) + ' u.</td></tr>').join('') +
+              '</tbody></table></details>' : '';
+        return '<div class="pc-recibida"><div class="pc-recibida-top"><b>' + escapeHtml(numeroColecta(c)) + '</b>' +
+            '<span>Retiro ' + escapeHtml(formatearFechaCorta(c.fecha_retiro)) + '</span>' +
+            '<span>' + pluralizar(prods.length, 'producto', 'productos') + ', ' + Number(c.total_unidades || 0).toLocaleString('es-AR') + ' u.</span></div>' + detalle + '</div>';
+    }).join('');
+    return '<details class="pc-recibidas"><summary>Colectas recibidas del último mes <b>' + lista.length + '</b></summary>' +
+        (filas || '<div class="pc-vacio">Todavía no hay colectas recibidas en el último mes.</div>') +
+        '<div class="pc-recibidas-pie"><button type="button" class="btn btn-secondary btn-sm" onclick="archivarRecibidasViejas()">Guardar en mi PC y borrar las de más de un mes</button></div></details>';
+}
+
 function colectaAbiertaVigente() {
     return (colectasData || []).find(c => c.abierta) || null;
 }
@@ -2250,7 +2272,7 @@ function renderizarPanelColecta() {
     // Pestaña Colectas: calendario y colectas armadas (o la tarjeta de lo que está en preparación).
     const contColectas = document.getElementById('panelColectasTab');
     if (contColectas) {
-        contColectas.innerHTML = hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta);
+        contColectas.innerHTML = (hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta)) + htmlColectasRecibidas();
     }
     const nCol = document.getElementById('tabContColectas');
     if (nCol) nCol.textContent = hayColectas ? String(colectasData.length) : '';
@@ -4243,6 +4265,46 @@ async function cargarAvisos(soloContador = false) {
     }
 }
 window.cargarAvisos = cargarAvisos;
+
+// Baja a un archivo de la PC las colectas recibidas de hace más de un mes y, con OK del usuario, las borra de la base.
+async function archivarRecibidasViejas() {
+    const token = getToken();
+    if (!token) return;
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/recibidas-viejas`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await res.json();
+        if (!data.ok) { alert(data.error || 'No se pudo consultar.'); return; }
+        const viejas = data.colectas || [];
+        if (!viejas.length) { showToast('No hay colectas recibidas de más de un mes.', 'info'); return; }
+        const csv = csvColectasViejas(viejas);
+        if (!confirm('Hay ' + viejas.length + ' colectas recibidas de hace más de un mes.\n\nSe va a bajar un archivo a tu PC con todo su detalle y después se borran de EnvioBot.\n¿Seguimos?')) return;
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'colectas_recibidas_hasta_' + (data.corte || 'hoy') + '.csv';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        if (!confirm('¿Se bajó bien el archivo "' + a.download + '"?\n\nSi lo tenés, apretá Aceptar y borro esas colectas de EnvioBot. Si no, Cancelar: no se borra nada.')) return;
+        const del = await fetch(`${API_BASE}/full/inbound/recibidas-viejas`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        const r = await del.json();
+        showToast(r.ok ? 'Se borraron ' + r.borradas + ' colectas viejas de EnvioBot.' : (r.error || 'No se pudo borrar.'), r.ok ? 'success' : 'error');
+    } catch (e) {
+        alert('No se pudo completar: ' + e.message);
+    }
+}
+window.archivarRecibidasViejas = archivarRecibidasViejas;
+
+function csvColectasViejas(colectas) {
+    const celda = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
+    const filas = [['Colecta', 'Retiro', 'Ingreso a Full', 'Estado', 'SKU', 'Producto', 'Unidades']];
+    colectas.forEach(function (c) {
+        const prods = (c.productos && c.productos.length) ? c.productos : [{ sku: '', titulo: '', unidades: '' }];
+        prods.forEach(p => filas.push([c.codigo, c.fecha_retiro, c.fecha_ingreso, c.estado, p.sku, p.titulo, p.unidades]));
+    });
+    return filas.map(f => f.map(celda).join(';')).join('\r\n');
+}
 
 function irACrearColectaDesdeHistorial() {
     cerrarModalHistorialEnvios();

@@ -2104,3 +2104,11 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .cambios-ml-pasos li { margin-bottom: 8px; }
 .cambios-ml-pasos label { cursor: pointer; }
 .cambios-ml-como { margin: 2px 0 0 22px; font-size: 12px; color: var(--text2); line-height: 1.45; }
+
+.pc-recibidas { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 10px 14px; }
+.pc-recibidas > summary { cursor: pointer; font-weight: 600; color: var(--text); }
+.pc-recibidas > summary b { margin-left: 6px; color: var(--text2); }
+.pc-recibida { padding: 8px 0; border-top: 1px solid var(--border); margin-top: 8px; }
+.pc-recibida-top { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; font-size: 13px; color: var(--text2); }
+.pc-recibida-top b { color: var(--text); }
+.pc-recibidas-pie { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
