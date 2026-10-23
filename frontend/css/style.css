@@ -2113,3 +2113,7 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-recibida-top b { color: var(--text); }
 .pc-recibidas-pie { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .pc-modal-chica { max-width: 460px; }
+
+.pc-indice { margin-top: 12px; }
+.pc-indice-detalle { margin-top: 12px; }
+.pc-indice-detalle .pc-fila { padding: 10px 0; border-top: 1px solid var(--border); }

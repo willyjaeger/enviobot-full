@@ -234,6 +234,45 @@ process.stdout.write(JSON.stringify({
         self.assertIn('<a class="btn btn-secondary btn-sm" href="https://vendedores', d['sin'])      # sin cuenta conocida: link de siempre
         self.assertIn("'OTRA')", d['explicita'])
 
+    def test_indice_de_quiebres_separa_por_que_falla_cada_producto(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+const hoy = new Date();
+const ymd = n => { const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const it = (sku, stock, vpd, extra) => Object.assign({ id: 1, title: sku, sku: sku, current_stock: stock, vpd: vpd, lead_time_days: 3, transit_delay_days: 2, buffer_days: 2 }, extra || {});
+const items = [it('SOLO', 100, 10), it('TARDE', 50, 10), it('POCO', 100, 10), it('BIEN', 1000, 1), it('PAUSADO', 0, 5, { pausado: true }), it('SINVENTAS', 0, 0)];
+const cols = [
+  { id: 1, codigo: 'ML-1', fecha_ingreso: ymd(12), productos: [{ sku: 'TARDE', unidades: 500 }] },
+  { id: 2, codigo: 'ML-2', fecha_ingreso: ymd(3), productos: [{ sku: 'POCO', unidades: 50 }] }];
+const r = ctx.calcularIndiceQuiebres(items, cols, hoy, 0, 21);
+process.stdout.write(JSON.stringify({ ok: r.ok.map(f => f.it.sku), tarde: r.llega_tarde.map(f => f.it.sku), poco: r.alcanza_poco.map(f => f.it.sku),
+  solo: r.sin_colecta.map(f => f.it.sku), perdida: Math.round(r.perdida), demanda: Math.round(r.demanda) }));
+"""
+        r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertEqual(d['ok'], ['BIEN'])
+        self.assertEqual(d['tarde'], ['TARDE'])        # 50 u. a 10 por día: se acaba el día 5 y la colecta entra el 12
+        self.assertEqual(d['poco'], ['POCO'])          # entra el día 3 pero 150 u. no llegan a los 21 días
+        self.assertEqual(d['solo'], ['SOLO'])          # 100 u. duran 10 días y no tiene colecta
+        self.assertEqual(d['demanda'], 10 * 22 * 3 + 1 * 22)   # pausados y sin ventas no cuentan
+        self.assertGreater(d['perdida'], 0)
+
+    def test_la_tarjeta_del_indice_explica_la_meta_y_lista_los_que_fallan(self):
+        it = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        html = self._correr([it, _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)])['html']
+        self.assertIn('Meta: cero quiebres', html)
+        self.assertIn('Venta que se perdería', html)
+        self.assertIn('quiebran y no tienen colecta', html)
+        self.assertIn('No están en ninguna colecta (1)', html)
+        self.assertIn('Qué hacer:', html)
+        self.assertIn('abrirGraficoDeProducto(5)', html)
+        bien = self._correr([_item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)])['html']
+        self.assertIn('Meta cumplida', bien)
+
     def test_cada_fila_se_puede_identificar_y_abre_su_grafico(self):
         it = _item(id=7, title='Granola', sku='06032', sobrestock=True, covered_days_left=667, current_stock=4000, vpd=6,
                    inventory_id='RCUM58244', item_id='MLA1', channels=[{'item_id': 'MLA1', 'listing_type': 'gold_pro', 'status': 'active'},
