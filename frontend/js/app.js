@@ -871,7 +871,10 @@ function textoFilaQuiebre(tipo, fila, hoy, colAbierta) {
                                : `No hay colecta abierta: armá una con unas ${nf(Math.ceil(fila.perdida))} u. de este producto.` };
 }
 
+let detalleIndiceQuiebres = '';
+
 function tarjetaIndiceQuiebres() {
+    detalleIndiceQuiebres = '';
     const hoy = new Date();
     const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), hoy, demoraAcreditacionDias(), DIAS_INDICE_QUIEBRES);
     const conVentas = r.ok.length + r.llega_tarde.length + r.alcanza_poco.length + r.sin_colecta.length;
@@ -881,9 +884,9 @@ function tarjetaIndiceQuiebres() {
     const pctTxt = pct === 0 ? '0 %' : (pct < 1 ? 'menos de 1 %' : Math.round(pct) + ' %');
     const conQuiebre = fallan + r.sin_colecta.length;
     const trozos = [
-        { n: r.ok.length, color: '--good', texto: 'sin quiebre previsto' },
-        { n: r.llega_tarde.length + r.alcanza_poco.length, color: '--danger', texto: 'quiebran aunque tengan colecta' },
-        { n: r.sin_colecta.length, color: '--warn', texto: 'quiebran y no tienen colecta' }
+        { n: r.ok.length, color: '--good', texto: 'no se quedan sin stock' },
+        { n: r.llega_tarde.length + r.alcanza_poco.length, color: '--danger', texto: 'se quedan sin stock aunque tengan colecta' },
+        { n: r.sin_colecta.length, color: '--warn', texto: 'se quedan sin stock y no tienen colecta' }
     ];
     const R_ = 44, C = 2 * Math.PI * R_;
     const visibles = trozos.filter(t => t.n > 0);
@@ -895,7 +898,7 @@ function tarjetaIndiceQuiebres() {
         acum += largo;
         return a;
     }).join('');
-    const dona = `<svg class="pc-dona" width="128" height="128" viewBox="0 0 120 120" role="img" aria-label="${escapeHtml(trozos.map(t => t.n + ' ' + t.texto).join(', '))}">${arcos}<text x="60" y="60" text-anchor="middle" class="pc-dona-num">${conQuiebre}</text><text x="60" y="78" text-anchor="middle" class="pc-dona-txt">${conQuiebre === 1 ? 'quiebre' : 'quiebres'}</text></svg>`;
+    const dona = `<svg class="pc-dona" width="128" height="128" viewBox="0 0 120 120" role="img" aria-label="${escapeHtml(trozos.map(t => t.n + ' ' + t.texto).join(', '))}">${arcos}<text x="60" y="60" text-anchor="middle" class="pc-dona-num">${conQuiebre}</text><text x="60" y="78" text-anchor="middle" class="pc-dona-txt">sin stock</text></svg>`;
     const colAbierta = colectaAbiertaVigente();
     const grupo = (tipo, titulo) => r[tipo].length ? `<div class="pc-imp-cabecera">${escapeHtml(titulo)} (${r[tipo].length})</div>` + r[tipo].map(function (f) {
         const t = textoFilaQuiebre(tipo, f, hoy, colAbierta);
@@ -905,15 +908,14 @@ function tarjetaIndiceQuiebres() {
             <div class="pc-fila-nota">${escapeHtml(t.que)}</div>
             <div class="pc-fila-nota"><b>Qué hacer:</b> ${escapeHtml(t.hacer)}</div></div>`;
     }).join('') : '';
-    const detalle = conQuiebre ? `<details class="pc-detalle pc-indice-detalle"><summary>Ver qué productos fallan y por qué</summary>
+    detalleIndiceQuiebres = conQuiebre ? `<details class="pc-detalle pc-indice-detalle"><summary>Ver qué productos fallan y por qué</summary>
         ${grupo('llega_tarde', 'La colecta llega después de que se quedan sin stock')}${grupo('alcanza_poco', 'La colecta llega pero no alcanza')}${grupo('sin_colecta', 'No están en ninguna colecta')}</details>` : '';
     return `<div class="pc-hero pc-indice ${conQuiebre ? 'pc-hero-urgente' : 'pc-hero-ok'}">
         <div class="pc-hero-top"><span class="pc-hero-icono">${iconoSvg(conQuiebre ? 'alerta' : 'escudo', 28).replace('margin-right: 4px;', '')}</span>
-            <div><div class="pc-hero-titulo">${conQuiebre ? `Meta: cero quiebres. Hoy se prevén ${conQuiebre} en las próximas 3 semanas` : 'Meta cumplida: no se prevé ningún quiebre en las próximas 3 semanas'}</div>
+            <div><div class="pc-hero-titulo">${conQuiebre ? `Meta: que ningún producto se quede sin stock. Se prevé que ${pluralizar(conQuiebre, 'producto se quede', 'productos se queden')} sin stock en las próximas 3 semanas` : 'Meta cumplida: ningún producto se quedaría sin stock en las próximas 3 semanas'}</div>
             <div class="pc-hero-sub">Venta que se perdería: <b>${pctTxt}</b>${r.perdida >= 0.5 ? ` (unas ${Math.round(r.perdida).toLocaleString('es-AR')} unidades)` : ''}. Cuenta lo que hay hoy en Full y las colectas ya cargadas, con la venta por día de cada producto. (Prueba)</div></div></div>
         <div class="pc-hero-dona">${dona}
-            <div class="pc-hero-detalle"><div class="pc-leyenda">${trozos.map(t => t.n > 0 ? `<span class="pc-leyenda-item"><span class="pc-ley-num" style="color: var(${t.color});">${t.n}</span> ${escapeHtml(t.texto)}</span>` : '').join('')}</div></div></div>
-        ${detalle}</div>`;
+            <div class="pc-hero-detalle"><div class="pc-leyenda">${trozos.map(t => t.n > 0 ? `<span class="pc-leyenda-item"><span class="pc-ley-num" style="color: var(${t.color});">${t.n}</span> ${escapeHtml(t.texto)}</span>` : '').join('')}</div></div></div></div>`;
 }
 
 function tarjetaEstadoGeneral(g, total) {
@@ -2393,8 +2395,10 @@ function renderizarPanelColecta() {
             nota: `Objetivo: ${escapeHtml(it.target_stock_days)} días.`
         })).join(''), deMas.length);
 
-    cont.innerHTML = tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)
-        + tarjetaIndiceQuiebres()
+    // Las dos donas van en la misma tarjeta, separadas al medio; el detalle del índice queda debajo, a todo el ancho.
+    const donaIndice = tarjetaIndiceQuiebres();
+    cont.innerHTML = `<div class="pc-hero-par">${tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)}${donaIndice}</div>`
+        + detalleIndiceQuiebres
         + seccionPanel('Qué hacer hoy', htmlHacer, hacer.length)
         + htmlAjustar
         + htmlDeMas;

@@ -2114,6 +2114,15 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-recibidas-pie { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .pc-modal-chica { max-width: 460px; }
 
-.pc-indice { margin-top: 12px; }
-.pc-indice-detalle { margin-top: 12px; }
+.pc-hero-par { display: grid; grid-template-columns: 1fr 1fr; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.pc-hero-par > .pc-hero { border: 0; border-radius: 0; background: transparent; }
+.pc-hero-par > .pc-hero + .pc-hero { border-left: 1px solid var(--border); }
+.pc-hero-par > .pc-hero-urgente { box-shadow: inset 0 3px 0 var(--danger); }
+.pc-hero-par > .pc-hero-ok { box-shadow: inset 0 3px 0 var(--good); }
+.pc-hero-par > .pc-hero-pronto { box-shadow: inset 0 3px 0 var(--warn); }
+@media (max-width: 900px) {
+    .pc-hero-par { grid-template-columns: 1fr; }
+    .pc-hero-par > .pc-hero + .pc-hero { border-left: 0; border-top: 1px solid var(--border); }
+}
+.pc-indice-detalle { margin-top: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 10px 14px; }
 .pc-indice-detalle .pc-fila { padding: 10px 0; border-top: 1px solid var(--border); }

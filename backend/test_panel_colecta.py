@@ -264,9 +264,10 @@ process.stdout.write(JSON.stringify({ ok: r.ok.map(f => f.it.sku), tarde: r.lleg
     def test_la_tarjeta_del_indice_explica_la_meta_y_lista_los_que_fallan(self):
         it = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         html = self._correr([it, _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)])['html']
-        self.assertIn('Meta: cero quiebres', html)
+        self.assertIn('Meta: que ningún producto se quede sin stock', html)
+        self.assertIn('pc-hero-par', html)           # las dos donas en la misma tarjeta
         self.assertIn('Venta que se perdería', html)
-        self.assertIn('quiebran y no tienen colecta', html)
+        self.assertIn('se quedan sin stock y no tienen colecta', html)
         self.assertIn('No están en ninguna colecta (1)', html)
         self.assertIn('Qué hacer:', html)
         self.assertIn('abrirGraficoDeProducto(5)', html)
