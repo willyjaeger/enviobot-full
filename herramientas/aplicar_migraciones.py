@@ -1,10 +1,11 @@
-"""Corre EN EL SERVIDOR (se manda por ssh). Aplica las migraciones 001, 002, 003 y 004 de EnvioBot Full de una vez (cada una revisa si ya esta hecha: se puede correr de nuevo).
+"""Corre EN EL SERVIDOR (se manda por ssh). Aplica las migraciones 001 a 005 de EnvioBot Full de una vez (cada una revisa si ya esta hecha: se puede correr de nuevo).
 
 001: umbral de sobrestock (user_settings), hora limite de colecta (warehouses), estado del galpon
      (inbound_shipment_items) y tabla nueva stock_daily (foto diaria del stock).
 002: columna full_items.sub_status (motivo de pausa de cada publicacion).
 003: columna alert_recipients.avisos (que avisos recibe cada destinatario).
 004: columna user_settings.colecta_email (mail donde cada cliente recibe los avisos de colecta de ML).
+005: tabla nueva indice_quiebres (foto diaria del indice de quiebres).
 Solo agrega columnas y una tabla nueva, todas de Full. No toca Pedidos.
 1) Respaldo de las tablas afectadas en /var/www/enviobot-full/backups/.
 2) Apaga enviobot-full, aplica los SQL, vuelve a prender.
@@ -24,6 +25,7 @@ MIGRACIONES = [
     ("002", RAIZ + "/backend/migration_002_motivo_pausa.sql", "full_items", "sub_status"),
     ("003", RAIZ + "/backend/migration_003_avisos_por_destinatario.sql", "alert_recipients", "avisos"),
     ("004", RAIZ + "/backend/migration_004_mail_colectas.sql", "user_settings", "colecta_email"),
+    ("005", RAIZ + "/backend/migration_005_indice_quiebres.sql", "indice_quiebres", "perdida_evitable_pct"),
 ]
 
 
@@ -58,7 +60,8 @@ def main():
 
     os.makedirs(RAIZ + "/backups", exist_ok=True)
     resp = RAIZ + "/backups/tablas_antes_migraciones_" + time.strftime("%Y%m%d_%H%M%S") + ".sql"
-    tablas = sorted({t for _n, _r, t, _c in MIGRACIONES})
+    # Las tablas nuevas (indice_quiebres) todavia no existen: no hay nada que respaldar de ellas.
+    tablas = sorted({t for _n, _r, t, _c in MIGRACIONES if t != "indice_quiebres"})
     r = sh(["mysqldump"] + base + ["--single-transaction", "--no-tablespaces", "-r", resp, e["DB_NAME"]] + tablas, env=entorno)
     if r.returncode != 0 or not os.path.getsize(resp):
         print("Fallo el respaldo, no se toco nada:", r.stderr.strip()[:200])

@@ -1805,6 +1805,54 @@ def get_full_items():
 DIAS_RECIBIDAS_A_LA_VISTA = 30
 
 
+@app.route("/api/full/indice-quiebres", methods=["GET", "POST"])
+@jwt_required()
+def indice_quiebres():
+    """Foto diaria del índice de quiebres (cuántos productos se quedan sin stock en las próximas 3 semanas).
+    La calcula el panel; acá solo se guarda una fila por cuenta y día, y se devuelve la serie. Depende de la migración 005:
+    si falta, no guarda ni devuelve nada y la app sigue igual."""
+    user_id = int(get_jwt_identity())
+    conn = get_db()
+    account_id = get_account_user_id(user_id, conn)
+    try:
+        with conn.cursor() as cur:
+            if not _esquema.tiene_tabla(cur, "indice_quiebres"):
+                return jsonify({"ok": True, "guardado": False, "serie": []}), 200
+            if request.method == "GET":
+                dias = max(1, min(int(request.args.get("dias", 60)), 400))
+                cur.execute("SELECT day, productos, sin_quiebre, evitables, inevitables, perdida_evitable_pct, perdida_inevitable_pct "
+                            "FROM indice_quiebres WHERE user_id = %s AND day >= %s ORDER BY day ASC",
+                            (account_id, datetime.now(_proy.HORA_BA).date() - timedelta(days=dias)))
+                filas = cur.fetchall() or []
+                for f in filas:
+                    f["day"] = f["day"].isoformat()
+                    for k in ("perdida_evitable_pct", "perdida_inevitable_pct"):
+                        f[k] = float(f[k] or 0)
+                return jsonify({"ok": True, "serie": filas}), 200
+            d = request.get_json() or {}
+            def _n(clave, tope=100000):
+                try:
+                    return max(0, min(int(d.get(clave) or 0), tope))
+                except (TypeError, ValueError):
+                    return 0
+            def _p(clave):
+                try:
+                    return max(0.0, min(float(d.get(clave) or 0), 100.0))
+                except (TypeError, ValueError):
+                    return 0.0
+            cur.execute("""
+                INSERT INTO indice_quiebres (user_id, day, productos, sin_quiebre, evitables, inevitables, perdida_evitable_pct, perdida_inevitable_pct)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE productos=VALUES(productos), sin_quiebre=VALUES(sin_quiebre), evitables=VALUES(evitables),
+                    inevitables=VALUES(inevitables), perdida_evitable_pct=VALUES(perdida_evitable_pct), perdida_inevitable_pct=VALUES(perdida_inevitable_pct)
+            """, (account_id, datetime.now(_proy.HORA_BA).date(), _n("productos"), _n("ok"), _n("evitables"), _n("inevitables"),
+                  _p("perdida_evitable_pct"), _p("perdida_inevitable_pct")))
+        conn.commit()
+        return jsonify({"ok": True, "guardado": True}), 200
+    finally:
+        conn.close()
+
+
 def _cuenta_ml_de_colecta(productos, cuenta_por_sku):
     """Cuenta de Mercado Libre dueña de la colecta: la de la mayoría de sus productos (la colecta no guarda la cuenta).
     Sirve para avisar con qué cuenta hay que entrar a ML para verla."""
