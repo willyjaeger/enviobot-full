@@ -294,6 +294,8 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         it = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         html = self._correr([it, _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)])['html']
         self.assertIn('Todavía podés evitar que 1 producto se quede sin stock', html)
+        self.assertIn('<b>Meta: cero</b>', html)
+        self.assertIn('Hoy: 1 por evitar', html)
         self.assertIn('pc-hero-par', html)           # las dos donas en la misma tarjeta
         self.assertIn('Venta que se perdería', html)
         self.assertIn('se quedan sin stock si no actuás hoy', html)

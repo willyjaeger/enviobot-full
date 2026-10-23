@@ -954,7 +954,7 @@ function tarjetaIndiceQuiebres() {
     let titulo, sub;
     if (nEvit > 0) {
         titulo = `Todavía podés evitar que ${pluralizar(nEvit, 'producto se quede', 'productos se queden')} sin stock`;
-        sub = `Meta: cero. Venta que se perdería si no actuás hoy: <b>${txtPct(pct(r.perdidaEvitable))}</b> (unas ${Math.round(r.perdidaEvitable).toLocaleString('es-AR')} unidades en 3 semanas).` +
+        sub = `Venta que se perdería si no actuás hoy: <b>${txtPct(pct(r.perdidaEvitable))}</b> (unas ${Math.round(r.perdidaEvitable).toLocaleString('es-AR')} unidades en 3 semanas).` +
             (nIne ? ` Además, ${pluralizar(nIne, 'producto ya no se salva', 'productos ya no se salvan')}: ${txtPct(pct(r.perdidaInevitable))} de la venta.` : '');
     } else if (nIne > 0) {
         titulo = `No queda nada por evitar, pero ${pluralizar(nIne, 'producto igual se va a quedar', 'productos igual se van a quedar')} sin stock`;
@@ -966,6 +966,7 @@ function tarjetaIndiceQuiebres() {
     return `<div class="pc-hero pc-indice ${nEvit ? 'pc-hero-pronto' : (nIne ? 'pc-hero-urgente' : 'pc-hero-ok')}">
         <div class="pc-hero-top"><span class="pc-hero-icono">${iconoSvg(conQuiebre ? 'alerta' : 'escudo', 28).replace('margin-right: 4px;', '')}</span>
             <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub} (Prueba)</div></div></div>
+        <div class="pc-meta-cero" title="Que ningún producto se quede sin stock: lo que todavía se evita actuando hoy tiene que ser cero"><b>Meta: cero</b><span>Hoy: ${nEvit} por evitar${nIne ? ` · ${nIne} que ya no se salvan` : ''}</span></div>
         <div class="pc-hero-dona">${dona}
             <div class="pc-hero-detalle"><div class="pc-leyenda">${trozos.map(t => t.n > 0 ? `<span class="pc-leyenda-item"><span class="pc-ley-num" style="color: var(${t.color});">${t.n}</span> ${escapeHtml(t.texto)}</span>` : '').join('')}</div></div></div></div>`;
 }

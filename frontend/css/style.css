@@ -2126,3 +2126,5 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 }
 .pc-indice-detalle { margin-top: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 10px 14px; }
 .pc-indice-detalle .pc-fila { padding: 10px 0; border-top: 1px solid var(--border); }
+.pc-meta-cero { display: inline-flex; align-items: baseline; gap: 10px; margin: 0 0 12px; padding: 6px 12px; border: 1px solid var(--text); border-radius: 8px; font-size: 13px; color: var(--text2); }
+.pc-meta-cero b { font-size: 16px; color: var(--text); }
