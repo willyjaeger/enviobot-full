@@ -408,8 +408,45 @@ class TestPausa(unittest.TestCase):
 class TestWhatsAppColecta(unittest.TestCase):
     def test_detecta_mensajes_de_mercadolibre_o_camion_y_descarta_charlas_comunes(self):
         self.assertTrue(c.es_wa_de_colecta("Hola! Te escribimos de Mercado Libre por la colecta de hoy"))
-        self.assertTrue(c.es_wa_de_colecta("Pasó el camión a retirar los bultos para Full y no entraron todas las cajas"))
+        self.assertTrue(c.es_wa_de_colecta("Pasó el camión de Mercado Envíos Full a retirar los bultos"))
+        self.assertTrue(c.es_wa_de_colecta("Envío N.º 78889570. Cód. autorización 9F769D2F. Patente AB304TX"))
+        # Charlas de clientes/proveedores con palabras como cajas, envío, retiro, depósito o camión sin ser de ML NO pasan
         self.assertFalse(c.es_wa_de_colecta("Hola buen día, ¿me pasás lista de precios de nueces?"))
+        self.assertFalse(c.es_wa_de_colecta("Hola, paso a retirar las cajas por el depósito hoy a la tarde"))
+        self.assertFalse(c.es_wa_de_colecta("El chofer del flete ya salió con los bultos para el envío al cliente"))
+        self.assertFalse(c.es_wa_de_colecta("Glenda: retiro por depósito, pasan a las 15"))
+        self.assertFalse(c.es_wa_de_colecta("Vi en Mercado Libre que tienen retiro por depósito, ¿puedo pasar?"))
+        self.assertFalse(c.es_wa_de_colecta("Hola, te compré por Mercado Libre una bolsa de almendras, ¿cuándo despachás?"))
+
+    def test_ia_filtra_y_descarta_comunicaciones_que_no_son_colecta_de_mercadolibre(self):
+        import alerts_engine
+        conn = _ConnBase({
+            "settings": [{"user_id": 45, "colecta_email": "ventasml@logax.com.ar"}],
+            "nicks": {45: ["MISTERNUT"]},
+            "nombres": {45: "Guillermo"},
+        })
+        enviados = []
+        with mock.patch.object(alerts_engine, "get_db", return_value=conn), \
+             mock.patch("aviso_limite_colecta._destinatarios", return_value={"+5491100000001": HORARIO}), \
+             mock.patch.object(c, "analizar_con_ia", return_value={"es_colecta_ml": False, "resumen": ""}):
+            r = c.procesar_wa_entrante(
+                45,
+                "Chicos, el camión del club pasa a retirar los bultos de la colecta de ropa que anunciamos en Mercado Libre",
+                ahora=LUNES_10,
+                enviar=lambda t, x: enviados.append((t, x)) or [{"phone": t[0], "result": {"ok": True}}],
+            )
+        self.assertTrue(r.get("ignorado"))
+        self.assertEqual(r.get("motivo"), "descartado_por_ia")
+        self.assertEqual(enviados, [])
+
+    def test_ia_descarta_mail_que_nombra_colecta_y_ml_pero_no_es_comunicacion_de_colecta(self):
+        with mock.patch.object(c, "analizar_con_ia", return_value={"es_colecta_ml": False, "resumen": ""}):
+            res, enviados, imap = _correr([_mail(
+                asunto="Promo en Mercado Libre y colecta solidaria",
+                cuerpo="Participá de la colecta solidaria comprando en Mercado Libre.",
+            )])
+        self.assertEqual((res["avisados"], res["ignorados"], enviados), (0, 1, []))
+        self.assertEqual(imap.flags, {1: "\\Deleted"})
 
     def test_arma_mensaje_wa_sin_emojis_y_con_cuenta_y_codigo_en_negrita(self):
         datos = {

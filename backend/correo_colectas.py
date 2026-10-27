@@ -183,11 +183,12 @@ _FRASES_NO_RETIRADA = (
     "reprogram",
 )
 
-_PROMPT_IA = """Analizá este mensaje de Mercado Libre sobre una colecta de Mercado Envíos Full.
+_PROMPT_IA = """Analizá esta comunicación y determiná si es una notificación oficial de Mercado Libre / Mercado Envíos Full sobre una colecta (retiro en depósito del vendedor con destino a la bodega Full de Mercado Libre).
 Devolvé ÚNICAMENTE un objeto JSON válido con estas claves (usá "" si un dato no aparece):
 {
-  "resumen": "Resumen claro y directo en español argentino (1 a 3 oraciones máximo, ideal para WhatsApp) explicando qué informa el mensaje (ej: horario de retiro confirmado, código de autorización, colecta ya retirada, reprogramación o demora). No incluyas saludos genéricos ni texto legal.",
-  "evento": "Usá 'retirada' si el mensaje confirma que el camión YA retiró/colectó la mercadería (ej: 'Colectamos tus envíos Full', 'Tu remito ya está disponible'); 'programada' si informa fecha/horario futuro o en camino; 'reprogramada' o 'incidencia' si hubo un problema o colecta extra; o '' si es otro aviso.",
+  "es_colecta_ml": true,
+  "resumen": "Si es_colecta_ml es true: resumen claro y directo en español argentino (1 a 3 oraciones máximo, ideal para WhatsApp) explicando qué informa el mensaje (ej: horario de retiro confirmado, código de autorización, colecta ya retirada, reprogramación o demora), sin saludos genéricos ni texto legal. Si es_colecta_ml es false: dejá ''.",
+  "evento": "Usá 'retirada' si el mensaje confirma que el camión YA retiró/colectó la mercadería (ej: 'Colectamos tus envíos Full', 'Tu remito ya está disponible'); 'programada' si informa fecha/horario futuro o en camino; 'reprogramada' o 'incidencia' si hubo un problema o colecta extra; o '' si es otro aviso o si es_colecta_ml es false.",
   "fecha": "Fecha de la colecta si la menciona (ej: '19 de octubre')",
   "desde": "Hora de inicio de la franja en formato HH:MM (ej: '16:00')",
   "hasta": "Hora de fin de la franja en formato HH:MM (ej: '18:00')",
@@ -196,7 +197,10 @@ Devolvé ÚNICAMENTE un objeto JSON válido con estas claves (usá "" si un dato
   "patente": "Patente o dominio del vehículo si aparece (ej: 'AB304TX')",
   "transportadora": "Empresa transportadora si aparece (ej: 'Dos Haches')",
   "envio": "Número de envío de Mercado Libre (solo dígitos, ej: '78889570')"
-}"""
+}
+REGLA ESTRICTA DE FILTRADO ("es_colecta_ml"):
+- Poné `true` SOLO cuando el mensaje sea genuinamente una comunicación oficial de Mercado Libre / Mercado Envíos Full (o del transporte asignado a una colecta de Mercado Envíos Full) referida a una colecta de Full (programación de retiro, franja horaria, código de autorización, datos del transportista/patente, confirmación de bultos/pallets colectados, remito disponible, reprogramación o incidencia de colecta).
+- Poné `false` en CUALQUIER otro caso: charlas con clientes o proveedores, pedidos mayoristas o minoristas, consultas de stock/cajas/envíos comunes, publicidad, promociones de Mercado Libre o Mercado Pago, preguntas o reclamos de compradores, ventas individuales, códigos de verificación (2FA) o cualquier conversación ajena a una colecta de Mercado Envíos Full."""
 
 
 def es_confirmacion_retiro(texto, datos=None):
@@ -351,6 +355,12 @@ def analizar_con_ia(asunto, cuerpo, env=None, post=None):
         return {}
 
     resultado = {}
+    es_ml = parsed.get("es_colecta_ml")
+    if isinstance(es_ml, bool):
+        resultado["es_colecta_ml"] = es_ml
+    elif isinstance(es_ml, str) and es_ml.strip().lower() in ("true", "false", "si", "sí", "no"):
+        resultado["es_colecta_ml"] = es_ml.strip().lower() in ("true", "si", "sí")
+
     for k in ("resumen", "evento", "fecha", "desde", "hasta", "codigo", "transportista", "patente", "transportadora", "envio"):
         val = parsed.get(k)
         if isinstance(val, str):
@@ -374,7 +384,15 @@ def enriquecer_datos(asunto, cuerpo, env=None, post=None):
     texto_completo = f"{asunto or ''}\n{cuerpo or ''}"
     datos = extraer_datos(texto_completo)
     ia = analizar_con_ia(asunto, cuerpo, env=env, post=post)
+    if "es_colecta_ml" in ia:
+        datos["es_colecta_ml"] = ia["es_colecta_ml"]
+        if ia["es_colecta_ml"] is False:
+            datos.pop("evento", None)
+            datos.pop("resumen", None)
+            return datos
     for k, v in ia.items():
+        if k == "es_colecta_ml":
+            continue
         if v and not datos.get(k):
             datos[k] = v
     if ia.get("resumen"):
@@ -492,44 +510,57 @@ def armar_mensaje(asunto, cuerpo, datos, cuenta=None):
 
 # ── Mensajes de WhatsApp que Mercado Libre / transporte mandan al teléfono del vendedor ──
 
-_WA_DIRECTAS = (
+_WA_MARCA_ML = (
     "mercadolibre",
     "mercado libre",
     "mercadoenvios",
     "mercado envios",
+    "envios full",
+    "meli",
+)
+_WA_TERMINOS_COLECTA = (
     "colecta",
+    "colectamos",
+    "colectado",
+    "colectados",
     "transportista",
     "transportadora",
-    "autorizacion",
+    "codigo de autorizacion",
+    "cod. autorizacion",
+    "cod autorizacion",
+    "remito",
+    "centro de almacenamiento",
 )
-_WA_LOGISTICA = (
+_WA_LOGISTICA_COLECTA = (
     "retiro",
     "retirar",
+    "retiramos",
     "camion",
     "chofer",
-    "flete",
     "bulto",
     "bultos",
     "pallet",
     "pallets",
-    "cajas",
     "reprogram",
-    "envio",
-    "full",
-    "meli",
-    "planta",
-    "deposito",
+    "patente",
 )
 
 
 def es_wa_de_colecta(texto, remitente=""):
-    """True si un WhatsApp entrante al teléfono vinculado habla de una colecta / Mercado Libre / camión."""
-    limpio = _sin_acentos(f"{remitente}\n{texto}")
-    if len((texto or "").strip()) < 6:
+    """True si un WhatsApp entrante al teléfono vinculado es una comunicación de Mercado Libre sobre una colecta."""
+    if len((texto or "").strip()) < 10:
         return False
-    if any(p in limpio for p in _WA_DIRECTAS):
+    limpio = _sin_acentos(f"{remitente}\n{texto}")
+    # Si trae datos estructurados inequívocos de colecta de ML (código de autorización o patente + chofer/envío)
+    datos_rx = extraer_datos(texto or "")
+    if datos_rx.get("codigo") or (datos_rx.get("patente") and (datos_rx.get("transportista") or datos_rx.get("transportadora"))):
         return True
-    coincidencias = sum(1 for p in _WA_LOGISTICA if re.search(rf"\b{re.escape(p)}", limpio))
+    nombra_ml = any(re.search(rf"\b{re.escape(p)}\b", limpio) for p in _WA_MARCA_ML)
+    if not nombra_ml:
+        return False
+    if any(p in limpio for p in _WA_TERMINOS_COLECTA):
+        return True
+    coincidencias = sum(1 for p in _WA_LOGISTICA_COLECTA if re.search(rf"\b{re.escape(p)}", limpio))
     return coincidencias >= 2
 
 
@@ -634,7 +665,10 @@ def procesar_wa_entrante(
     finally:
         conn.close()
 
-    datos = enriquecer_datos(f"WhatsApp {remitente_nombre or 'Mercado Libre'}", texto)
+    datos = enriquecer_datos(f"WhatsApp {remitente_nombre or ''}".strip(), texto)
+    if datos.get("es_colecta_ml") is False:
+        logger.info(f"[WA colecta] Descartado por filtro IA (no es colecta de Mercado Libre): {texto[:80]!r}")
+        return {"ok": True, "ignorado": True, "motivo": "descartado_por_ia"}
     colecta_actualizada = marcar_colecta_retirada([user_id], datos, ahora=ahora)
 
     excluir = {
@@ -868,6 +902,11 @@ def ejecutar(ahora=None, config=None, conectar=None, enviar=None, resolver=None,
                 logger.info(f"[Mail colecta] Mail de colecta sin cuenta asignada (¿falta cargar el mail en Configuración?): {asunto[:80]}")
                 continue
             datos_mail = enriquecer_datos(asunto, cuerpo)
+            if datos_mail.get("es_colecta_ml") is False:
+                logger.info(f"[Mail colecta] Descartado por filtro IA (no es colecta de Mercado Libre): {asunto[:80]}")
+                _descartar(imap, num, cfg)
+                res["ignorados"] += 1
+                continue
             if datos_mail.get("evento") == "retirada":
                 if actualizar_retiro is not None:
                     actualizar_retiro(dirs_mail, datos_mail, ahora)
@@ -1132,6 +1171,12 @@ def ejecutar_casillas_directas(ahora=None, enviar=None, conectar_ssl=None, max_h
 
                 res["leidos"] += 1
                 datos_mail = enriquecer_datos(asunto, cuerpo)
+                if datos_mail.get("es_colecta_ml") is False:
+                    logger.info(f"[Mail colecta directo] Descartado por filtro IA (no es colecta de ML): {asunto[:80]}")
+                    vistos.append(mid)
+                    vistos_set.add(mid)
+                    vistos_modificado = True
+                    continue
                 if datos_mail.get("evento") == "retirada":
                     marcar_colecta_retirada([user_id], datos_mail, ahora=ahora)
 
