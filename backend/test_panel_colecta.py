@@ -305,6 +305,31 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         bien = self._correr([_item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)])['html']
         self.assertIn('Meta cumplida', bien)
 
+    def test_una_colecta_programada_con_fecha_pasada_avisa_y_se_puede_corregir(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+const base = { id: 8, codigo: 'ML-1', estado: 'scheduled', fecha_ingreso: '2020-10-08', limite_edicion: '2020-10-02T09:44:00-03:00', abierta: false, total_unidades: 5, productos: [], etapa: 'armada', de_ml: true };
+const futura = Object.assign({}, base, { fecha_retiro: '2099-11-05', fecha_ingreso: '2099-11-08', limite_edicion: '2099-11-04T09:44:00-03:00', abierta: true });
+const pasada = Object.assign({}, base, { fecha_retiro: '2020-10-05' });
+const enCamino = Object.assign({}, base, { estado: 'in_transit', fecha_retiro: '2020-10-05' });
+process.stdout.write(JSON.stringify({
+  pasada: ctx.tarjetaDeColecta(pasada), futura: ctx.tarjetaDeColecta(futura), camino: ctx.tarjetaDeColecta(enCamino),
+  vencidaPasada: ctx.fechaRetiroVencida(pasada), vencidaFutura: ctx.fechaRetiroVencida(futura), vencidaCamino: ctx.fechaRetiroVencida(enCamino) }));
+"""
+        r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertTrue(d['vencidaPasada'])
+        self.assertFalse(d['vencidaFutura'])
+        self.assertFalse(d['vencidaCamino'])         # una colecta que ya salió no tiene nada que corregir
+        self.assertIn('ya pasó y la colecta sigue sin retirarse', d['pasada'])
+        self.assertIn('abrirCorregirFechaColecta(8)', d['pasada'])
+        self.assertNotIn('Corregir fecha', d['futura'])
+        self.assertNotIn('Corregir fecha', d['camino'])
+
     def test_cada_fila_se_puede_identificar_y_abre_su_grafico(self):
         it = _item(id=7, title='Granola', sku='06032', sobrestock=True, covered_days_left=667, current_stock=4000, vpd=6,
                    inventory_id='RCUM58244', item_id='MLA1', channels=[{'item_id': 'MLA1', 'listing_type': 'gold_pro', 'status': 'active'},

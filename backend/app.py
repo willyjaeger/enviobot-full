@@ -1738,10 +1738,13 @@ def get_full_items():
         cur.execute("""
             SELECT id, shipment_code, status, pickup_date, estimated_arrival_date, transit_days, meli_inbound_status
             FROM inbound_shipments
-            WHERE user_id = %s AND pickup_date >= %s
-              AND status IN ('scheduled', 'in_transit') AND COALESCE(meli_inbound_status, '') <> 'received'
+            WHERE user_id = %s
+              AND (status = 'scheduled' OR (status = 'in_transit' AND pickup_date >= %s))
+              AND COALESCE(meli_inbound_status, '') <> 'received'
             ORDER BY pickup_date ASC, id ASC LIMIT 20
         """, (account_id, today - timedelta(days=14)))
+        # Una colecta programada sigue a la vista aunque su fecha de retiro ya haya pasado: casi seguro es un error de fecha
+        # y el panel avisa para que se corrija (antes desaparecía y no se podía arreglar).
         filas_col = cur.fetchall()
         # Cuántos días tardaron de verdad las últimas colectas en ser recibidas: corrige la fecha estimada de ingreso.
         cur.execute("""

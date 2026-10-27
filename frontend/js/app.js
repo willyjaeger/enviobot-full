@@ -2235,6 +2235,56 @@ function htmlComparativaColecta(c) {
     </details>`;
 }
 
+// Corregir la fecha de retiro de una colecta programada cuya fecha ya pasó (casi seguro un error al cargarla).
+function fechaRetiroVencida(c) {
+    return c && c.estado === 'scheduled' && String(c.fecha_retiro || '') < claveDiaLocal(new Date());
+}
+
+function abrirCorregirFechaColecta(id) {
+    const c = (colectasData || []).find(x => Number(x.id) === Number(id));
+    if (!c) return;
+    const previo = document.getElementById('pc-modal-fecha');
+    if (previo) previo.remove();
+    const modal = document.createElement('div');
+    modal.id = 'pc-modal-fecha';
+    modal.className = 'pc-modal-fondo';
+    modal.setAttribute('onclick', 'cerrarCorregirFechaColecta()');
+    modal.innerHTML = '<div class="pc-modal-caja pc-modal-chica" role="dialog" aria-modal="true" onclick="event.stopPropagation()">' +
+        '<div class="pc-modal-cab"><div><div class="pc-hero-titulo">Corregir la fecha de retiro</div>' +
+        '<div class="pc-hero-sub">Colecta ' + escapeHtml(numeroColecta(c)) + ': hoy figura para el ' + escapeHtml(formatearFechaCorta(c.fecha_retiro)) + '</div></div>' +
+        '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarCorregirFechaColecta()">Cerrar</button></div>' +
+        '<label class="pc-fila-nota" for="pc-fecha-nueva">Nueva fecha de retiro</label>' +
+        '<input type="date" id="pc-fecha-nueva" min="' + escapeHtml(claveDiaLocal(new Date())) + '" style="display:block;margin:6px 0 12px;padding:8px;font-size:15px;">' +
+        '<p class="pc-fila-nota">El ingreso a Full se mueve con el retiro. Si ya cargaste la colecta en Mercado Libre con otra fecha, cambiala también allá.</p>' +
+        '<div style="display:flex;gap:8px;margin-top:12px;"><button type="button" class="btn btn-sm" onclick="guardarFechaCorregida(' + Number(id) + ')">Guardar fecha</button></div></div>';
+    document.body.appendChild(modal);
+}
+
+function cerrarCorregirFechaColecta() {
+    const m = document.getElementById('pc-modal-fecha');
+    if (m) m.remove();
+}
+
+async function guardarFechaCorregida(id) {
+    const campo = document.getElementById('pc-fecha-nueva');
+    const fecha = campo ? campo.value : '';
+    if (!fecha) { showToast('Elegí la nueva fecha de retiro.', 'error'); return; }
+    try {
+        const res = await fetch(`${API_BASE}/full/inbound/shipments/${Number(id)}/fechas`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pickup_date: fecha })
+        });
+        const data = await res.json();
+        if (!res.ok) { showToast(data.error || 'No pude guardar la fecha.', 'error'); return; }
+        cerrarCorregirFechaColecta();
+        showToast('Fecha corregida en EnvioBot. Si la colecta ya está cargada en Mercado Libre, hacé el mismo cambio allá.', 'success', 6000);
+        cargarDatos();
+    } catch (e) {
+        showToast('Error de conexión: ' + e.message, 'error');
+    }
+}
+
 function tarjetaDeColecta(c) {
     const programada = c.estado === 'scheduled';
     const resto = programada ? textoCuentaRegresiva(c.limite_edicion) : null;
@@ -2254,6 +2304,9 @@ function tarjetaDeColecta(c) {
     const filas = prods.map(p => `<tr><td>${escapeHtml(p.titulo)}</td><td class="pc-sku-inline">${escapeHtml(p.sku)}</td><td class="pc-num">${escapeHtml(p.unidades)} u.</td></tr>`).join('');
     const detalle = prods.length
         ? `<details class="pc-detalle"><summary>Ver los ${prods.length} productos</summary><table class="pc-table"><tbody>${filas}</tbody></table></details>` : '';
+    const vencida = fechaRetiroVencida(c);
+    const aviso = vencida
+        ? `<div class="pc-cmp-aviso" style="width:100%;">La fecha de retiro (${escapeHtml(formatearFechaCorta(c.fecha_retiro))}) ya pasó y la colecta sigue sin retirarse. ¿Te equivocaste de fecha? <button type="button" class="btn btn-sm" onclick="abrirCorregirFechaColecta(${Number(c.id)})">Corregir fecha</button></div>` : '';
     const boton = (resto && Number(c.id) > 0)
         ? `<button type="button" class="btn btn-sm" onclick="abrirModalEditarEnvio(${Number(c.id)})">Editar colecta</button>`
         : '<button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ver detalle</button>';
@@ -2264,6 +2317,7 @@ function tarjetaDeColecta(c) {
             <div class="pc-banner-sub">${pluralizar(prods.length, 'producto', 'productos')}, ${Number(c.total_unidades || 0).toLocaleString('es-AR')} unidades. ${estado}${recibida ? '' : ` Entra a Full el ${escapeHtml(nombreDiaColecta(c.fecha_ingreso))} (fecha estimada).`}${c.de_ml ? '' : ' Falta cargarla en Mercado Libre.'}</div>
             ${pasosColecta(c.codigo, c.etapa)}
         </div>
+        ${aviso}
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${boton}${botonesMlColecta(c.id, c.codigo, c.cuenta_ml)}</div>
         ${detalle}
         ${htmlComparativaColecta(c)}
