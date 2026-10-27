@@ -3411,6 +3411,7 @@ let userInboundEnabled = false;
 let userIsAdmin = false;
 let colectaBoxUnits = new Map(); // id -> units_per_box
 let inboundShipmentsList = [];
+let historialFiltro = 'vigentes';   // las entregadas no se muestran salvo que se pidan
 
 async function verificarEstadoInboundUsuario() {
     const token = getToken();
@@ -4523,27 +4524,28 @@ async function cargarAvisos(soloContador = false) {
 window.cargarAvisos = cargarAvisos;
 
 // Baja a un archivo de la PC las colectas recibidas de hace más de un mes y, con OK del usuario, las borra de la base.
-async function archivarRecibidasViejas() {
+async function archivarRecibidasViejas(todas) {
+    const q = todas === true ? '?todas=1' : '';
     const token = getToken();
     if (!token) return;
     try {
-        const res = await fetch(`${API_BASE}/full/inbound/recibidas-viejas`, { headers: { 'Authorization': `Bearer ${token}` } });
+        const res = await fetch(`${API_BASE}/full/inbound/recibidas-viejas${q}`, { headers: { 'Authorization': `Bearer ${token}` } });
         const data = await res.json();
         if (!data.ok) { alert(data.error || 'No se pudo consultar.'); return; }
         const viejas = data.colectas || [];
-        if (!viejas.length) { showToast('No hay colectas recibidas de más de un mes.', 'info'); return; }
+        if (!viejas.length) { showToast(todas === true ? 'No hay colectas entregadas.' : 'No hay colectas recibidas de más de un mes.', 'info'); return; }
         const csv = csvColectasViejas(viejas);
-        if (!confirm('Hay ' + viejas.length + ' colectas recibidas de hace más de un mes.\n\nSe va a bajar un archivo a tu PC con todo su detalle y después se borran de EnvioBot.\n¿Seguimos?')) return;
+        if (!confirm('Hay ' + viejas.length + (todas === true ? ' colectas entregadas.' : ' colectas recibidas de hace más de un mes.') + '\n\nSe va a bajar un archivo a tu PC con todo su detalle y después se borran de EnvioBot.\n¿Seguimos?')) return;
         const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'colectas_recibidas_hasta_' + (data.corte || 'hoy') + '.csv';
+        a.download = todas === true ? 'colectas_entregadas_' + claveDiaLocal(new Date()) + '.csv' : 'colectas_recibidas_hasta_' + (data.corte || 'hoy') + '.csv';
         document.body.appendChild(a);
         a.click();
         a.remove();
         setTimeout(() => URL.revokeObjectURL(a.href), 10000);
         if (!confirm('¿Se bajó bien el archivo "' + a.download + '"?\n\nSi lo tenés, apretá Aceptar y borro esas colectas de EnvioBot. Si no, Cancelar: no se borra nada.')) return;
-        const del = await fetch(`${API_BASE}/full/inbound/recibidas-viejas`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+        const del = await fetch(`${API_BASE}/full/inbound/recibidas-viejas${q}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
         const r = await del.json();
         showToast(r.ok ? 'Se borraron ' + r.borradas + ' colectas viejas de EnvioBot.' : (r.error || 'No se pudo borrar.'), r.ok ? 'success' : 'error');
     } catch (e) {
@@ -4589,15 +4591,31 @@ async function cargarHistorialColectas(soloBadge = false) {
         const data = await res.json();
         if (data.ok && Array.isArray(data.shipments)) {
             inboundShipmentsList = data.shipments;
-            const count = inboundShipmentsList.length;
+            const entregada = sh => sh.status === 'delivered' || sh.meli_inbound_status === 'received';
+            const vigentes = inboundShipmentsList.filter(sh => !entregada(sh) && sh.status !== 'cancelled');
+            const entregadas = inboundShipmentsList.filter(entregada);
+            const canceladas = inboundShipmentsList.filter(sh => sh.status === 'cancelled' && !entregada(sh));
+            const lista = historialFiltro === 'entregadas' ? entregadas : (historialFiltro === 'canceladas' ? canceladas : (historialFiltro === 'todas' ? inboundShipmentsList : vigentes));
+            const count = vigentes.length;
+            const filtros = document.getElementById('historialFiltros');
+            if (filtros) {
+                filtros.innerHTML = [['vigentes', 'Vigentes', vigentes.length], ['entregadas', 'Entregadas', entregadas.length], ['canceladas', 'Canceladas', canceladas.length], ['todas', 'Todas', inboundShipmentsList.length]]
+                    .filter(f => f[2] > 0 || f[0] === historialFiltro || f[0] === 'vigentes')
+                    .map(f => `<button type="button" class="chip-filtro${historialFiltro === f[0] ? ' chip-filtro-activo' : ''}" onclick="cambiarFiltroHistorial('${f[0]}')">${f[1]} <b>${f[2]}</b></button>`).join('') +
+                    (historialFiltro === 'entregadas' && entregadas.length ? `<button type="button" class="btn btn-secondary btn-sm" style="margin-left:auto;" onclick="archivarRecibidasViejas(true)" title="Baja las colectas entregadas a un archivo CSV de tu PC y, si confirmás, las borra de EnvioBot">Guardar en mi PC y borrar las entregadas</button>` : '');
+            }
             if (badge) badge.textContent = count;
             if (topBadge) topBadge.textContent = count || '';
-            if (totalBadge) totalBadge.textContent = `${count} ${count === 1 ? 'envío' : 'envíos'}`;
+            if (totalBadge) totalBadge.textContent = `${lista.length} ${lista.length === 1 ? 'envío' : 'envíos'}`;
 
             if (soloBadge) return;
 
             if (!container) return;
-            if (count === 0) {
+            if (lista.length === 0 && inboundShipmentsList.length > 0) {
+                container.innerHTML = `<div style="text-align: center; padding: 40px 20px; color: var(--text2);">No hay envíos en esta vista.${historialFiltro === 'vigentes' && entregadas.length ? ` Tenés ${entregadas.length} entregadas (tocá "Entregadas" para verlas).` : ''}</div>`;
+                return;
+            }
+            if (count === 0 && inboundShipmentsList.length === 0) {
                 container.innerHTML = `
                     <div style="text-align: center; padding: 48px 20px; color: var(--text2);">
                         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.45; margin-bottom: 10px;">
@@ -4612,7 +4630,7 @@ async function cargarHistorialColectas(soloBadge = false) {
                 return;
             }
 
-            container.innerHTML = inboundShipmentsList.map(sh => {
+            container.innerHTML = lista.map(sh => {
                 const statusMap = {
                     'scheduled': { text: 'En Preparación', color: '#64b5f6', bg: 'rgba(33, 150, 243, 0.15)' },
                     'in_transit': { text: 'En Tránsito', color: '#ffb74d', bg: 'rgba(255, 152, 0, 0.15)' },
@@ -4678,6 +4696,12 @@ async function cargarHistorialColectas(soloBadge = false) {
     }
 }
 window.cargarHistorialColectas = cargarHistorialColectas;
+
+function cambiarFiltroHistorial(f) {
+    historialFiltro = f;
+    cargarHistorialColectas();
+}
+window.cambiarFiltroHistorial = cambiarFiltroHistorial;
 
 async function avisarHorarioColecta(shipmentId, codigo) {
     const token = getToken();

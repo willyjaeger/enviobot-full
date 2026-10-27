@@ -206,6 +206,15 @@ process.stdout.write(vm.runInContext('htmlColectasRecibidas()', ctx));
         self.assertIn('"Con ""comillas"""', lineas[1])
         self.assertIn('"ML-1";"2026-09-01"', lineas[2])
 
+    def test_el_historial_de_envios_oculta_las_entregadas_salvo_que_se_pidan(self):
+        js = _leer(os.path.join('js', 'app.js'))
+        cuerpo = _corte(js, 'async function cargarHistorialColectas', 'function cambiarFiltroHistorial')
+        self.assertIn("let historialFiltro = 'vigentes'", js)                 # por defecto no se muestran
+        self.assertIn("sh.status === 'delivered' || sh.meli_inbound_status === 'received'", cuerpo)
+        self.assertIn("(historialFiltro === 'todas' ? inboundShipmentsList : vigentes)", cuerpo)
+        self.assertIn("archivarRecibidasViejas(true)", cuerpo)                # las entregadas se bajan a CSV desde su vista
+        self.assertIn("recibidas-viejas${q}", js)
+
     def test_el_borrado_de_colectas_viejas_pide_el_archivo_y_confirmacion(self):
         js = _leer(os.path.join('js', 'app.js'))
         cuerpo = _corte(js, 'async function archivarRecibidasViejas', 'function csvColectasViejas')

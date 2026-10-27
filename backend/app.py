@@ -1903,7 +1903,11 @@ def recibidas_viejas():
     user_id = int(get_jwt_identity())
     conn = get_db()
     account_id = get_account_user_id(user_id, conn)
-    corte = datetime.utcnow().date() - timedelta(days=DIAS_RECIBIDAS_A_LA_VISTA)
+    # Por defecto, las de hace más de un mes; con ?todas=1, todas las entregadas (el historial las oculta y se pueden bajar a un archivo).
+    if request.args.get("todas") == "1":
+        corte = datetime.utcnow().date() + timedelta(days=36500)
+    else:
+        corte = datetime.utcnow().date() - timedelta(days=DIAS_RECIBIDAS_A_LA_VISTA)
     try:
         with conn.cursor() as cur:
             viejas = _colectas_recibidas(cur, account_id, None, hasta=corte)
