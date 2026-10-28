@@ -439,6 +439,27 @@ class TestWhatsAppColecta(unittest.TestCase):
         self.assertEqual(r.get("motivo"), "descartado_por_ia")
         self.assertEqual(enviados, [])
 
+    def test_avisa_a_toda_la_agenda_aunque_uno_sea_el_telefono_que_recibio_el_mensaje(self):
+        import alerts_engine
+        conn = _ConnBase({
+            "settings": [{"user_id": 45, "colecta_email": "ventasml@logax.com.ar"}],
+            "nicks": {45: ["MISTERNUT"]},
+            "nombres": {45: "Guillermo"},
+        })
+        destinos = {t: HORARIO for t in ("+5491100000001", "+5491100000002", "+5491100000003")}
+        enviados = []
+        with mock.patch.object(alerts_engine, "get_db", return_value=conn),              mock.patch("aviso_limite_colecta._destinatarios", return_value=destinos),              mock.patch.object(c, "analizar_con_ia", return_value={}):
+            r = c.procesar_wa_entrante(
+                45,
+                "Mercado Libre: la colecta pasa hoy. Código de autorización: 9F769D2F. Patente AB304TX, chofer Juan Pérez",
+                telefono_receptor="+5491100000003",   # el teléfono vinculado es de uno de la agenda
+                remitente_telefono="+5491155550000",
+                ahora=LUNES_10,
+                enviar=lambda t, x: enviados.append(list(t)) or [{"phone": p, "result": {"ok": True}} for p in t],
+            )
+        self.assertEqual(r.get("enviados"), 3)
+        self.assertEqual(sorted(enviados[0]), sorted(destinos))
+
     def test_ia_descarta_mail_que_nombra_colecta_y_ml_pero_no_es_comunicacion_de_colecta(self):
         with mock.patch.object(c, "analizar_con_ia", return_value={"es_colecta_ml": False, "resumen": ""}):
             res, enviados, imap = _correr([_mail(

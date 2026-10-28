@@ -200,6 +200,7 @@ Devolvé ÚNICAMENTE un objeto JSON válido con estas claves (usá "" si un dato
 }
 REGLA ESTRICTA DE FILTRADO ("es_colecta_ml"):
 - Poné `true` SOLO cuando el mensaje sea genuinamente una comunicación oficial de Mercado Libre / Mercado Envíos Full (o del transporte asignado a una colecta de Mercado Envíos Full) referida a una colecta de Full (programación de retiro, franja horaria, código de autorización, datos del transportista/patente, confirmación de bultos/pallets colectados, remito disponible, reprogramación o incidencia de colecta).
+- Este texto llegó al WhatsApp de un vendedor, que recibe sobre todo mensajes de sus clientes: si alguien dice que compró por Mercado Libre, pregunta por una compra, un precio o un retiro de mercadería, es `false` aunque nombre Mercado Libre o un retiro.
 - Poné `false` en CUALQUIER otro caso: charlas con clientes o proveedores, pedidos mayoristas o minoristas, consultas de stock/cajas/envíos comunes, publicidad, promociones de Mercado Libre o Mercado Pago, preguntas o reclamos de compradores, ventas individuales, códigos de verificación (2FA) o cualquier conversación ajena a una colecta de Mercado Envíos Full."""
 
 
@@ -671,9 +672,11 @@ def procesar_wa_entrante(
         return {"ok": True, "ignorado": True, "motivo": "descartado_por_ia"}
     colecta_actualizada = marcar_colecta_retirada([user_id], datos, ahora=ahora)
 
+    # Solo se saltea a quien escribió el mensaje. El teléfono que lo recibió (el vinculado) SÍ se avisa:
+    # si es de alguien de la agenda (ej. Dani), tiene que enterarse igual del código y la franja.
     excluir = {
         normalizar_telefono(t)
-        for t in (telefono_receptor, remitente_telefono)
+        for t in (remitente_telefono,)
         if t and normalizar_telefono(t)
     }
     a_enviar = [
