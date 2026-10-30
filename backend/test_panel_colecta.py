@@ -243,7 +243,8 @@ process.stdout.write(JSON.stringify({
         self.assertIn('<a class="btn btn-secondary btn-sm" href="https://vendedores', d['sin'])      # sin cuenta conocida: link de siempre
         self.assertIn("'OTRA')", d['explicita'])
 
-    def test_indice_de_quiebres_separa_por_que_falla_cada_producto(self):
+    def test_indice_de_quiebres_separa_lo_urgente_de_lo_que_tiene_tiempo(self):
+        # El caso real de Guillermo: colecta abierta que entra en 6 días (+2 de ML = 8), preparar 3 + flete 3 + ML 2 = 8 días
         harness = r"""
 const vm = require('vm');
 const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
@@ -251,33 +252,26 @@ vm.createContext(ctx);
 vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
 const hoy = new Date();
 const ymd = n => { const d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
-const it = (sku, stock, vpd, extra) => Object.assign({ id: 1, title: sku, sku: sku, current_stock: stock, vpd: vpd, lead_time_days: 3, transit_delay_days: 2, buffer_days: 2 }, extra || {});
-const items = [it('SOLO', 100, 10), it('TARDE', 30, 10), it('POCO', 100, 10), it('BIEN', 1000, 1), it('PAUSADO', 0, 5, { pausado: true }), it('SINVENTAS', 0, 0)];
-const cols = [
-  { id: 1, codigo: 'ML-1', fecha_ingreso: ymd(12), productos: [{ sku: 'TARDE', unidades: 500 }] },
-  { id: 2, codigo: 'ML-2', fecha_ingreso: ymd(3), productos: [{ sku: 'POCO', unidades: 50 }] }];
-const r = ctx.calcularIndiceQuiebres(items, cols, hoy, 0, 21);
-process.stdout.write(JSON.stringify({ ok: r.ok.map(f => f.it.sku), tarde: r.llega_tarde.map(f => f.it.sku), poco: r.alcanza_poco.map(f => f.it.sku),
-  solo: r.sin_colecta.map(f => f.it.sku), perdida: Math.round(r.perdida), demanda: Math.round(r.demanda),
-  evitables: r.evitables.map(f => f.it.sku).sort(), inevitables: r.inevitables.map(f => f.it.sku),
-  parte: Math.round(r.perdidaEvitable + r.perdidaInevitable) === Math.round(r.perdida) }));
+const it = (sku, stock, vpd, extra) => Object.assign({ id: 1, title: sku, sku: sku, current_stock: stock, vpd: vpd, lead_time_days: 3, transit_delay_days: 3, buffer_days: 2 }, extra || {});
+const items = [it('NUECES', 190, 10), it('ALMENDRAS', 200, 10), it('LENTEJAS', 170, 10), it('GARBANZOS', 80, 10), it('GIRASOL', 60, 10),
+               it('LENTEJON', 0, 10), it('BIEN', 2000, 1), it('PAUSADO', 0, 5, { pausado: true }), it('SINVENTAS', 0, 0)];
+const abierta = { id: 1, codigo: 'ML-1', fecha_ingreso: ymd(6), productos: [{ sku: 'GIRASOL', unidades: 500 }] };
+const r = ctx.calcularIndiceQuiebres(items, [abierta], hoy, 2, 28, abierta);
+const sku = l => l.map(f => f.it.sku);
+process.stdout.write(JSON.stringify({ ok: sku(r.ok), tiempo: sku(r.hay_tiempo), sumar: sku(r.evitables), rojo: sku(r.inevitables),
+  limites: r.hay_tiempo.map(f => f.fechaLimite) }));
 """
         r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         d = json.loads(r.stdout)
         self.assertEqual(d['ok'], ['BIEN'])
-        self.assertEqual(d['tarde'], ['TARDE'])        # 30 u. a 10 por día: se acaba el día 3 y la colecta entra el 12
-        self.assertEqual(d['poco'], ['POCO'])          # entra el día 3 pero 150 u. no llegan a los 21 días
-        self.assertEqual(d['solo'], ['SOLO'])          # 100 u. duran 10 días y no tiene colecta
-        self.assertEqual(d['demanda'], 10 * 22 * 3 + 1 * 22)   # pausados y sin ventas no cuentan
-        self.assertGreater(d['perdida'], 0)
-        self.assertTrue(d['parte'])                     # lo evitable y lo inevitable suman lo perdido
-        # preparar (3) + flete (2) = 5 días hasta que pueda entrar mercadería nueva: TARDE ya perdió los días 3 y 4
-        # y también tiene días por salvar; SOLO y POCO se quedan sin stock mucho después
-        self.assertEqual(d['evitables'], ['POCO', 'SOLO', 'TARDE'])
-        self.assertEqual(d['inevitables'], [])
+        # se quedan sin stock el día 17, 19 y 20, o sea después de que podría entrar la colecta SIGUIENTE (8 + 7 = 15): no hay apuro
+        self.assertEqual(d['tiempo'], ['LENTEJAS', 'NUECES', 'ALMENDRAS'])
+        self.assertEqual(d['limites'], [9, 11, 12])      # día en que hay que tener armada la colecta: quiebre menos 8 días
+        self.assertEqual(d['sumar'], ['GARBANZOS'])      # se queda sin stock el día 8, justo cuando entra la abierta: hay que sumarlo ya
+        self.assertEqual(d['rojo'], ['LENTEJON', 'GIRASOL'])   # ya estarán unos días sin stock antes de que entre la abierta
 
-    def test_lo_que_ya_no_se_evita_se_separa_de_lo_que_todavia_se_corrige(self):
+    def test_el_texto_de_lo_que_ya_no_se_salva_dice_hasta_cuando(self):
         harness = r"""
 const vm = require('vm');
 const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
@@ -285,9 +279,8 @@ vm.createContext(ctx);
 vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
 const hoy = new Date();
 const it = (sku, stock, vpd) => ({ id: 1, title: sku, sku: sku, current_stock: stock, vpd: vpd, lead_time_days: 3, transit_delay_days: 2, buffer_days: 2 });
-// SIN_STOCK: hoy 0 u. y sin colecta: los primeros 5 días no se salvan, el resto sí; CON_COLECTA_ABIERTA: ya con el ingreso rápido
-const r = ctx.calcularIndiceQuiebres([it('SIN_STOCK', 0, 10)], [], hoy, 0, 21);
-const f = r.evitables[0];
+const r = ctx.calcularIndiceQuiebres([it('SIN_STOCK', 0, 10)], [], hoy, 0, 28);
+const f = r.inevitables[0];
 process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.round(f.inevitable), limite: f.limite, hacer: ctx.textoFilaQuiebre(f, hoy, null).hacer }));
 """
         r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
@@ -295,24 +288,28 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         d = json.loads(r.stdout)
         self.assertEqual(d['limite'], 5)
         self.assertEqual(d['inev'], 50)     # días 0 a 4: 5 días x 10 u.
-        self.assertEqual(d['evit'], 170)    # días 5 a 21: 17 días x 10 u.
-        self.assertIn('ya no se salvan', d['hacer'])
+        self.assertEqual(d['evit'], 240)    # días 5 a 28: 24 días x 10 u.
         self.assertIn('pedilo cuando le queden', d['hacer'])
 
-    def test_la_tarjeta_del_indice_explica_la_meta_y_lista_los_que_fallan(self):
-        it = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
-        html = self._correr([it, _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)])['html']
-        self.assertIn('Todavía podés evitar que 1 producto se quede sin stock', html)
+    def test_la_tarjeta_del_indice_dice_que_hacer_hoy_y_lo_que_tiene_tiempo(self):
+        urgente = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        bien = _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        html = self._correr([urgente, bien])['html']
         self.assertIn('<b>Meta: cero</b>', html)
-        self.assertIn('Hoy: 1 por evitar', html)
-        self.assertIn('pc-hero-par', html)           # las dos donas en la misma tarjeta
-        self.assertIn('Venta que se perdería', html)
-        self.assertIn('se quedan sin stock si no actuás hoy', html)
-        self.assertIn('Todavía se evita si actuás hoy (1)', html)
+        self.assertIn('Para resolver hoy: 1', html)
+        self.assertIn('Hoy tenés que armar una colecta con 1 producto', html)
+        self.assertIn('van a estar unos días sin stock antes de que entre mercadería', html)
         self.assertIn('Qué hacer:', html)
         self.assertIn('abrirGraficoDeProducto(5)', html)
-        bien = self._correr([_item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)])['html']
-        self.assertIn('Meta cumplida', bien)
+        self.assertIn('pc-hero-par', html)           # las dos donas en la misma tarjeta
+        solo_bien = self._correr([bien])['html']
+        self.assertIn('Meta cumplida', solo_bien)
+        # con tiempo: se queda sin stock recién el día 20 y no hay colecta: se puede esperar, sin avisos de apuro
+        tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        h2 = self._correr([tiempo, bien])['html']
+        self.assertIn('Hoy no tenés nada urgente', h2)
+        self.assertIn('Primera fecha límite para armar colecta', h2)
+        self.assertIn('Para resolver hoy: 0', h2)
 
     def test_una_colecta_programada_con_fecha_pasada_avisa_y_se_puede_corregir(self):
         harness = r"""

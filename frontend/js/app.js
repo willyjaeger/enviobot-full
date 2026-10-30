@@ -818,17 +818,20 @@ const EXPLICACION_ESTADO = {
 };
 
 // ── Índice de quiebres (prueba) ────────────────────────────────────────────────
-// Meta de EnvioBot: que ningún producto se quede sin stock. Mide cuánta venta se perdería en las próximas 3 semanas con lo que hay
-// hoy en Full y las colectas ya cargadas. Es cuenta pura (stock, venta por día y fecha de cada colecta), sin inteligencia artificial.
+// Meta de EnvioBot: que ningún producto se quede sin stock. Mira las próximas 4 semanas con lo que hay hoy en Full y las colectas ya
+// cargadas y separa lo que de verdad hay que hacer hoy de lo que todavía tiene tiempo. Es cuenta pura, sin inteligencia artificial.
 //
-// Lo perdido se separa en dos:
-//  - "ya no se evita": pasa antes de que pueda llegar mercadería nueva aunque se actúe hoy (preparar + flete + demora de ML, o
-//    el ingreso de la colecta abierta, lo que sea más rápido)
-//  - "se evita si se actúa hoy": pasa después de ese momento, así que todavía se corrige sumando unidades a tiempo
-// La meta (cero) corre sobre la segunda: es la que depende de lo que se haga hoy.
-const DIAS_INDICE_QUIEBRES = 21;
+// Cada producto cae en uno de estos grupos:
+//  - ok: no se queda sin stock en el período
+//  - hay_tiempo: se quedaría sin stock, pero una colecta que se arme después de la abierta todavía llega a tiempo (no hay apuro)
+//  - evitables: hay que sumarlo a la colecta abierta (o armar una) para no quedarse sin stock
+//  - inevitables: además va a estar unos días sin stock antes de que pueda entrar mercadería (también hay que sumarlo)
+// La meta (cero) es que no queden productos en los dos últimos grupos.
+const DIAS_INDICE_QUIEBRES = 28;
+const DIAS_ENTRE_COLECTAS = 7;           // cada cuánto se arma una colecta (para saber si la siguiente todavía llega a tiempo)
 
-// Primer día en que podría entrar mercadería nueva si se pide hoy.
+// Primer día en que podría entrar mercadería nueva si se pide hoy: lo más rápido entre armar una colecta nueva (preparar + flete +
+// demora de ML) y el ingreso de la colecta abierta.
 function primerDiaPosibleDeIngreso(it, hoy, demora, colAbierta) {
     const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
     let dia = (Number(it.lead_time_days) || 0) + (Number(it.transit_delay_days) || 0) + (demora || 0);
@@ -839,19 +842,17 @@ function primerDiaPosibleDeIngreso(it, hoy, demora, colAbierta) {
     return dia;
 }
 
-// Para cada producto que vende: cuántas unidades dejaría de vender en el horizonte, cuántas ya no se evitan y por qué.
-//  - llega_tarde: se queda sin stock antes de que entre su primera colecta
-//  - alcanza_poco: entra la colecta pero se acaba igual
-//  - sin_colecta: se queda sin stock y no está en ninguna colecta
 function calcularIndiceQuiebres(items, colectas, hoy, demora, horizonte, colAbierta) {
     horizonte = horizonte || DIAS_INDICE_QUIEBRES;
-    const salida = { ok: [], llega_tarde: [], alcanza_poco: [], sin_colecta: [], inevitables: [], evitables: [],
-                     demanda: 0, perdida: 0, perdidaInevitable: 0, perdidaEvitable: 0 };
+    const salida = { ok: [], hay_tiempo: [], evitables: [], inevitables: [], demanda: 0, perdida: 0, perdidaInevitable: 0, perdidaEvitable: 0 };
     (items || []).forEach(function (it) {
         if (it.pausado) return;
         const proy = proyeccionProducto(it, colectas, hoy, demora);
         if (!proy) return;                                   // sin ventas: no hay nada que perder
         const limite = primerDiaPosibleDeIngreso(it, hoy, demora, colAbierta);
+        // Si hay colecta abierta, lo que se sume entra con ella; la siguiente llega una semana después. Sin colecta abierta,
+        // hay que armar una (entra recién en `limite`), y se da una semana de margen para armarla.
+        const entraSiguiente = limite + DIAS_ENTRE_COLECTAS;
         let perdida = 0, inevitable = 0, primerQuiebre = null;
         for (let t = 0; t <= horizonte; t++) {
             const falta = Math.max(0, proy.vpd - proy.puntos[t].stock);
@@ -864,20 +865,25 @@ function calcularIndiceQuiebres(items, colectas, hoy, demora, horizonte, colAbie
         const evitable = perdida - inevitable;
         const demanda = proy.vpd * (horizonte + 1);
         const fila = { it: it, proy: proy, perdida: perdida, inevitable: inevitable, evitable: evitable, demanda: demanda,
-                       primerQuiebre: primerQuiebre, limite: limite };
+                       primerQuiebre: primerQuiebre, limite: limite, entraSiguiente: entraSiguiente };
         salida.demanda += demanda;
         if (perdida < 0.5) { salida.ok.push(fila); return; }
+        const llegadas = proy.llegadas.slice().sort((a, b) => a.dia - b.dia);
+        if (!llegadas.length) fila.tipo = 'sin_colecta';
+        else if (primerQuiebre < llegadas[0].dia) fila.tipo = 'llega_tarde';
+        else fila.tipo = 'alcanza_poco';
+        if (inevitable < 0.5 && primerQuiebre >= entraSiguiente) {
+            fila.fechaLimite = primerQuiebre - limite;           // días desde hoy: hasta ahí se puede esperar para armar la colecta
+            salida.hay_tiempo.push(fila);
+            return;
+        }
         salida.perdida += perdida;
         salida.perdidaInevitable += inevitable;
         salida.perdidaEvitable += evitable;
-        const llegadas = proy.llegadas.slice().sort((a, b) => a.dia - b.dia);
-        if (!llegadas.length) { fila.tipo = 'sin_colecta'; salida.sin_colecta.push(fila); }
-        else if (primerQuiebre < llegadas[0].dia) { fila.tipo = 'llega_tarde'; salida.llega_tarde.push(fila); }
-        else { fila.tipo = 'alcanza_poco'; salida.alcanza_poco.push(fila); }
-        // Si todavía hay algo que corregir actuando hoy, va a "evitables" (aunque otra parte ya no se salve); si no, a "inevitables".
-        (evitable >= 0.5 ? salida.evitables : salida.inevitables).push(fila);
+        (inevitable >= 0.5 ? salida.inevitables : salida.evitables).push(fila);
     });
-    ['llega_tarde', 'alcanza_poco', 'sin_colecta', 'inevitables', 'evitables'].forEach(k => salida[k].sort((a, b) => b.perdida - a.perdida));
+    salida.hay_tiempo.sort((a, b) => a.fechaLimite - b.fechaLimite);
+    ['evitables', 'inevitables'].forEach(k => salida[k].sort((a, b) => b.perdida - a.perdida));
     return salida;
 }
 
@@ -885,27 +891,27 @@ function textoFilaQuiebre(fila, hoy, colAbierta) {
     const nf = n => Math.round(n).toLocaleString('es-AR');
     const cuando = fechaDeProyeccion(fila.primerQuiebre, hoy);
     const llegadas = fila.proy.llegadas.slice().sort((a, b) => a.dia - b.dia);
-    const sumar = colAbierta ? `Sumá ${nf(Math.ceil(fila.evitable))} u. a la colecta ${numeroColecta(colAbierta)} (se puede editar hasta el ${textoLimiteEdicion(colAbierta.limite_edicion)}).`
-                             : `No hay colecta abierta: armá una con unas ${nf(Math.ceil(fila.evitable))} u. de este producto.`;
-    const yaNoSeEvita = fila.inevitable >= 0.5;
+    const unidades = Math.max(1, Math.ceil(fila.evitable));
     let que;
     if (fila.tipo === 'llega_tarde') {
         const l = llegadas[0];
-        que = `Se queda sin stock el ${cuando} y la colecta le entra recién el ${fechaDeProyeccion(l.dia, hoy)} (${l.dia - fila.primerQuiebre} días después). Pierde unas ${nf(fila.perdida)} u. de venta.`;
+        que = `Se queda sin stock el ${cuando} y la colecta le entra recién el ${fechaDeProyeccion(l.dia, hoy)} (${l.dia - fila.primerQuiebre} días después).`;
     } else if (fila.tipo === 'alcanza_poco') {
-        que = `Entra su colecta pero se queda sin stock igual el ${cuando}. Pierde unas ${nf(fila.perdida)} u. de venta.`;
+        que = `Entra su colecta pero se queda sin stock igual el ${cuando}.`;
     } else {
-        que = `No está en ninguna colecta y se queda sin stock el ${cuando}. Pierde unas ${nf(fila.perdida)} u. de venta.`;
+        que = `No está en ninguna colecta y se queda sin stock el ${cuando}.`;
     }
-    let hacer;
-    if (yaNoSeEvita) {
-        hacer = `Hasta el ${fechaDeProyeccion(fila.limite, hoy)} no puede entrar mercadería nueva: esas ${nf(fila.inevitable)} u. ya no se salvan.` +
-            (fila.evitable >= 0.5 ? ' ' + sumar : '') +
-            ' Para que no se repita, pedilo cuando le queden ' + nf(fila.proy.avance) + ' días de venta.';
-    } else {
-        hacer = sumar;
+    if (fila.hay_tiempo || fila.fechaLimite !== undefined) {
+        const limite = fechaDeProyeccion(Math.max(0, fila.fechaLimite), hoy);
+        return { que: que, hacer: `Hay tiempo: no hace falta hoy. Armá una colecta con unas ${nf(unidades)} u. antes del ${limite}.` };
     }
-    return { que: que, hacer: hacer };
+    const sumar = colAbierta ? `Sumá ${nf(unidades)} u. a la colecta ${numeroColecta(colAbierta)} (se puede editar hasta el ${textoLimiteEdicion(colAbierta.limite_edicion)}).`
+                             : `No hay colecta abierta: armá una con unas ${nf(unidades)} u. de este producto.`;
+    if (fila.inevitable >= 0.5) {
+        return { que: que + ` Hasta el ${fechaDeProyeccion(fila.limite, hoy)} no puede entrar mercadería nueva: esas ${nf(fila.inevitable)} u. de venta ya no se salvan.`,
+                 hacer: (fila.evitable >= 0.5 ? sumar + ' ' : '') + 'Para que no se repita, pedilo cuando le queden ' + nf(fila.proy.avance) + ' días de venta.' };
+    }
+    return { que: que, hacer: sumar };
 }
 
 let detalleIndiceQuiebres = '';
@@ -917,18 +923,19 @@ function tarjetaIndiceQuiebres() {
     const hoy = new Date();
     const colAbierta = colectaAbiertaVigente();
     const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), hoy, demoraAcreditacionDias(), DIAS_INDICE_QUIEBRES, colAbierta);
-    const conVentas = r.ok.length + r.inevitables.length + r.evitables.length;
+    const nOk = r.ok.length, nTiempo = r.hay_tiempo.length, nSumar = r.evitables.length, nRojo = r.inevitables.length;
+    const conVentas = nOk + nTiempo + nSumar + nRojo;
     if (!conVentas) return '';
+    const accion = nSumar + nRojo;
     const pct = x => r.demanda > 0 ? (x / r.demanda) * 100 : 0;
     const txtPct = x => x === 0 ? '0 %' : (x < 1 ? 'menos de 1 %' : Math.round(x) + ' %');
-    const nEvit = r.evitables.length, nIne = r.inevitables.length;
-    const conQuiebre = nEvit + nIne;
-    ultimoIndiceQuiebres = { productos: conVentas, ok: r.ok.length, evitables: nEvit, inevitables: nIne,
+    ultimoIndiceQuiebres = { productos: conVentas, ok: nOk + nTiempo, evitables: nSumar, inevitables: nRojo,
                              perdida_evitable_pct: Math.round(pct(r.perdidaEvitable) * 10) / 10, perdida_inevitable_pct: Math.round(pct(r.perdidaInevitable) * 10) / 10 };
     const trozos = [
-        { n: r.ok.length, color: '--good', texto: 'no se quedan sin stock' },
-        { n: nEvit, color: '--warn', texto: 'se quedan sin stock si no actuás hoy' },
-        { n: nIne, color: '--danger', texto: 'ya no se evita que se queden sin stock' }
+        { n: nOk, color: '--good', texto: 'sin riesgo en las próximas 4 semanas' },
+        { n: nTiempo, color: '--text2', texto: 'se quedarían sin stock más adelante: hay tiempo' },
+        { n: nSumar, color: '--warn', texto: colAbierta ? 'hay que sumarlos a la colecta abierta' : 'hay que armarles una colecta' },
+        { n: nRojo, color: '--danger', texto: 'van a estar unos días sin stock antes de que entre mercadería' }
     ];
     const R_ = 44, C = 2 * Math.PI * R_;
     const visibles = trozos.filter(t => t.n > 0);
@@ -940,7 +947,7 @@ function tarjetaIndiceQuiebres() {
         acum += largo;
         return a;
     }).join('');
-    const dona = `<svg class="pc-dona" width="128" height="128" viewBox="0 0 120 120" role="img" aria-label="${escapeHtml(trozos.map(t => t.n + ' ' + t.texto).join(', '))}">${arcos}<text x="60" y="60" text-anchor="middle" class="pc-dona-num">${conQuiebre}</text><text x="60" y="78" text-anchor="middle" class="pc-dona-txt">sin stock</text></svg>`;
+    const dona = `<svg class="pc-dona" width="128" height="128" viewBox="0 0 120 120" role="img" aria-label="${escapeHtml(trozos.map(t => t.n + ' ' + t.texto).join(', '))}">${arcos}<text x="60" y="60" text-anchor="middle" class="pc-dona-num">${accion}</text><text x="60" y="78" text-anchor="middle" class="pc-dona-txt">para hoy</text></svg>`;
     const grupo = (lista, titulo) => lista.length ? `<div class="pc-imp-cabecera">${escapeHtml(titulo)} (${lista.length})</div>` + lista.map(function (f) {
         const t = textoFilaQuiebre(f, hoy, colAbierta);
         return `<div class="pc-fila pc-fila-clic" onclick="abrirGraficoDeProducto(${Number(f.it.id)})" title="Tocá para ver el gráfico">
@@ -949,24 +956,31 @@ function tarjetaIndiceQuiebres() {
             <div class="pc-fila-nota">${escapeHtml(t.que)}</div>
             <div class="pc-fila-nota"><b>Qué hacer:</b> ${escapeHtml(t.hacer)}</div></div>`;
     }).join('') : '';
-    detalleIndiceQuiebres = conQuiebre ? `<details class="pc-detalle pc-indice-detalle"><summary>Ver qué productos fallan y por qué</summary>
-        ${grupo(r.evitables, 'Todavía se evita si actuás hoy')}${grupo(r.inevitables, 'Ya no se evita: les falta mercadería antes de que pueda llegar')}</details>` : '';
+    const paraHoy = r.evitables.concat(r.inevitables).sort((a, b) => b.perdida - a.perdida);
+    const tituloHoy = colAbierta ? `Para sumar a la colecta ${numeroColecta(colAbierta)} (hasta el ${textoLimiteEdicion(colAbierta.limite_edicion)})` : 'Para armar una colecta';
+    detalleIndiceQuiebres = (accion || nTiempo) ? `<details class="pc-detalle pc-indice-detalle"><summary>Ver el detalle producto por producto</summary>
+        ${grupo(paraHoy, tituloHoy)}${grupo(r.hay_tiempo, 'Hay tiempo: se quedarían sin stock más adelante')}</details>` : '';
     let titulo, sub;
-    if (nEvit > 0) {
-        titulo = `Todavía podés evitar que ${pluralizar(nEvit, 'producto se quede', 'productos se queden')} sin stock`;
-        sub = `Venta que se perdería si no actuás hoy: <b>${txtPct(pct(r.perdidaEvitable))}</b> (unas ${Math.round(r.perdidaEvitable).toLocaleString('es-AR')} unidades en 3 semanas).` +
-            (nIne ? ` Además, ${pluralizar(nIne, 'producto ya no se salva', 'productos ya no se salvan')}: ${txtPct(pct(r.perdidaInevitable))} de la venta.` : '');
-    } else if (nIne > 0) {
-        titulo = `No queda nada por evitar, pero ${pluralizar(nIne, 'producto igual se va a quedar', 'productos igual se van a quedar')} sin stock`;
-        sub = `Les falta mercadería antes de que pueda llegar nueva: ${txtPct(pct(r.perdidaInevitable))} de la venta (unas ${Math.round(r.perdidaInevitable).toLocaleString('es-AR')} unidades). Para la próxima, pedilos antes.`;
+    const sinStockEn = d => fechaDeProyeccion(d, hoy);
+    if (accion > 0) {
+        titulo = colAbierta
+            ? `Hoy tenés que sumar ${pluralizar(accion, 'producto', 'productos')} a la colecta ${numeroColecta(colAbierta)} (se puede editar hasta el ${textoLimiteEdicion(colAbierta.limite_edicion)})`
+            : `Hoy tenés que armar una colecta con ${pluralizar(accion, 'producto', 'productos')}`;
+        sub = `Venta que se perdería si no lo hacés: <b>${txtPct(pct(r.perdidaEvitable + r.perdidaInevitable))}</b> (unas ${Math.round(r.perdidaEvitable + r.perdidaInevitable).toLocaleString('es-AR')} unidades en 4 semanas).` +
+            (nRojo ? ` ${pluralizar(nRojo, 'producto va', 'productos van')} a estar unos días sin stock antes de que pueda entrar mercadería.` : '') +
+            (nTiempo ? ` Otros ${nTiempo} tienen tiempo.` : '');
+    } else if (nTiempo > 0) {
+        const primero = r.hay_tiempo[0];
+        titulo = 'Hoy no tenés nada urgente';
+        sub = `${pluralizar(nTiempo, 'producto se quedaría', 'productos se quedarían')} sin stock más adelante. Primera fecha límite para armar colecta: <b>${escapeHtml(sinStockEn(Math.max(0, primero.fechaLimite)))}</b> (${escapeHtml(primero.it.title)}).`;
     } else {
-        titulo = 'Meta cumplida: ningún producto se quedaría sin stock en las próximas 3 semanas';
+        titulo = 'Meta cumplida: ningún producto se quedaría sin stock en las próximas 4 semanas';
         sub = 'Cuenta lo que hay hoy en Full y las colectas ya cargadas, con la venta por día de cada producto.';
     }
-    return `<div class="pc-hero pc-indice ${nEvit ? 'pc-hero-pronto' : (nIne ? 'pc-hero-urgente' : 'pc-hero-ok')}">
-        <div class="pc-hero-top"><span class="pc-hero-icono">${iconoSvg(conQuiebre ? 'alerta' : 'escudo', 28).replace('margin-right: 4px;', '')}</span>
+    return `<div class="pc-hero pc-indice ${nRojo ? 'pc-hero-urgente' : (nSumar ? 'pc-hero-pronto' : 'pc-hero-ok')}">
+        <div class="pc-hero-top"><span class="pc-hero-icono">${iconoSvg(accion ? 'alerta' : 'escudo', 28).replace('margin-right: 4px;', '')}</span>
             <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub} (Prueba)</div></div></div>
-        <div class="pc-meta-cero" title="Que ningún producto se quede sin stock: lo que todavía se evita actuando hoy tiene que ser cero"><b>Meta: cero</b><span>Hoy: ${nEvit} por evitar${nIne ? ` · ${nIne} que ya no se salvan` : ''}</span></div>
+        <div class="pc-meta-cero" title="Que ningún producto se quede sin stock: lo que hay que resolver hoy tiene que ser cero"><b>Meta: cero</b><span>Para resolver hoy: ${accion}${nTiempo ? ` · con tiempo: ${nTiempo}` : ''}</span></div>
         <div class="pc-hero-dona">${dona}
             <div class="pc-hero-detalle"><div class="pc-leyenda">${trozos.map(t => t.n > 0 ? `<span class="pc-leyenda-item"><span class="pc-ley-num" style="color: var(${t.color});">${t.n}</span> ${escapeHtml(t.texto)}</span>` : '').join('')}</div></div></div></div>`;
 }
