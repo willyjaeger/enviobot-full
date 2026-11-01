@@ -1,4 +1,4 @@
-"""Aviso de suba de ventas que pone en riesgo el stock. Sin base, ni WhatsApp, ni mail.
+"""Aviso de baja de ventas que deja stock de más. Sin base, ni WhatsApp, ni mail.
 Uso:  python backend/test_cambio_tasa.py
 """
 import os
@@ -9,102 +9,109 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cambio_tasa as c  # noqa: E402
 
 
-class TestEvaluar(unittest.TestCase):
-    """Primer filtro: la venta se aceleró de forma notoria."""
-
-    def test_ritmo_estable_no_avisa(self):
-        self.assertIsNone(c.evaluar(14, 60))
-
-    def test_una_baja_nunca_avisa(self):
-        # antes 2/día, ahora 0,7/día: no hay riesgo de quedarse sin stock
-        self.assertIsNone(c.evaluar(5, 51))
-
-    def test_suba_notoria(self):
-        r = c.evaluar(21, 44)  # antes 1/día, ahora 3/día
-        self.assertEqual((r["sentido"], r["pct"]), ("suba", 200))
-
-    def test_suba_chica_no_avisa(self):
-        self.assertIsNone(c.evaluar(17, 60))  # de 2 a 2,4 por día (+21 %)
-
-    def test_suba_desde_cero(self):
-        r = c.evaluar(8, 8)
-        self.assertEqual((r["sentido"], r["pct"]), ("suba", None))
-
-    def test_sin_stock_no_avisa(self):
-        self.assertIsNone(c.evaluar(21, 44, stock=0))
-
-    def test_pocas_ventas_es_ruido(self):
-        self.assertIsNone(c.evaluar(3, 4))
-
-    def test_dias_sin_stock_no_cuentan_como_suba(self):
-        # vendió 7 en 3 días con stock = 2,3/día, igual que antes
-        self.assertIsNone(c.evaluar(7, 53, sin7=4, sin30=4))
-
-    def test_pocos_dias_con_stock_no_alcanzan(self):
-        self.assertIsNone(c.evaluar(20, 20, sin7=5, sin30=5))
+def est(base, ref, confianza="alta", ultimos7=None):
+    return {"base": base, "referencia": ref, "confianza": confianza, "ultimos7": base if ultimos7 is None else ultimos7}
 
 
-class TestRiesgo(unittest.TestCase):
-    """Segundo filtro: la suba rompe lo previsto."""
+class TestEvaluarBaja(unittest.TestCase):
+    """El caso de las nueces: se planificó con 14 por día, hoy vende 6 y hay 310 en Full."""
 
-    def test_suba_que_igual_alcanza_no_avisa(self):
-        # 100 u., ritmo de 1 a 2 por día, reponer lleva 10 días: sobra
-        self.assertIsNone(c.riesgo(100, 1.0, 2.0, 0, 0, 10))
+    def test_baja_sostenida_con_stock_de_mas_avisa(self):
+        a, medible = c.evaluar_baja(est(6, 14), stock=310, entrante=0, objetivo=30)
+        self.assertTrue(medible)
+        self.assertEqual((a["sentido"], a["antes"], a["ahora"], a["pct"]), ("baja", 14.0, 6.0, -57))
+        self.assertEqual(a["dias_stock"], 51.7)
+        self.assertEqual(a["exceso"], 130)  # 310 - 6 x 30
 
-    def test_sin_colecta_se_queda_sin_stock_antes_de_poder_reponer(self):
-        # 15 u.: a 1/día duran 15 días (alcanza para los 10 de reposición); a 3/día duran 5
-        r = c.riesgo(15, 1.0, 3.0, 0, 0, 10)
-        self.assertEqual((r["causa"], r["dias_stock"]), ("quiebre", 5.0))
+    def test_cuenta_lo_que_viene_en_camino(self):
+        a, _ = c.evaluar_baja(est(6, 20), stock=100, entrante=555, objetivo=30)
+        self.assertEqual(a["exceso"], 475)
 
-    def test_con_colecta_el_stock_no_llega_a_la_fecha_de_ingreso(self):
-        # 20 u., la colecta (15 u.) entra en 12 días: a 1/día alcanza, a 3/día se acaba en 6,7 días
-        r = c.riesgo(20, 1.0, 3.0, 15, 12, 10)
-        self.assertEqual(r["causa"], "quiebre")
-        self.assertEqual(r["dias_ingreso"], 12)
+    def test_baja_chica_no_avisa(self):
+        a, medible = c.evaluar_baja(est(11, 14), stock=310, entrante=0, objetivo=30)
+        self.assertEqual((a, medible), (None, True))
 
-    def test_la_colecta_llega_pero_las_15_unidades_no_alcanzan(self):
-        # 10 u., entra en 5 días con 15 u.: a 1/día cubre 20 días; a 3/día, (0+15)/3 = 5 días (< 10 que lleva reponer)
-        r = c.riesgo(15, 1.0, 3.0, 15, 5, 10)
-        self.assertEqual(r["causa"], "colecta_corta")
-        self.assertEqual(r["dias_stock"], 5.0)
+    def test_baja_que_igual_deja_el_stock_en_orden_no_avisa(self):
+        # vende la mitad, pero hay poco stock: sigue alcanzando para menos que el umbral (45 días)
+        a, medible = c.evaluar_baja(est(5, 10), stock=100, entrante=0, objetivo=30)
+        self.assertEqual((a, medible), (None, True))
 
-    def test_si_ya_estaba_mal_antes_no_es_culpa_de_la_suba(self):
-        # a 1/día ya se acababa en 5 días (< 10): eso lo dicen las alertas de stock de siempre
-        self.assertIsNone(c.riesgo(5, 1.0, 3.0, 0, 0, 10))
+    def test_si_ya_sobraba_antes_de_la_baja_lo_dice_el_panel(self):
+        # con el ritmo de referencia ya había 100 días de stock: no es culpa de la baja
+        a, _ = c.evaluar_baja(est(6, 8), stock=800, entrante=0, objetivo=30)
+        self.assertIsNone(a)
 
-    def test_antes_sin_ventas_y_ahora_si(self):
-        r = c.riesgo(15, 0.0, 3.0, 0, 0, 10)
-        self.assertEqual(r["causa"], "quiebre")
+    def test_pocas_unidades_de_mas_no_valen_un_aviso(self):
+        a, _ = c.evaluar_baja(est(0.2, 0.5), stock=10, entrante=0, objetivo=1)
+        self.assertIsNone(a)
+
+    def test_sobrante_de_pocos_dias_no_avisa(self):
+        # 59 unidades a 2,6 por día: 23 días de stock, apenas 8 días por encima del objetivo
+        a, _ = c.evaluar_baja(est(2.6, 4.1), stock=59, entrante=0, objetivo=15)
+        self.assertIsNone(a)
+
+    def test_suba_de_ventas_no_avisa(self):
+        a, medible = c.evaluar_baja(est(30, 10), stock=100, entrante=0, objetivo=30)
+        self.assertEqual((a, medible), (None, True))
+
+    def test_sin_stock_o_sin_historia_no_se_puede_medir(self):
+        self.assertEqual(c.evaluar_baja(est(6, 14), stock=0, entrante=500, objetivo=30), (None, False))
+        self.assertEqual(c.evaluar_baja(est(6, 14, confianza="baja"), stock=310, entrante=0, objetivo=30), (None, False))
+        self.assertEqual(c.evaluar_baja(est(6, None), stock=310, entrante=0, objetivo=30), (None, False))
+
+    def test_zona_gris_no_se_da_por_revertida(self):
+        # sobrestock con umbral 45: a 7 por día son 44 días (justo debajo, pero arriba de 36 = 80 % del umbral)
+        a, medible = c.evaluar_baja(est(7, 14), stock=308, entrante=0, objetivo=30)
+        self.assertEqual((a, medible), (None, False))
+
+    def test_dejo_de_vender(self):
+        a, _ = c.evaluar_baja(est(0, 14), stock=310, entrante=0, objetivo=30)
+        self.assertEqual(a["dias_stock"], 999.0)
 
 
 class TestTextos(unittest.TestCase):
-    CAMBIO = {"gk": "abc123", "sentido": "suba", "antes": 1.0, "ahora": 3.0, "pct": 200, "item_id": "MLA123",
-              "variation_id": "", "sku": "ABC-1", "titulo": "Funda de silicona", "stock": 40,
-              "causa": "quiebre", "dias_stock": 5.0, "dias_ingreso": 12, "entrante": 15}
+    CAMBIO = {"gk": "abc123", "sentido": "baja", "antes": 14.0, "ahora": 6.0, "pct": -57, "item_id": "MLA123",
+              "variation_id": "", "sku": "ABC-1", "titulo": "Nueces peladas", "stock": 310,
+              "causa": "exceso", "dias_stock": 51.7, "dias_ingreso": 0, "entrante": 0, "objetivo": 30, "en_prep": 0, "exceso": 130}
 
-    def test_whatsapp_explica_el_riesgo(self):
+    def test_whatsapp_explica_el_exceso(self):
         t = c.texto_whatsapp([self.CAMBIO], "https://x")
-        for parte in ("Funda de silicona", "MLA123", "SKU ABC-1", "ahora vende 3,0 por día (antes 1,0)",
-                      "dura 5,0 días", "llega en 12", "15 unidades", "próxima colecta"):
+        for parte in ("bajó la venta de 1 producto", "Nueces peladas", "MLA123", "SKU ABC-1",
+                      "ahora vende 6,0 por día (antes 14,0)", "310 unidades", "52 días", "tu objetivo es 30",
+                      "no mandar más", "ajustar la próxima colecta"):
             self.assertIn(parte, t)
+
+    def test_con_colecta_en_preparacion_dice_que_se_puede_achicar(self):
+        cambio = dict(self.CAMBIO, en_prep=555, entrante=555)
+        t = c.texto_whatsapp([cambio])
+        self.assertIn("achicar la colecta en preparación (555 unidades)", t)
+        self.assertIn("865 unidades", t)
 
     def test_panel_ida_y_vuelta(self):
         reg = c._registro_panel(self.CAMBIO)
         a = c.texto_panel(reg)
-        self.assertEqual((a["sentido"], a["sku"], a["stock"], a["revertido"]), ("suba", "ABC-1", 40, False))
-        self.assertIn("te quedás sin stock antes", a["detalle"])
+        self.assertEqual((a["sentido"], a["sku"], a["stock"], a["revertido"]), ("baja", "ABC-1", 310, False))
+        self.assertIn("(-57 %)", a["detalle"])
+        self.assertIn("tu objetivo es 30", a["detalle"])
         self.assertLess(len(reg), 250)
 
     def test_lo_guardado_se_reconstruye_para_mandar_despues(self):
         d = c._desde_registro(c._clave(self.CAMBIO), c._registro_panel(self.CAMBIO))
-        self.assertEqual((d["item_id"], d["causa"], d["entrante"]), ("MLA123", "quiebre", 15))
+        self.assertEqual((d["item_id"], d["causa"], d["objetivo"]), ("MLA123", "exceso", 30))
         self.assertEqual(c._clave(d), c._clave(self.CAMBIO))
-        self.assertIsNone(c._desde_registro("x:suba", "roto"))
+        self.assertIsNone(c._desde_registro("x:baja", "roto"))
 
     def test_reversion_se_muestra_como_tal(self):
         a = c.texto_panel(c._registro_panel(self.CAMBIO, revertido=True))
         self.assertTrue(a["revertido"])
-        self.assertIn("se revirtió", a["detalle"])
+        self.assertIn("ya no te sobra stock", a["detalle"])
+
+    def test_avisos_de_suba_anteriores_siguen_leyendose(self):
+        viejo = {"gk": "g", "sentido": "suba", "antes": 1.0, "ahora": 3.0, "pct": 200, "item_id": "MLA1", "sku": "X",
+                 "titulo": "Algo", "stock": 5, "causa": "quiebre", "dias_stock": 5.0, "dias_ingreso": 12, "entrante": 0}
+        a = c.texto_panel(c._registro_panel(viejo))
+        self.assertIn("te quedás sin stock antes", a["detalle"])
+        self.assertIn("ya no hay riesgo", c.texto_panel(c._registro_panel(viejo, revertido=True))["detalle"])
 
     def test_avisos_del_primer_formato_siguen_leyendose(self):
         a = c.texto_panel('{"s":"baja","a":2.0,"n":0.7,"p":-65,"sku":"X","st":9,"t":"Algo","i":"MLA1"}')
@@ -112,10 +119,10 @@ class TestTextos(unittest.TestCase):
 
     def test_aviso_abierto_hasta_que_se_revierte(self):
         f = lambda i, k: {"id": i, "item_id": k, "message": "{}", "sent_at": None}
-        filas = [f(1, "g1:suba"), f(2, "g2:suba"), f(3, "g1:rev-suba")]
-        self.assertEqual(set(c._activos(filas)), {"g2:suba"})
-        filas.append(f(4, "g1:suba"))
-        self.assertEqual(c._activos(filas)["g1:suba"]["id"], 4)
+        filas = [f(1, "g1:baja"), f(2, "g2:baja"), f(3, "g1:rev-baja")]
+        self.assertEqual(set(c._activos(filas)), {"g2:baja"})
+        filas.append(f(4, "g1:baja"))
+        self.assertEqual(c._activos(filas)["g1:baja"]["id"], 4)
 
     def test_panel_con_registro_roto_se_ignora(self):
         self.assertIsNone(c.texto_panel("no es json"))
@@ -154,9 +161,9 @@ class TestLimpieza(unittest.TestCase):
         ahora = datetime.utcnow()
         f = lambda i, k, dias: {"id": i, "item_id": k, "message": "{}", "sent_at": ahora - timedelta(days=dias)}
         self.filas = [
-            f(1, "g1:suba", 20), f(2, "g1:rev-suba", 15),   # cerrado y viejo: se borra
-            f(3, "g2:suba", 20),                              # sigue abierto aunque es viejo: se conserva
-            f(4, "g3:suba", 3), f(5, "g3:rev-suba", 2),      # cerrado pero reciente: se ve y se conserva
+            f(1, "g1:baja", 20), f(2, "g1:rev-baja", 15),   # cerrado y viejo: se borra
+            f(3, "g2:baja", 20),                              # sigue abierto aunque es viejo: se conserva
+            f(4, "g3:baja", 3), f(5, "g3:rev-baja", 2),      # cerrado pero reciente: se ve y se conserva
         ]
 
     def test_se_borra_solo_lo_cerrado_y_viejo(self):

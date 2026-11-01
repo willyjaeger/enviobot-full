@@ -117,7 +117,7 @@ def _tasa(dias, desde, hasta):
 def estimar(serie, hoy, sin_stock=(), dias=60):
     """Ritmo de venta por día con tres escenarios y datos para explicarlo.
 
-    Devuelve un dict: bajo, base, alto (unidades por día), ultimos7, tendencia ('baja', 'suba',
+    Devuelve un dict: bajo, base, alto (unidades por día), ultimos7, referencia (buenas semanas recientes), tendencia ('baja', 'suba',
     'estable' o 'sin_datos'), confianza ('alta', 'media', 'baja'), validos, descartados
     ({'sin_stock': n, 'rebote': n}), ventas_30 (suma cruda), vpd_crudo_30 (para comparar),
     media_con_stock (promedio de todos los días con stock, rebote incluido), quiebres (cuántas veces se quedó sin stock)
@@ -160,6 +160,15 @@ def estimar(serie, hoy, sin_stock=(), dias=60):
         vals = [d["unidades"] for d in tramo if d["valido"]]
         if len(vals) >= MIN_VALIDOS_VENTANA:
             tasas.append(sum(vals) / len(vals))
+    # Ritmo de referencia: lo que se vendía en las buenas semanas recientes (percentil 75 de las semanas móviles
+    # de los últimos ~2 meses). Sirve para saber si hoy se vende mucho menos que cuando se planificó una compra.
+    largas = []
+    for fin in range(0, 54):
+        tramo = lista[max(0, len(lista) - fin - VENTANA):len(lista) - fin]
+        vals = [d["unidades"] for d in tramo if d["valido"]]
+        if len(vals) >= MIN_VALIDOS_VENTANA:
+            largas.append(sum(vals) / len(vals))
+    referencia = _percentil(largas, 75) if len(largas) >= 8 else None
     if len(tasas) >= 3:
         bajo = min(base, _percentil(tasas, 25))
         alto = max(base, _percentil(tasas, 75))
@@ -178,6 +187,7 @@ def estimar(serie, hoy, sin_stock=(), dias=60):
         "bajo": round(bajo, 2), "base": round(base, 2), "alto": round(alto, 2),
         "ultimos7": round(r7, 2) if r7 is not None else None,
         "tendencia": tendencia, "confianza": confianza, "validos": n,
+        "referencia": round(referencia, 2) if referencia is not None else None,
         "descartados": descartados, "ventas_30": ventas_30,
         "vpd_crudo_30": round(ventas_30 / 30.0, 2),
         "media_con_stock": round(_media(con_stock), 2) if con_stock else 0.0,

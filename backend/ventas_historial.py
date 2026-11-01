@@ -146,3 +146,24 @@ def serie_diaria(conn, user_id, item_id, variation_id, hoy=None):
                        WHERE user_id=%s AND item_id=%s AND variation_id=%s AND day < %s""",
                     (user_id, item_id, variation_id or "", hoy))
         return {f["day"]: int(f["unidades"]) for f in cur.fetchall()}
+
+
+def ritmo_limpio(conn, user_id, item_id, variation_id, vpd_anterior, hoy=None):
+    """Ritmo de venta por día de una publicación calculado con el historial (demanda.py). Si no hay historial
+    suficiente o algo falla, devuelve vpd_anterior: el cálculo de siempre."""
+    import demanda
+    hoy = hoy or hoy_ba()
+    try:
+        serie = serie_diaria(conn, user_id, item_id, variation_id, hoy)
+        if not serie:
+            return vpd_anterior
+        with conn.cursor() as cur:
+            sin_stock = set()
+            if esquema.tiene_tabla(cur, "stock_daily"):
+                cur.execute("""SELECT day FROM stock_daily WHERE user_id=%s AND item_id=%s AND variation_id=%s
+                               AND stock_max=0 AND day >= %s""", (user_id, item_id, variation_id or "", hoy - timedelta(days=130)))
+                sin_stock = {f["day"] for f in cur.fetchall()}
+        return demanda.ritmo_para_panel(serie, hoy, sin_stock, vpd_anterior)["vpd"]
+    except Exception as e:
+        print(f"No se pudo calcular el ritmo limpio de {item_id}: {e}")
+        return vpd_anterior

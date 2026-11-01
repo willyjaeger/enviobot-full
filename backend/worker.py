@@ -424,6 +424,7 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
                     print(f"No se pudo guardar el historial de ventas de {item_id}: {e}")
             sin7, sin15, sin30 = registrar_y_contar_dias_sin_stock(conn, user_id, item_id, var_id, stock_real, stock_es_real)
             vpd = proyeccion.vpd_ponderado(v7, v15, v30, sin7, sin15, sin30)
+            vpd = ventas_historial.ritmo_limpio(conn, user_id, item_id, var_id, vpd)  # sin días sin stock, rebote ni picos
 
             total_advance = lt + ss + default_transit
             if vpd > 0:

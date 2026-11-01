@@ -4534,8 +4534,8 @@ async function cargarAvisos(soloContador = false) {
         cont.innerHTML = avisos.length ? avisos.map(a => {
             const baja = a.sentido === 'baja';
             const color = a.revertido ? 'var(--text2)' : (baja ? 'var(--red, #e5484d)' : 'var(--green, #30a46c)');
-            const titulo = a.revertido ? 'Se revirtió: el ritmo de venta volvió a la normalidad'
-                : (baja ? 'Bajó el ritmo de venta (aviso anterior)' : 'Se aceleró la venta: puede faltar stock');
+            const titulo = a.revertido ? 'Se revirtió: ya no es un problema'
+                : (baja ? 'Bajó la venta: te puede sobrar stock' : 'Se aceleró la venta: puede faltar stock');
             const fecha = a.fecha ? new Date(a.fecha) : null;
             const cuando = fecha ? fecha.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
             const nuevo = a.fecha && Date.parse(a.fecha) > _avisosVistosHasta;
