@@ -392,6 +392,14 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         out = self._correr([urgente])['html']
         self.assertIn('id="colectaAutomaticaTarjeta"', out)
 
+    def test_la_colecta_automatica_aparece_en_el_calendario_y_se_arrastra(self):
+        tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2, target_stock_days=10)
+        colecta = self._col(1, 3, True)
+        html = self._correr([tiempo], colectas=[colecta])['html']
+        self.assertIn('Retiro automática', html)
+        self.assertIn('Ingresa automática', html)
+        self.assertIn('arrastrarAutomatica', html)
+
     def test_la_tarjeta_del_indice_dice_que_hacer_hoy_y_lo_que_tiene_tiempo(self):
         urgente = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         bien = _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)
