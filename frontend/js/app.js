@@ -5469,7 +5469,9 @@ async function abrirModalEditarEnvio(shipmentId) {
         itemsOriginalesEdicion = itemsEnEdicion.map(it => Object.assign({}, it));   // para saber qué hay que cambiar en Mercado Libre
         codigoEnvioEnEdicion = String(sh.shipment_code || '');
         // Si ya se guardaron cambios acá que todavía no están en Mercado Libre, la base para comparar es lo que Mercado Libre tiene (el último PDF).
-        const baseML = leerBaseML(shipmentId);
+        // La base viene del servidor (todas las computadoras ven la misma); este navegador queda de respaldo si el servidor todavía no la guarda.
+        const baseServidor = Array.isArray(sh.ml_base) ? sh.ml_base.map(it => Object.assign({}, it, { units_to_send: parseInt(it.units_to_send, 10) || 0 })) : null;
+        const baseML = baseServidor || leerBaseML(shipmentId);
         if (baseML) itemsOriginalesEdicion = baseML;
 
         // Llenar cabecera del modal

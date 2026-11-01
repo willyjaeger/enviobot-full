@@ -108,3 +108,19 @@ class TestCompararConExistente(unittest.TestCase):
         existentes = [{"id": 1, "sku": "A", "inventory_id": "IA", "variation_id": "", "title": "Uno", "units_to_send": 10}]
         r = m.comparar_con_existente(existentes, [self._enc("A", "IA", 10)])
         self.assertFalse(r["hay_cambios"])
+
+
+class TestBaseMl(unittest.TestCase):
+    def test_ida_y_vuelta(self):
+        import base_ml
+        texto = base_ml.instantanea([{"item_id": "MLA1", "inventory_id": "I1", "sku": "A", "title": "Uno", "units_to_send": "7", "extra": 1}])
+        lista = base_ml.cargar(texto)
+        self.assertEqual(lista[0]["units_to_send"], 7)
+        self.assertNotIn("extra", lista[0])
+
+    def test_desde_pdf_y_base_dañada(self):
+        import base_ml
+        enc = [{"fila": {"item_id": "MLA1", "inventory_id": "I1", "variation_id": "", "variation_name": None, "sku": "A", "title": "Uno"}, "unidades": 12, "titulo": "Uno", "sku": "A"}]
+        self.assertEqual(base_ml.cargar(base_ml.desde_pdf(enc))[0]["units_to_send"], 12)
+        self.assertIsNone(base_ml.cargar("no es json"))
+        self.assertIsNone(base_ml.cargar(None))
