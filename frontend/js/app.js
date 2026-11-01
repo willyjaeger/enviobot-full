@@ -5821,7 +5821,7 @@ function renderizarItemsEdicion() {
         if (sobra !== null) {
             const quitar = it.units_to_send - sobra;
             sugHintHtml = `
-                <div style="font-size: 10.5px; color: var(--warning, #e0a800); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;">
+                <div style="font-size: 10.5px; color: var(--warn); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;">
                     <span title="Con lo que ya hay y lo que se vende hasta que entre la colecta, estas unidades pasan tus días de stock objetivo">${sobra > 0 ? 'Sugerido quitar' : 'Sugerido sacarlo'}: <strong>${sobra > 0 ? quitar : it.units_to_send}</strong></span>
                     <button type="button" class="btn btn-secondary btn-xs" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px;" onclick="${sobra > 0 ? `onAjustarSugeridoEdicion(${idx}, ${sobra})` : `quitarItemDeEdicion(${idx})`}" title="${sobra > 0 ? 'Dejar ' + sobra + ' unidades' : 'Sacar el producto del envío'}">
                         ${sobra > 0 ? 'Ajustar' : 'Sacar'}
