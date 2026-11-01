@@ -389,6 +389,18 @@
         lineas.push(`<span>${NF.format(col.total_unidades || 0)} unid.${col.codigo ? ' · ' + esc(col.codigo) : ''}</span>`);
         return lineas.join('');
     }
+    // Enlace al envío en Mercado Libre (mismo criterio que urlEnvioMl de app.js). ML solo lo muestra con la cuenta dueña de la colecta.
+    const URL_ML_INBOUNDS = 'https://vendedores.mercadolibre.com.ar/shipping/inbounds';
+    function urlEnvioMl(codigo) {
+        const m = /^ML-(\d{5,})$/.exec(String(codigo || '').trim());
+        return m ? `${URL_ML_INBOUNDS}/${m[1]}/details` : URL_ML_INBOUNDS;
+    }
+    function botonVerEnMl(col) {
+        const url = urlEnvioMl(col.codigo);
+        const detalle = url !== URL_ML_INBOUNDS;
+        const nota = col.cuenta_ml ? `<div class="chico nota-ml">Es de la cuenta <b>${esc(col.cuenta_ml)}</b>: Mercado Libre solo la muestra si entraste con esa cuenta.</div>` : '';
+        return `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">${detalle ? 'Ver la colecta en Mercado Libre' : 'Abrir Gestión Full en Mercado Libre'}</a>${nota}`;
+    }
     function proximaColecta() {
         const vigentes = estado.colectas.filter(c => c.estado === 'scheduled');
         return vigentes.find(c => c.abierta) || vigentes[0] || estado.colectas[0] || null;
@@ -505,7 +517,7 @@
         let cardColecta;
         if (col) {
             const tc = tortaColecta(col, 'media', 'tortaCuenta');
-            cardColecta = `<section class="card"><h2>${estado.colectas.length > 1 ? 'Próxima colecta' : 'Colecta'} <a href="#" data-ir="colecta">Ver${estado.colectas.length > 1 ? ' todas' : ''}</a></h2><div class="colecta-top">${tc.html}<div class="txt">${textoColecta(col, tc.modo)}</div></div></section>`;
+            cardColecta = `<section class="card"><h2>${estado.colectas.length > 1 ? 'Próxima colecta' : 'Colecta'} <a href="#" data-ir="colecta">Ver${estado.colectas.length > 1 ? ' todas' : ''}</a></h2><div class="colecta-top">${tc.html}<div class="txt">${textoColecta(col, tc.modo)}</div></div>${botonVerEnMl(col)}</section>`;
         } else {
             cardColecta = `<section class="card"><h2>Colecta</h2><div class="sin-datos">No hay una colecta en preparación.<br>Armala desde el panel y acá vas a ver la cuenta regresiva.</div></section>`;
         }
@@ -578,6 +590,7 @@
         const prods = (col.productos || []);
         const urlMl = urlEnvioMl(col.codigo);
         return `<section class="card"><div class="colecta-top">${tc.html}<div class="txt">${textoColecta(col, tc.modo)}</div></div>
+            ${botonVerEnMl(col)}
             ${col.de_ml ? '<div class="nota-col">Cargada desde Mercado Libre</div>' : (col.estado === 'scheduled' ? '<div class="nota-col">Armada en EnvioBot: recordá cargarla en Mercado Libre</div>' : '')}
             <a class="pub" href="${esc(urlMl)}" target="_blank" rel="noopener" style="margin-top:8px;"><span>${col.de_ml ? 'Ver envío en Mercado Libre' : 'Gestión de envíos Full en ML'}</span>${icono(ICO_LINK, 'ico-chico')}</a>
             ${prods.length ? `<details class="desplegable"><summary>${prods.length} ${prods.length === 1 ? 'producto' : 'productos'}</summary>${prods.map(p => `<div class="lin"><span class="n">${esc(p.titulo || p.sku)}</span><span class="v">${NF.format(p.unidades)}</span></div>`).join('')}</details>` : ''}
