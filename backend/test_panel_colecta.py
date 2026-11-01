@@ -340,7 +340,7 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
 
     def test_la_colecta_automatica_se_muestra_con_sus_productos_y_unidades(self):
         urgente = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
-        tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2, target_stock_days=10)
         bien = _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         html = self._correr([urgente, tiempo, bien])['html']
         self.assertIn('Colecta automática (borrador): 1 producto, 220 unidades', html)
@@ -376,7 +376,7 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         solo_bien = self._correr([bien])['html']
         self.assertIn('Meta cumplida', solo_bien)
         # con tiempo: se queda sin stock recién el día 20 y no hay colecta: se puede esperar, sin avisos de apuro
-        tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2, target_stock_days=10)
         h2 = self._correr([tiempo, bien])['html']
         self.assertIn('Hoy no tenés nada urgente', h2)
         self.assertIn('Primera fecha límite para armar colecta', h2)

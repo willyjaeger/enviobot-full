@@ -890,7 +890,12 @@ const EXPLICACION_ESTADO = {
 //  - inevitables: además va a estar unos días sin stock antes de que pueda entrar mercadería (también hay que sumarlo)
 // La meta (cero) es que no queden productos en los dos últimos grupos.
 const DIAS_INDICE_QUIEBRES = 28;
-const DIAS_ENTRE_COLECTAS = 7;           // cada cuánto se arma una colecta (para saber si la siguiente todavía llega a tiempo)
+const DIAS_ENTRE_COLECTAS = 7;           // lo más seguido que se puede armar una colecta (semanal): piso del equilibrio
+// Cada cuánto se arma la colecta de este producto: la idea es una colecta cada tantos días como el stock que querés tener
+// (objetivo de 15 días = una colecta cada 15 días), nunca más seguido que una por semana.
+function diasEntreColectas(it) {
+    return Math.max(DIAS_ENTRE_COLECTAS, Math.round(Number(it && it.target_stock_days) || 0));
+}
 
 // Primer día en que podría entrar mercadería nueva si se pide hoy: lo más rápido entre armar una colecta nueva (preparar + flete +
 // demora de ML) y el ingreso de la colecta abierta.
@@ -912,9 +917,9 @@ function calcularIndiceQuiebres(items, colectas, hoy, demora, horizonte, colAbie
         const proy = proyeccionProducto(it, colectas, hoy, demora);
         if (!proy) return;                                   // sin ventas: no hay nada que perder
         const limite = primerDiaPosibleDeIngreso(it, hoy, demora, colAbierta);
-        // Si hay colecta abierta, lo que se sume entra con ella; la siguiente llega una semana después. Sin colecta abierta,
-        // hay que armar una (entra recién en `limite`), y se da una semana de margen para armarla.
-        const entraSiguiente = limite + DIAS_ENTRE_COLECTAS;
+        // Si hay colecta abierta, lo que se sume entra con ella; la siguiente llega según tus días de objetivo (15 días de stock =
+        // una colecta cada 15 días). Sin colecta abierta, hay que armar una (entra recién en `limite`) y la siguiente va igual de espaciada.
+        const entraSiguiente = limite + diasEntreColectas(it);
         let perdida = 0, inevitable = 0, primerQuiebre = null;
         for (let t = 0; t <= horizonte; t++) {
             const falta = Math.max(0, proy.vpd - proy.puntos[t].stock);
