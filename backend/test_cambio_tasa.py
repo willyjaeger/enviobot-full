@@ -9,8 +9,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import cambio_tasa as c  # noqa: E402
 
 
-def est(base, ref, confianza="alta", ultimos7=None):
-    return {"base": base, "referencia": ref, "confianza": confianza, "ultimos7": base if ultimos7 is None else ultimos7}
+def est(ahora, ref, confianza="alta", ultimos3=None):
+    """ahora = venta de los últimos 7 días; ultimos3 = la de los últimos 3 (igual si no se indica)."""
+    return {"base": ahora, "referencia": ref, "confianza": confianza, "ultimos7": ahora,
+            "ultimos3": ahora if ultimos3 is None else ultimos3}
 
 
 class TestEvaluarBaja(unittest.TestCase):
@@ -44,6 +46,11 @@ class TestEvaluarBaja(unittest.TestCase):
     def test_pocas_unidades_de_mas_no_valen_un_aviso(self):
         a, _ = c.evaluar_baja(est(0.2, 0.5), stock=10, entrante=0, objetivo=1)
         self.assertIsNone(a)
+
+    def test_un_mal_dia_aislado_no_alcanza(self):
+        # la semana bajó a 6 pero los últimos 3 días volvieron a 13: la baja no se sostiene
+        a, medible = c.evaluar_baja(est(6, 14, ultimos3=13), stock=310, entrante=0, objetivo=30)
+        self.assertEqual((a, medible), (None, True))
 
     def test_sobrante_de_pocos_dias_no_avisa(self):
         # 59 unidades a 2,6 por día: 23 días de stock, apenas 8 días por encima del objetivo

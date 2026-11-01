@@ -393,6 +393,7 @@ function adaptarItemDesdeBackend(raw) {
         vpd: raw.vpd_weighted || 0,
         ritmo: raw.ritmo || null,
         ml_ritmo: raw.ml_ritmo || null,
+        vpd_base: raw.vpd_base !== undefined ? raw.vpd_base : (raw.vpd_weighted || 0),
         channels: raw.channels || [],
         pausado: !!raw.pausado,
         pausa_por_quiebre: !!raw.pausa_por_quiebre,
@@ -697,18 +698,17 @@ function explicacionRitmo(it) {
     const r = it.ritmo;
     if (!r || r.fuente !== 'limpio') return '';
     const dec = function (n) { return (Math.round(n * 10) / 10).toLocaleString('es-AR'); };
-    const partes = ['Ritmo normal ' + dec(r.base) + ' u. por día (entre ' + dec(r.bajo) + ' y ' + dec(r.alto) + ')'];
+    const partes = ['Venta normal ' + dec(r.base) + ' u. por día (promedio de 28 días); para no quebrar se planifica con ' + dec(r.protegido) +
+        ', que suma un margen por lo que varía la venta de este producto (puede llegar a ' + dec(r.alto) + ')'];
+    if (r.ultimos7 !== null && r.ultimos7 !== undefined && Math.abs(r.ultimos7 - r.base) >= 0.5) partes.push('la última semana vendió ' + dec(r.ultimos7) + ' por día');
     const desc = r.descartados || {};
-    const sacados = [];
-    if (desc.sin_stock) sacados.push(desc.sin_stock + ' días sin stock');
-    if (desc.rebote) sacados.push(desc.rebote + ' de rebote tras quedarse sin stock');
-    if (sacados.length) partes.push('no cuento ' + sacados.join(' ni '));
-    if (r.vpd_anterior && Math.abs(r.vpd_anterior - r.base) >= 0.5) partes.push('el cálculo anterior daba ' + dec(r.vpd_anterior));
+    if (desc.sin_stock) partes.push('no cuento ' + desc.sin_stock + ' días sin stock');
+    if (r.vpd_anterior && Math.abs(r.vpd_anterior - r.protegido) >= 0.5) partes.push('el cálculo anterior daba ' + dec(r.vpd_anterior));
     if (r.quiebres >= 2) partes.push('se quedó sin stock ' + r.quiebres + ' veces en ' + r.dias_analizados + ' días');
     if (r.tendencia === 'baja') partes.push('la última semana vende bastante menos que antes');
     if (r.tendencia === 'suba') partes.push('la última semana vende bastante más que antes');
     if (r.dias_stock_min && r.dias_stock_max) {
-        partes.push('el stock alcanza entre ' + Math.round(r.dias_stock_min) + ' y ' + Math.round(r.dias_stock_max) + ' días');
+        partes.push('el stock alcanza entre ' + Math.round(r.dias_stock_min) + ' y ' + Math.round(r.dias_stock_max) + ' días según cómo venda');
     }
     if (r.sugerido_bajo !== undefined && r.sugerido_alto !== undefined && r.sugerido_bajo !== r.sugerido_alto) {
         partes.push('para ' + it.target_stock_days + ' días mandarías entre ' + r.sugerido_bajo + ' y ' + r.sugerido_alto + ' u.');
@@ -3277,7 +3277,7 @@ function renderizarTabla() {
             <td class="num-cell">
                 <strong>${it.current_stock}</strong> un.${incomingSummary}
             </td>
-            <td class="num-cell">${it.vpd} un./d</td>
+            <td class="num-cell" title="${escapeHtml(it.ritmo && it.ritmo.fuente === 'limpio' ? 'Promedio de los últimos 28 días. Para planificar la colecta se usa ' + it.vpd + ' un./d, que suma un margen por lo que varía la venta de este producto.' : '')}">${it.vpd_base} un./d</td>
             <td class="num-cell">${celdaRitmoML(it)}</td>
             <td class="num-cell" style="font-weight: 600; color: ${it.days_left <= (prep + transit) ? 'var(--danger)' : 'var(--text)'};">
                 ${diasRestantesText}

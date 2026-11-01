@@ -2,7 +2,7 @@
 """Aviso de que la venta de un producto bajó de forma sostenida y te puede sobrar stock.
 
 Solo avisa si se cumplen las dos cosas:
-  1. el ritmo de venta limpio de hoy (sin días sin stock, rebote ni picos; ver demanda.py) es 30 % o más
+  1. la venta de la última semana (y también la de los últimos 3 días; ver demanda.py) es 30 % o más
      menor que el de las buenas semanas recientes (la referencia con la que se planificó la compra);
   2. con ese ritmo, lo que hay en Full más lo que viene en camino alcanza para más del umbral de sobrestock
      (objetivo de cobertura x 1,5) y con el ritmo de referencia no pasaba: es el stock que quedó de más por la baja.
@@ -59,16 +59,18 @@ def evaluar_baja(est, stock, entrante, objetivo, factor=None):
     ahora, pct, dias_stock (cobertura con el ritmo de hoy) y exceso (unidades por encima del objetivo);
     `medible` es False si no hay datos para decidir o si la situación está justo en el límite (no se
     da por revertido un aviso abierto en la zona gris)."""
-    ref, ahora = est.get("referencia"), est.get("base") or 0.0
+    ref, ahora = est.get("referencia"), est.get("ultimos7")
     total = (stock or 0) + (entrante or 0)
-    if (stock or 0) <= 0 or not ref or est.get("confianza") == "baja" or est.get("ultimos7") is None:
+    if (stock or 0) <= 0 or not ref or est.get("confianza") == "baja" or ahora is None:
         return None, False
     ahora = max(ahora, 0.01)
+    ultimos3 = est.get("ultimos3")
+    sostenida = ultimos3 is None or ultimos3 <= ref * UMBRAL_BAJA  # no es un mal día aislado
     umbral = proyeccion.umbral_sobrestock(objetivo, factor)
     dias_ahora = min(total / ahora, 999.0)
     dias_antes = total / ref
     exceso = total - ahora * objetivo
-    baja = ahora <= ref * UMBRAL_BAJA
+    baja = ahora <= ref * UMBRAL_BAJA and sostenida
     if (baja and dias_ahora > umbral and dias_antes <= umbral
             and exceso >= MIN_EXCESO_UNIDADES and exceso / ahora >= MIN_EXCESO_DIAS):
         return {"sentido": "baja", "antes": round(ref, 1), "ahora": round(ahora, 1),
@@ -166,7 +168,7 @@ def detectar(conn, user_id, hoy=None):
         if not medible:
             continue
         gk = _gk(clave_prod)
-        medibles[gk] = round(est["base"], 1)
+        medibles[gk] = round(est["ultimos7"] or 0, 1)
         if not ev:
             continue
         ev.update({

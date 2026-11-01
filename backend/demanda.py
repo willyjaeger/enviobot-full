@@ -1,24 +1,27 @@
-"""Ritmo de venta limpio y con rango, a partir de las ventas por día.
+"""Ritmo de venta con margen de seguridad, a partir de las ventas por día.
 
-El VPD de siempre promedia 7, 15 y 30 días y se deja engañar: un producto que estuvo sin stock
-y vuelve vende de golpe lo acumulado (el "rebote") y ese pico entra como si fuera el ritmo normal.
-Acá se sacan los días sin stock, los de rebote y los picos sueltos, y se devuelve un escenario
-bajo, uno base y uno alto, para decidir cuánto pedir según lo caro que sea el producto.
+Se probó con ventas reales (herramientas/backtest_demanda.py, 14 días hacia adelante): ningún método acierta con
+menos de 35 % de error, y el mejor es el más simple, el promedio de los últimos 28 días. Un número único se queda
+corto la mitad de las veces (cobertura 49 %). Para no quebrar hace falta un margen que dependa de cuánto varía la
+venta de cada producto: promedio + 0,5 desvío diario cubre 80 % de los casos y promedio + 1 desvío, 96 %.
+Por eso se devuelven tres ritmos:
+  - base: promedio de 28 días (lo esperable);
+  - protegido: base + K_SERVICIO desvíos (con el que se planifica la colecta para no quebrar);
+  - alto: base + 1 desvío (hasta dónde puede llegar sin sorpresa).
+Solo se descartan los días en que se sabe que el producto no tenía stock (stock_daily). Recortar "rebotes" o inferir
+quiebres por ceros seguidos no mejoró el pronóstico y se sacó.
 
 Funciones puras, sin base ni ML, para poder probarlas solas (ver test_demanda.py).
 """
 from datetime import timedelta
 
-DIAS_REBOTE = 7          # días posteriores a un quiebre en los que la venta puede venir inflada
-FACTOR_REBOTE = 1.25     # un día de rebote se descarta si vende más de 1,25 veces el ritmo normal
-MIN_CORRIDA_CERO = 2     # días seguidos en cero que se toman como quiebre si no hay dato de stock
-MIN_VENTA_QUIEBRE = 3    # ...y el producto normalmente vende al menos esto por día (mediana)
 DIAS_RECIENTES = 14
 DIAS_LARGOS = 28
-VENTANA = 7              # para los escenarios: ritmo de cada semana móvil
+VENTANA = 7              # para el ritmo de referencia: cada semana móvil
 MIN_VALIDOS_VENTANA = 4
 UMBRAL_BAJA = 0.70       # la última semana vende menos que esto del ritmo anterior: tendencia a la baja
 UMBRAL_SUBA = 1.40
+K_SERVICIO = 0.5         # desvíos de margen para planificar (0,5 = cubre ~80 % de las veces; 1 = ~96 %)
 
 
 def _percentil(valores, p):
@@ -40,25 +43,19 @@ def _mediana(valores):
     return _percentil(valores, 50)
 
 
-def _winsorizar(valores):
-    """Recorta los picos sueltos: nada pasa de mediana + 3 desvíos robustos (MAD)."""
-    if len(valores) < 5:
-        return list(valores)
-    med = _mediana(valores)
-    mad = _mediana([abs(x - med) for x in valores])
-    # si el ritmo es casi constante el MAD da 0: se deja un margen mínimo para no recortar de más
-    escala = max(1.4826 * mad, 0.25 * med, 1.0)
-    tope = med + 3 * escala
-    return [min(x, tope) for x in valores]
-
-
 def _media(valores):
     return sum(valores) / len(valores) if valores else None
 
 
+def _desvio(valores):
+    if len(valores) < 2:
+        return 0.0
+    m = sum(valores) / len(valores)
+    return (sum((x - m) ** 2 for x in valores) / len(valores)) ** 0.5
+
+
 def limpiar(serie, hoy, dias=60, sin_stock=()):
-    """Marca cada día como válido o descartado. Devuelve una lista de dicts de más viejo a más nuevo:
-    {dia, unidades, valido, motivo} con motivo None, 'sin_stock', 'sin_stock_inferido' o 'rebote'.
+    """Lista de dicts de más viejo a más nuevo: {dia, unidades, valido, motivo}, con motivo None o 'sin_stock'.
 
     serie: {fecha: unidades}; los días que faltan valen 0. Termina ayer: hoy está incompleto.
     sin_stock: fechas en las que se sabe que el producto estuvo en cero (stock_daily).
@@ -67,99 +64,42 @@ def limpiar(serie, hoy, dias=60, sin_stock=()):
     con_venta = [f for f, u in serie.items() if u and f < hoy]
     primero = min(con_venta) if con_venta else hoy
     dias_lista = [hoy - timedelta(days=n) for n in range(dias, 0, -1) if hoy - timedelta(days=n) >= primero]
-    unidades = [int(serie.get(d, 0) or 0) for d in dias_lista]
     sin_stock = set(sin_stock or ())
-    motivo = [("sin_stock" if d in sin_stock else None) for d in dias_lista]
-
-    # Sin dato de stock: varios días seguidos en cero en un producto que suele vender = quiebre.
-    positivos = [u for u in unidades if u > 0]
-    if positivos and _mediana(positivos) >= MIN_VENTA_QUIEBRE:
-        i = 0
-        while i < len(unidades):
-            if unidades[i] == 0 and motivo[i] is None:
-                j = i
-                while j < len(unidades) and unidades[j] == 0:
-                    j += 1
-                # un cero que llega hasta hoy también es quiebre, salvo que sea solo ayer
-                if j - i >= MIN_CORRIDA_CERO:
-                    for k in range(i, j):
-                        if motivo[k] is None:
-                            motivo[k] = "sin_stock_inferido"
-                i = j
-            else:
-                i += 1
-
-    # Rebote: los días que siguen a un quiebre y venden bastante más que el ritmo normal.
-    normales = [u for u, m in zip(unidades, motivo) if m is None]
-    ref = _mediana(normales) if normales else 0
-    for i in range(len(unidades)):
-        if motivo[i] and motivo[i].startswith("sin_stock"):
-            fin = i
-            while fin + 1 < len(unidades) and motivo[fin + 1] and motivo[fin + 1].startswith("sin_stock"):
-                fin += 1
-            for k in range(fin + 1, min(fin + 1 + DIAS_REBOTE, len(unidades))):
-                if motivo[k] is None and ref > 0 and unidades[k] > ref * FACTOR_REBOTE:
-                    motivo[k] = "rebote"
-
-    return [{"dia": d, "unidades": u, "valido": m is None, "motivo": m}
-            for d, u, m in zip(dias_lista, unidades, motivo)]
+    return [{"dia": d, "unidades": int(serie.get(d, 0) or 0), "valido": d not in sin_stock,
+             "motivo": "sin_stock" if d in sin_stock else None} for d in dias_lista]
 
 
-def _tasa(dias, desde, hasta):
-    """Media (con picos recortados) de los días válidos en [desde, hasta) contando desde el final."""
-    tramo = dias[len(dias) - hasta:len(dias) - desde] if hasta > desde else []
-    vals = [d["unidades"] for d in tramo if d["valido"]]
-    if not vals:
-        return None, 0
-    return _media(_winsorizar(vals)), len(vals)
+def _valores(dias, hasta):
+    """Ventas de los días válidos de los últimos `hasta` días."""
+    return [d["unidades"] for d in dias[max(0, len(dias) - hasta):] if d["valido"]]
 
 
-def estimar(serie, hoy, sin_stock=(), dias=60):
-    """Ritmo de venta por día con tres escenarios y datos para explicarlo.
+def estimar(serie, hoy, sin_stock=(), dias=60, k=K_SERVICIO):
+    """Ritmo de venta por día con margen y datos para explicarlo.
 
-    Devuelve un dict: bajo, base, alto (unidades por día), ultimos7, referencia (buenas semanas recientes), tendencia ('baja', 'suba',
-    'estable' o 'sin_datos'), confianza ('alta', 'media', 'baja'), validos, descartados
-    ({'sin_stock': n, 'rebote': n}), ventas_30 (suma cruda), vpd_crudo_30 (para comparar),
-    media_con_stock (promedio de todos los días con stock, rebote incluido), quiebres (cuántas veces se quedó sin stock)
-    y dias_analizados.
+    Devuelve un dict: base, protegido, alto, bajo (unidades por día), sigma (desvío diario), ultimos7 y ultimos3
+    (venta reciente), referencia (buenas semanas recientes), tendencia ('baja', 'suba', 'estable' o 'sin_datos'),
+    confianza ('alta', 'media', 'baja'), validos, descartados ({'sin_stock': n}), quiebres (cuántas veces se quedó
+    sin stock), ventas_30 y vpd_crudo_30 (para comparar) y dias_analizados.
     """
     lista = limpiar(serie, hoy, dias, sin_stock)
     validos = [d for d in lista if d["valido"]]
-    descartados = {"sin_stock": 0, "rebote": 0}
-    for d in lista:
-        if d["motivo"] == "rebote":
-            descartados["rebote"] += 1
-        elif d["motivo"]:
-            descartados["sin_stock"] += 1
     ventas_30 = sum(d["unidades"] for d in lista[-30:])
-    con_stock = [d["unidades"] for d in lista if not (d["motivo"] or "").startswith("sin_stock")]
     quiebres, previo_q = 0, False
     for d in lista:
-        q = (d["motivo"] or "").startswith("sin_stock")
+        q = not d["valido"]
         quiebres += q and not previo_q
         previo_q = q
 
-    r7, n7 = _tasa(lista, 0, 7)
-    r14, n14 = _tasa(lista, 0, DIAS_RECIENTES)
-    r28, n28 = _tasa(lista, 0, DIAS_LARGOS)
-    previo, nprev = _tasa(lista, 7, 35)
+    v7, v3 = _valores(lista, 7), _valores(lista, 3)
+    v14, v28 = _valores(lista, DIAS_RECIENTES), _valores(lista, DIAS_LARGOS)
+    r7, r3 = _media(v7), _media(v3)
+    base = _media(v28) if v28 else (_media(v14) or 0.0)
+    sigma = _desvio(v28)
+    protegido = base + k * sigma
+    alto = base + 1.0 * sigma
+    bajo = min(base, r7) if r7 is not None else base
 
-    if r14 is None and r28 is None:
-        base = 0.0
-    elif r14 is None:
-        base = r28
-    elif r28 is None:
-        base = r14
-    else:
-        base = 0.6 * r14 + 0.4 * r28
-
-    # Escenarios: cómo anduvo cada semana móvil de las últimas cuatro (solo con días válidos).
-    tasas = []
-    for fin in range(0, 22):
-        tramo = lista[len(lista) - fin - VENTANA:len(lista) - fin]
-        vals = [d["unidades"] for d in tramo if d["valido"]]
-        if len(vals) >= MIN_VALIDOS_VENTANA:
-            tasas.append(sum(vals) / len(vals))
     # Ritmo de referencia: lo que se vendía en las buenas semanas recientes (percentil 75 de las semanas móviles
     # de los últimos ~2 meses). Sirve para saber si hoy se vende mucho menos que cuando se planificó una compra.
     largas = []
@@ -169,14 +109,10 @@ def estimar(serie, hoy, sin_stock=(), dias=60):
         if len(vals) >= MIN_VALIDOS_VENTANA:
             largas.append(sum(vals) / len(vals))
     referencia = _percentil(largas, 75) if len(largas) >= 8 else None
-    if len(tasas) >= 3:
-        bajo = min(base, _percentil(tasas, 25))
-        alto = max(base, _percentil(tasas, 75))
-    else:
-        bajo, alto = base, base
 
-    if n7 >= MIN_VALIDOS_VENTANA and previo and nprev >= 7:
-        ratio = r7 / previo
+    previo_vals = [d["unidades"] for d in lista[max(0, len(lista) - 35):max(0, len(lista) - 7)] if d["valido"]]
+    if len(v7) >= MIN_VALIDOS_VENTANA and len(previo_vals) >= 7 and _media(previo_vals):
+        ratio = r7 / _media(previo_vals)
         tendencia = "baja" if ratio < UMBRAL_BAJA else "suba" if ratio > UMBRAL_SUBA else "estable"
     else:
         tendencia = "sin_datos"
@@ -184,13 +120,14 @@ def estimar(serie, hoy, sin_stock=(), dias=60):
     n = len(validos)
     confianza = "alta" if n >= 28 else "media" if n >= 14 else "baja"
     return {
-        "bajo": round(bajo, 2), "base": round(base, 2), "alto": round(alto, 2),
+        "bajo": round(bajo, 2), "base": round(base, 2), "protegido": round(protegido, 2), "alto": round(alto, 2),
+        "sigma": round(sigma, 2),
         "ultimos7": round(r7, 2) if r7 is not None else None,
+        "ultimos3": round(r3, 2) if r3 is not None else None,
         "tendencia": tendencia, "confianza": confianza, "validos": n,
         "referencia": round(referencia, 2) if referencia is not None else None,
-        "descartados": descartados, "ventas_30": ventas_30,
+        "descartados": {"sin_stock": len(lista) - n}, "ventas_30": ventas_30,
         "vpd_crudo_30": round(ventas_30 / 30.0, 2),
-        "media_con_stock": round(_media(con_stock), 2) if con_stock else 0.0,
         "quiebres": quiebres, "dias_analizados": len(lista),
     }
 
@@ -211,17 +148,16 @@ def unidades_a_pedir(tasa, stock, entrante, dias_objetivo, dias_hasta_ingreso=0)
     return max(0, int(round(dias_objetivo * tasa - stock_al_ingreso - entrante)))
 
 
-MIN_VALIDOS_PANEL = 7   # con menos días válidos que estos no se confía en el cálculo limpio
+MIN_VALIDOS_PANEL = 7   # con menos días válidos que estos no se confía en el cálculo nuevo
 
 
 def ritmo_para_panel(serie, hoy, sin_stock, vpd_anterior):
-    """Ritmo que usa el panel. Si hay historia suficiente, el limpio (base); si no, el de siempre.
-
-    Devuelve el dict de estimar() más 'vpd' (el que se usa), 'fuente' ('limpio' o 'anterior') y 'vpd_anterior'.
-    """
+    """Ritmo que usa el panel para planificar. Si hay historia suficiente, el protegido (base + margen);
+    si no, el de siempre. Devuelve el dict de estimar() más 'vpd' (el que se usa), 'fuente' ('limpio' o
+    'anterior') y 'vpd_anterior'."""
     e = estimar(serie, hoy, sin_stock)
     e["vpd_anterior"] = round(float(vpd_anterior or 0), 2)
     usable = bool(serie) and e["validos"] >= MIN_VALIDOS_PANEL and (e["base"] > 0 or not vpd_anterior)
     e["fuente"] = "limpio" if usable else "anterior"
-    e["vpd"] = e["base"] if usable else e["vpd_anterior"]
+    e["vpd"] = e["protegido"] if usable else e["vpd_anterior"]
     return e

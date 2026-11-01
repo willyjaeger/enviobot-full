@@ -1638,9 +1638,10 @@ def get_full_items():
                                 serie_total[dia] = serie_total.get(dia, 0) + u
                             sin_total |= quiebres_dias.get(clave_v, set())
                         ritmo = _demanda.ritmo_para_panel(serie_total, hoy_ba, sin_total, vpd)
-                        c_item["ritmo"] = {k: ritmo[k] for k in ("fuente", "bajo", "base", "alto", "ultimos7", "tendencia", "confianza",
-                                                                  "descartados", "media_con_stock", "quiebres", "dias_analizados", "vpd_anterior")}
+                        c_item["ritmo"] = {k: ritmo[k] for k in ("fuente", "bajo", "base", "protegido", "alto", "sigma", "ultimos7", "tendencia",
+                                                                  "confianza", "descartados", "quiebres", "dias_analizados", "vpd_anterior")}
                         vpd = ritmo["vpd"]
+                        c_item["vpd_base"] = ritmo["base"] if ritmo["fuente"] == "limpio" else ritmo["vpd"]
                 except Exception as e_ritmo:
                     print(f"Ritmo limpio no disponible para {c_item.get('item_id')}: {e_ritmo}")
                     c_item.pop("ritmo", None)

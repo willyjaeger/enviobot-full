@@ -124,10 +124,10 @@ for ps in grupos.values():
         print()
 
 filas.sort(key=lambda x: -(x[1]["base"] * 1000 + x[2]))
-print(f"{'SKU':<10}{'Producto':<34}{'Stock':>6} {'App':>6} {'Bajo':>6} {'Base':>6} {'Alto':>6} {'Media':>6} {'Quieb':>5}  {'Tendencia':<9}{'Conf.':<6}{'Días stock (alto-bajo)':<24}Pedir {objetivo}d (bajo/base/alto)")
+print(f"{'SKU':<10}{'Producto':<34}{'Stock':>6} {'App':>6} {'Bajo':>6} {'Base':>6} {'Prot.':>6} {'Alto':>6} {'Quieb':>5}  {'Tendencia':<9}{'Conf.':<6}{'Días stock (alto-bajo)':<24}Pedir {objetivo}d (bajo/protegido/alto)")
 for p, e, stock in filas:
     ds = [demanda.dias_de_stock(stock, e[k]) for k in ("alto", "base", "bajo")]
     rango = " - ".join("sin venta" if v is None else f"{v:.0f}" for v in (ds[0], ds[2]))
-    pedir = "/".join(str(demanda.unidades_a_pedir(e[k], stock, 0, objetivo)) for k in ("bajo", "base", "alto"))
+    pedir = "/".join(str(demanda.unidades_a_pedir(e[k], stock, 0, objetivo)) for k in ("bajo", "protegido", "alto"))
     d = e["descartados"]
-    print(f"{(p['sku'] or '')[:9]:<10}{(p['title'] or '')[:32]:<34}{stock:>6} {float(p['vpd'] or 0):>6.1f} {e['bajo']:>6.1f} {e['base']:>6.1f} {e['alto']:>6.1f} {e['media_con_stock']:>6.1f} {e['quiebres']:>5}  {e['tendencia']:<9}{e['confianza']:<6}{rango:<24}{pedir}   (descartados: {d['sin_stock']} sin stock, {d['rebote']} rebote)")
+    print(f"{(p['sku'] or '')[:9]:<10}{(p['title'] or '')[:32]:<34}{stock:>6} {float(p['vpd'] or 0):>6.1f} {e['bajo']:>6.1f} {e['base']:>6.1f} {e['protegido']:>6.1f} {e['alto']:>6.1f} {e['quiebres']:>5}  {e['tendencia']:<9}{e['confianza']:<6}{rango:<24}{pedir}   (días sin stock: {d['sin_stock']})")
