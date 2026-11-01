@@ -2999,6 +2999,7 @@ function recalcularTodo() {
         }
     });
 
+    unificarEstadoConRegla();
     actualizarMetricas();
     renderizarWidgetAlertas();
     renderizarTabla();
@@ -3007,6 +3008,24 @@ function recalcularTodo() {
     if (window.EnvioBotNotif && window.EnvioBotNotif.checkAuto) {
         window.EnvioBotNotif.checkAuto(itemsData);
     }
+}
+
+// Pasa el estado de cada producto a la regla única de "hay que mandar hoy" (calcularIndiceQuiebres), para que las tarjetas de arriba,
+// los chips de la tabla, el widget de alertas y los filtros digan lo mismo que las donas: 'rojo' -> Crítico (Sin stock si ya está en 0),
+// 'sumar' -> Preparar, y lo que no hace falta hoy deja de figurar como Crítico/Preparar. Los productos sin ritmo de venta no están en
+// el índice y quedan con el estado de siempre.
+function unificarEstadoConRegla() {
+    const mapa = accionHoyPorProducto();
+    (itemsData || []).forEach(function (it) {
+        if (it.pausado) return;
+        const a = mapa[it.id];
+        if (!a) return;
+        const sinStock = (Number(it.current_stock) || 0) <= 0;
+        if (a === 'rojo') it.status = sinStock ? 'out_of_stock' : 'critical';
+        else if (a === 'sumar') it.status = sinStock ? 'out_of_stock' : 'warning';
+        else if ((it.status === 'warning' || it.status === 'critical') ) it.status = 'ok';
+        else if (it.status === 'out_of_stock' && !sinStock) it.status = 'ok';
+    });
 }
 
 // Resumen de lo que hay en Full, con lo que Mercado Libre informa de cada publicación.
