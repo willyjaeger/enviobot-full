@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 
 import esquema
 import proyeccion
+import ventas_historial
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -351,6 +352,10 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
 
         stock_cache = {}
         today = datetime.utcnow().date()
+        variaciones_por_item = {}
+        for it in items:
+            variaciones_por_item.setdefault(it["item_id"], set()).add(it.get("variation_id") or "")
+        ventas_vistas = set()
         for it in items:
             item_id = it["item_id"]
             var_id = it["variation_id"]
@@ -410,6 +415,13 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
 
             # Calcular ventas y ritmo de demanda
             v7, v15, v30 = calculate_sales_velocity(access_token, meli_user_id, item_id, var_id)
+            if item_id not in ventas_vistas:  # una vez por publicación, aunque tenga varias variaciones
+                ventas_vistas.add(item_id)
+                try:
+                    ventas_historial.sincronizar_item(conn, access_token, meli_user_id, user_id, item_id,
+                                                      variaciones_por_item[item_id])
+                except Exception as e:
+                    print(f"No se pudo guardar el historial de ventas de {item_id}: {e}")
             sin7, sin15, sin30 = registrar_y_contar_dias_sin_stock(conn, user_id, item_id, var_id, stock_real, stock_es_real)
             vpd = proyeccion.vpd_ponderado(v7, v15, v30, sin7, sin15, sin30)
 
@@ -453,6 +465,10 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
                         updated_at = NOW()
                 """, (user_id, item_id, var_id, v7, v15, v30, vpd, days_left, stockout_date, reorder_deadline, suggested_restock, calc_status))
 
+        try:
+            ventas_historial.consolidar(conn)
+        except Exception as e:
+            print(f"No se pudo consolidar el historial de ventas: {e}")
         print(f"[{datetime.now()}] Sync completada: user_id={user_id}, cred_id={cred_id}, {len(items)} items/variantes procesados.")
     finally:
         conn.close()
