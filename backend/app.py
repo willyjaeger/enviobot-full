@@ -1735,6 +1735,19 @@ def get_full_items():
                 except Exception as e_ritmo:
                     print(f"Rango de ritmo no disponible para {c_item.get('item_id')}: {e_ritmo}")
 
+            # Colecta en preparación de más: aun contando el margen de seguridad, lo que se manda deja mucho más que el objetivo.
+            # Mientras no se corrija conviene sacar la diferencia (se puede editar hasta el límite de la colecta).
+            c_item["exceso_colecta"] = None
+            if prep_units > 0 and vpd > 0:
+                try:
+                    necesario = _proy.sugerido_al_ingreso(stock, vpd, dias_ingreso, total_incoming - prep_units, target_cov)
+                    sobra = prep_units - necesario
+                    cob = c_item["cobertura_post_colecta"]
+                    if cob is not None and cob > _proy.umbral_sobrestock(target_cov, factor_sobrestock) and sobra >= 10 and sobra / vpd >= 5:
+                        c_item["exceso_colecta"] = {"en_colecta": int(prep_units), "recomendado": int(necesario), "sacar": int(sobra),
+                                                    "cobertura_dias": cob, "objetivo": target_cov}
+                except Exception as e_exc:
+                    print(f"Exceso de colecta no calculado para {c_item.get('item_id')}: {e_exc}")
             c_item["aviso_ajuste_units"] = _proy.aviso_ajuste(stock, vpd, dias_ingreso, prep_units, target_cov) if prep_units > 0 else None
             c_item["fecha_ingreso"] = (today + timedelta(days=dias_ingreso)).isoformat()
             c_item["sobrestock"] = _proy.es_sobrestock(stock, total_incoming, vpd, target_cov, factor_sobrestock)

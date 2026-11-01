@@ -94,6 +94,28 @@ class TestPanelJS(unittest.TestCase):
         self.assertIn('No hace falta armar ninguna colecta por ahora', out['html'])
         self.assertIn('Hoy no tenés nada pendiente', out['html'])
 
+    def test_colecta_con_exceso_recomienda_sacar_unidades(self):
+        item = _item(title='Datiles', sku='DAT-1', current_stock=218, total_incoming=333, in_preparation_stock=333,
+                     cobertura_post_colecta=35, fecha_ingreso='2026-11-07',
+                     exceso_colecta={'en_colecta': 333, 'recomendado': 48, 'sacar': 285, 'cobertura_dias': 35, 'objetivo': 15})
+        col = self._col(7, 3, True)
+        col['productos'] = [{'titulo': 'Dátil', 'sku': 'DAT-1', 'unidades': 333}]
+        out = self._correr([item], self._prox(), [col])
+        self.assertIn('Colecta con exceso: conviene sacar unidades', out['html'])
+        self.assertIn('Sacá 285 u. de la colecta', out['html'])
+        self.assertIn('sacarDeColecta(', out['html'])
+        self.assertIn('Con 48 u. alcanza', out['html'])
+
+    def test_colecta_con_exceso_que_ya_cerro_no_ofrece_el_boton(self):
+        item = _item(title='Datiles', sku='DAT-1', total_incoming=333, in_preparation_stock=333, cobertura_post_colecta=35,
+                     exceso_colecta={'en_colecta': 333, 'recomendado': 48, 'sacar': 285, 'cobertura_dias': 35, 'objetivo': 15})
+        col = self._col(7, 3, False)
+        col['productos'] = [{'titulo': 'Dátil', 'sku': 'DAT-1', 'unidades': 333}]
+        out = self._correr([item], self._prox(abierta=False), [col])
+        self.assertIn('Sacá 285 u. de la colecta', out['html'])
+        self.assertNotIn('sacarDeColecta(', out['html'])
+        self.assertIn('ya no se puede cambiar desde acá', out['html'])
+
     def test_urgentes_sin_colecta_avisan_con_claridad(self):
         out = self._correr([_item(title='Pasas', status='out_of_stock', current_stock=0, sugerido_al_ingreso=48),
                             _item(title='Bien')])

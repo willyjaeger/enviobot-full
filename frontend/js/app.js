@@ -407,6 +407,7 @@ function adaptarItemDesdeBackend(raw) {
         cobertura_post_colecta: raw.cobertura_post_colecta !== undefined ? raw.cobertura_post_colecta : null,
         sugerido_al_ingreso: raw.sugerido_al_ingreso || 0,
         aviso_ajuste_units: raw.aviso_ajuste_units || null,
+        exceso_colecta: raw.exceso_colecta || null,
         fecha_ingreso: raw.fecha_ingreso || null,
         prep_item_id: raw.prep_item_id || null,
         prep_status: raw.prep_status || null,
@@ -963,7 +964,7 @@ function tarjetaIndiceQuiebres() {
                              perdida_evitable_pct: Math.round(pct(r.perdidaEvitable) * 10) / 10, perdida_inevitable_pct: Math.round(pct(r.perdidaInevitable) * 10) / 10 };
     const trozos = [
         { n: nOk, color: '--good', texto: 'sin riesgo en las próximas 4 semanas' },
-        { n: nTiempo, color: '--text2', texto: 'se quedarían sin stock más adelante: hay tiempo' },
+        { n: nTiempo, color: '--text2', texto: 'colecta automática para crear: se quedarían sin stock más adelante, hay tiempo' },
         { n: nSumar, color: '--warn', texto: colAbierta ? 'hay que sumarlos a la colecta abierta' : 'hay que armarles una colecta' },
         { n: nRojo, color: '--danger', texto: 'van a estar unos días sin stock antes de que entre mercadería' }
     ];
@@ -989,7 +990,7 @@ function tarjetaIndiceQuiebres() {
     const paraHoy = r.evitables.concat(r.inevitables).sort((a, b) => b.perdida - a.perdida);
     const tituloHoy = colAbierta ? `Para sumar a la colecta ${numeroColecta(colAbierta)} (hasta el ${textoLimiteEdicion(colAbierta.limite_edicion)})` : 'Para armar una colecta';
     detalleIndiceQuiebres = (accion || nTiempo) ? `<details class="pc-detalle pc-indice-detalle"><summary>Ver el detalle producto por producto</summary>
-        ${grupo(paraHoy, tituloHoy)}${grupo(r.hay_tiempo, 'Hay tiempo: se quedarían sin stock más adelante')}</details>` : '';
+        ${grupo(paraHoy, tituloHoy)}${grupo(r.hay_tiempo, 'Colecta automática para crear: hay tiempo, se quedarían sin stock más adelante')}${nTiempo ? '<div class="pc-imp-cabecera"><button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar la colecta automática</button></div>' : ''}</details>` : '';
     let titulo, sub;
     const sinStockEn = d => fechaDeProyeccion(d, hoy);
     if (accion > 0) {
@@ -1002,7 +1003,7 @@ function tarjetaIndiceQuiebres() {
     } else if (nTiempo > 0) {
         const primero = r.hay_tiempo[0];
         titulo = 'Hoy no tenés nada urgente';
-        sub = `${pluralizar(nTiempo, 'producto se quedaría', 'productos se quedarían')} sin stock más adelante. Primera fecha límite para armar colecta: <b>${escapeHtml(sinStockEn(Math.max(0, primero.fechaLimite)))}</b> (${escapeHtml(primero.it.title)}).`;
+        sub = `${pluralizar(nTiempo, 'producto se quedaría', 'productos se quedarían')} sin stock más adelante: hay una colecta automática para crear. Primera fecha límite para armar colecta: <b>${escapeHtml(sinStockEn(Math.max(0, primero.fechaLimite)))}</b> (${escapeHtml(primero.it.title)}).`;
     } else {
         titulo = 'Meta cumplida: ningún producto se quedaría sin stock en las próximas 4 semanas';
         sub = 'Cuenta lo que hay hoy en Full y las colectas ya cargadas, con la venta por día de cada producto.';
@@ -2495,6 +2496,109 @@ function mostrarPestana(nombre, guardar) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar); else arrancar();
 })();
 
+// ── Avisos emergentes y colecta automática (borrador) ─────────────────────────────
+// La colecta automática no existe en Mercado Libre: es lo que EnvioBot calcula que hay que mandar. Pasa a ser una colecta
+// real cuando se arma y ML devuelve el número de operación.
+function colectaConItem(it) {
+    const sku = String(it && it.sku || '').trim().toUpperCase();
+    if (!sku) return null;
+    return (colectasData || []).find(c => c.abierta && (c.productos || []).some(p => String(p.sku || '').trim().toUpperCase() === sku)) || null;
+}
+
+async function sacarDeColecta(itemId) {
+    const it = itemsData.find(x => x.id === itemId);
+    const col = it && colectaConItem(it);
+    if (!it || !col || !it.exceso_colecta) { showToast('Esa colecta ya no se puede cambiar desde acá.', 'info'); return; }
+    cerrarAvisosEmergentes();
+    await abrirModalEditarEnvio(col.id);
+    if (edicionCerrada) { showToast('Esa colecta ya cerró: no se puede cambiar.', 'error'); return; }
+    const sku = String(it.sku || '').trim().toUpperCase();
+    const idx = itemsEnEdicion.findIndex(x => String(x.sku || '').trim().toUpperCase() === sku);
+    if (idx < 0) { showToast('No encontré ese producto en la colecta.', 'error'); return; }
+    const recomendado = it.exceso_colecta.recomendado;
+    if (recomendado <= 0) quitarItemDeEdicion(idx);
+    else { onCambiarUnidadesEdicion(idx, recomendado); renderizarItemsEdicion(); }
+    showToast('Revisá las unidades y apretá Guardar para confirmar.', 'info');
+}
+
+function colectaAutomaticaVirtual() {
+    const hoy = new Date();
+    const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), hoy, demoraAcreditacionDias(), DIAS_INDICE_QUIEBRES, colectaAbiertaVigente());
+    const filas = r.evitables.concat(r.inevitables, r.hay_tiempo).map(f => ({ it: f.it, unidades: Math.max(1, Math.ceil(f.evitable || 0)), conTiempo: f.fechaLimite !== undefined }));
+    return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.filter(f => !f.conTiempo).length };
+}
+
+// Avisos que se calculan con lo que se ve en pantalla. Cada uno tiene un id que cambia si cambia la situación.
+function avisosDelPanel() {
+    const lista = [];
+    if (!itemsData || !itemsData.length) return lista;
+    itemsData.forEach(it => {
+        const e = it.exceso_colecta;
+        if (!e || it.pausado) return;
+        const editable = !!colectaConItem(it);
+        lista.push({
+            id: 'exceso:' + it.id + ':' + e.en_colecta + ':' + e.recomendado, tipo: 'exceso', itemId: it.id,
+            titulo: 'Colecta con exceso: ' + (it.title || it.sku),
+            detalle: 'Mandás ' + e.en_colecta + ' u. y a este ritmo cubren ' + Math.round(e.cobertura_dias) + ' días; tu objetivo es ' + e.objetivo + '. Con ' + e.recomendado + ' u. alcanza: sacá ' + e.sacar + '.' +
+                (editable ? '' : ' Esa colecta ya no se puede cambiar desde acá.'),
+            accion: editable ? 'Sacar ' + e.sacar + ' u.' : null
+        });
+    });
+    try {
+        const v = colectaAutomaticaVirtual();
+        if (v.productos > 0) {
+            lista.push({
+                id: 'auto:' + v.productos + ':' + v.unidades, tipo: 'automatica',
+                titulo: 'Colecta automática para crear',
+                detalle: v.productos + (v.productos === 1 ? ' producto' : ' productos') + ', ' + v.unidades.toLocaleString('es-AR') + ' u. para no quebrar' +
+                    (v.paraHoy ? ' (' + v.paraHoy + ' para hoy)' : ' (hay tiempo)') + '. Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.',
+                accion: 'Armar colecta'
+            });
+        }
+    } catch (e) { /* sin datos de colectas todavía */ }
+    return lista;
+}
+
+function avisosEmergentesVistos() {
+    try { return JSON.parse(localStorage.getItem('envioBotFullAvisosVistos') || '[]') || []; } catch (e) { return []; }
+}
+function marcarAvisosEmergentesVistos(ids) {
+    try {
+        const todos = avisosEmergentesVistos().concat(ids);
+        localStorage.setItem('envioBotFullAvisosVistos', JSON.stringify(todos.slice(-200)));
+    } catch (e) { /* sin almacenamiento: puede volver a aparecer */ }
+}
+
+function cerrarAvisosEmergentes() {
+    const cont = document.getElementById('avisosEmergentes');
+    if (cont) cont.innerHTML = '';
+}
+
+function cerrarAvisoEmergente(boton) {
+    const tarjeta = boton && boton.closest('.aviso-emergente');
+    if (tarjeta) tarjeta.remove();
+}
+
+// Muestra una vez cada aviso nuevo y lo da por leído; sigue visible en la ventana de Avisos mientras no se corrija.
+function mostrarAvisosEmergentes() {
+    const cont = document.getElementById('avisosEmergentes');
+    if (!cont) return;
+    const vistos = avisosEmergentesVistos();
+    const nuevos = avisosDelPanel().filter(a => vistos.indexOf(a.id) === -1);
+    if (!nuevos.length) return;
+    cont.innerHTML += nuevos.slice(0, 4).map(a => {
+        const boton = a.accion
+            ? `<button type="button" class="btn btn-sm" onclick="${a.tipo === 'exceso' ? 'sacarDeColecta(' + Number(a.itemId) + ')' : 'cerrarAvisosEmergentes(); abrirModalColecta()'}">${escapeHtml(a.accion)}</button>`
+            : '';
+        return `<div class="aviso-emergente ae-${a.tipo}" role="alert">
+            <div class="ae-titulo">${escapeHtml(a.titulo)}</div>
+            <div class="ae-detalle">${escapeHtml(a.detalle)}</div>
+            <div class="ae-acciones">${boton}<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarAvisoEmergente(this)">Entendido</button></div>
+        </div>`;
+    }).join('');
+    marcarAvisosEmergentesVistos(nuevos.map(a => a.id));
+}
+
 function renderizarPanelColecta() {
     const cont = document.getElementById('panelColecta');
     if (!cont) return;
@@ -2532,6 +2636,18 @@ function renderizarPanelColecta() {
         }
     }
 
+    // Ya en la colecta, pero se manda de más: conviene sacar
+    const deMasEnColecta = g.enColecta.filter(it => it.exceso_colecta);
+    const htmlSacar = deMasEnColecta.length === 0 ? '' : seccionPanel(
+        'Colecta con exceso: conviene sacar unidades',
+        deMasEnColecta.map(it => filaConBarra(it, {
+            icono: iconoSvg('alerta', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
+            derecha: `Sacá ${escapeHtml(it.exceso_colecta.sacar)} u. de la colecta${colectaConItem(it) ? ` <button type="button" class="pc-btn-sumar" onclick="event.stopPropagation(); sacarDeColecta(${Number(it.id)})">Sacar</button>` : ''}`,
+            dias: it.cobertura_post_colecta,
+            claseBarra: 'pc-fill-warn',
+            nota: `Con ${escapeHtml(it.exceso_colecta.en_colecta)} u. cubrís ${Math.round(it.cobertura_post_colecta || 0)} días y tu objetivo es ${escapeHtml(it.target_stock_days)}. Con ${escapeHtml(it.exceso_colecta.recomendado)} u. alcanza. ${colectaConItem(it) ? 'Todavía se puede cambiar.' : 'Esa colecta ya no se puede cambiar desde acá.'}`
+        })).join(''), deMasEnColecta.length);
+
     // Ya en la colecta, pero conviene ajustar
     const cortos = g.enColecta.filter(it => it.aviso_ajuste_units);
     const htmlAjustar = cortos.length === 0 ? '' : seccionPanel(
@@ -2563,11 +2679,13 @@ function renderizarPanelColecta() {
     const donaIndice = tarjetaIndiceQuiebres();
     cont.innerHTML = `<div class="pc-hero-par">${tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)}${donaIndice}</div>`
         + detalleIndiceQuiebres
+        + htmlSacar
         + seccionPanel('Qué hacer hoy', htmlHacer, hacer.length)
         + htmlAjustar
         + htmlDeMas;
     cont.style.display = 'flex';
     guardarIndiceDelDia();
+    mostrarAvisosEmergentes();
 
     // Pestaña Colectas: calendario y colectas armadas (o la tarjeta de lo que está en preparación).
     const contColectas = document.getElementById('panelColectasTab');
@@ -4540,7 +4658,10 @@ async function cargarAvisos(soloContador = false) {
         const data = await res.json();
         if (!data.ok) return;
         const avisos = data.avisos || [];
-        const nuevos = avisos.filter(a => a.fecha && Date.parse(a.fecha) > _avisosVistosHasta).length;
+        const delPanel = avisosDelPanel();
+        const vistosPanel = avisosEmergentesVistos();
+        const nuevos = avisos.filter(a => a.fecha && Date.parse(a.fecha) > _avisosVistosHasta).length +
+            delPanel.filter(a => vistosPanel.indexOf(a.id) === -1).length;
         const badge = document.getElementById('topbarAvisosBadge');
         const boton = document.getElementById('btnAvisosTop');
         if (badge) { badge.textContent = nuevos; badge.style.display = nuevos ? 'inline-block' : 'none'; }
@@ -4549,7 +4670,12 @@ async function cargarAvisos(soloContador = false) {
 
         const cont = document.getElementById('avisosContainer');
         if (!cont) return;
-        cont.innerHTML = avisos.length ? avisos.map(a => {
+const paraCorregir = delPanel.length ? `<div style="font-size: 13px; font-weight: 700; margin: 0 0 8px 0;">Para corregir ahora</div>` + delPanel.map(a => `<div class="aviso-cartel" style="border: 1px solid var(--border); border-left: 4px solid ${a.tipo === 'exceso' ? 'var(--danger, #e5484d)' : 'var(--accent, #f5a623)'}; border-radius: 8px; margin-bottom: 10px; padding: 10px 12px; background: var(--surf2);">
+            <strong>${escapeHtml(a.titulo)}</strong> <span style="font-size: 11px; color: var(--text2);">leído</span>
+            <div style="font-size: 13px; margin-top: 4px;">${escapeHtml(a.detalle)}</div>
+            ${a.accion ? `<div style="margin-top: 8px;"><button type="button" class="btn btn-sm" onclick="cerrarAvisos(); ${a.tipo === 'exceso' ? 'sacarDeColecta(' + Number(a.itemId) + ')' : 'abrirModalColecta()'}">${escapeHtml(a.accion)}</button></div>` : ''}
+        </div>`).join('') : '';
+        cont.innerHTML = paraCorregir + (avisos.length ? avisos.map(a => {
             const baja = a.sentido === 'baja';
             const color = a.revertido ? 'var(--text2)' : (baja ? 'var(--red, #e5484d)' : 'var(--green, #30a46c)');
             const titulo = a.revertido ? 'Se revirtió: ya no es un problema'
@@ -4571,7 +4697,7 @@ async function cargarAvisos(soloContador = false) {
                     ${a.revertido ? '' : '<div style="font-size: 12px; color: var(--text2); margin-top: 6px;">Te recomendamos verificar qué sucede y si tenés stock suficiente para la próxima colecta.</div>'}
                 </div>
             </details>`;
-        }).join('') : `<div style="text-align: center; padding: 40px; color: var(--text2);">No hay avisos. Cuando la venta de un producto baje de forma sostenida y te pueda sobrar stock, vas a verlo acá.</div>`;
+        }).join('') : (delPanel.length ? '' : `<div style="text-align: center; padding: 40px; color: var(--text2);">No hay avisos. Cuando la venta de un producto baje de forma sostenida y te pueda sobrar stock, vas a verlo acá.</div>`));
 
         // Registro de WhatsApp: qué se habría mandado (modo prueba) y cuándo se frenaría, para decidir si es una molestia.
         const registro = data.registro || [];
@@ -4592,6 +4718,7 @@ async function cargarAvisos(soloContador = false) {
         </details>`;
 
         _avisosVistosHasta = Date.now();
+        marcarAvisosEmergentesVistos(delPanel.map(a => a.id));
         try { localStorage.setItem('avisosVistosHasta', String(_avisosVistosHasta)); } catch (e) { /* sin almacenamiento */ }
         if (badge) badge.style.display = 'none';
         if (boton) boton.classList.remove('sin-leer');
