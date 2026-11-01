@@ -199,3 +199,19 @@ def unidades_a_pedir(tasa, stock, entrante, dias_objetivo, dias_hasta_ingreso=0)
         return 0
     stock_al_ingreso = max(0.0, stock - tasa * dias_hasta_ingreso)
     return max(0, int(round(dias_objetivo * tasa - stock_al_ingreso - entrante)))
+
+
+MIN_VALIDOS_PANEL = 7   # con menos días válidos que estos no se confía en el cálculo limpio
+
+
+def ritmo_para_panel(serie, hoy, sin_stock, vpd_anterior):
+    """Ritmo que usa el panel. Si hay historia suficiente, el limpio (base); si no, el de siempre.
+
+    Devuelve el dict de estimar() más 'vpd' (el que se usa), 'fuente' ('limpio' o 'anterior') y 'vpd_anterior'.
+    """
+    e = estimar(serie, hoy, sin_stock)
+    e["vpd_anterior"] = round(float(vpd_anterior or 0), 2)
+    usable = bool(serie) and e["validos"] >= MIN_VALIDOS_PANEL and (e["base"] > 0 or not vpd_anterior)
+    e["fuente"] = "limpio" if usable else "anterior"
+    e["vpd"] = e["base"] if usable else e["vpd_anterior"]
+    return e

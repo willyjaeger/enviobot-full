@@ -91,5 +91,24 @@ class TestPedido(unittest.TestCase):
         self.assertEqual(d.unidades_a_pedir(2, 500, 0, 30), 0)
 
 
+class TestPanel(unittest.TestCase):
+    def test_con_historia_usa_el_limpio(self):
+        e = d.ritmo_para_panel(serie([10] * 40), HOY, (), 14.0)
+        self.assertEqual((e["fuente"], e["vpd"], e["vpd_anterior"]), ("limpio", 10.0, 14.0))
+
+    def test_sin_historia_queda_el_de_siempre(self):
+        e = d.ritmo_para_panel({}, HOY, (), 3.0)
+        self.assertEqual((e["fuente"], e["vpd"]), ("anterior", 3.0))
+
+    def test_poca_historia_queda_el_de_siempre(self):
+        e = d.ritmo_para_panel(serie([5, 5, 5]), HOY, (), 4.0)
+        self.assertEqual((e["fuente"], e["vpd"]), ("anterior", 4.0))
+
+    def test_todo_descartado_no_deja_el_ritmo_en_cero(self):
+        # el cálculo de siempre ve ventas y el limpio se quedó sin días válidos: no se apaga el producto
+        e = d.ritmo_para_panel(serie([0] * 3 + [30, 40, 35, 30, 28, 33, 36, 31]), HOY, (), 20.0)
+        self.assertEqual(e["fuente"] == "limpio" and e["vpd"] == 0, False)
+
+
 if __name__ == "__main__":
     unittest.main()

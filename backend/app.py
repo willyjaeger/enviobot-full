@@ -35,6 +35,8 @@ from email_service import enviar_email, enviar_email_prueba, enviar_email_bienve
 import pausa_avisos as _pausa_avisos
 import equipo as _equipo
 import proyeccion as _proy
+import demanda as _demanda
+import ventas_historial as _ventas_hist
 import avisos_tipos as _avisos
 import esquema as _esquema
 from inbound_service import render_remito_html
@@ -1546,6 +1548,25 @@ def get_full_items():
                 sin_stock_por_item[(f["item_id"], str(f.get("variation_id") or ""))] = (
                     int(f["sin7"] or 0), int(f["sin15"] or 0), int(f["sin30"] or 0))
 
+        # Ritmo de venta limpio (demanda.py): ventas por día de los últimos 120 días (migración 006) y días sin stock.
+        # Sin el historial el panel usa el cálculo de siempre.
+        hoy_ba = _ventas_hist.hoy_ba()
+        ventas_dias, quiebres_dias = {}, {}
+        try:
+            if _esquema.tiene_tabla(cur, "ventas_diarias"):
+                cur.execute("""SELECT item_id, variation_id, day, unidades FROM ventas_diarias
+                               WHERE user_id = %s AND day >= %s""", (account_id, hoy_ba - timedelta(days=130)))
+                for f in cur.fetchall():
+                    ventas_dias.setdefault((f["item_id"], str(f.get("variation_id") or "")), {})[f["day"]] = int(f["unidades"])
+                if _esquema.tiene_tabla(cur, "stock_daily"):
+                    cur.execute("""SELECT item_id, variation_id, day FROM stock_daily
+                                   WHERE user_id = %s AND stock_max = 0 AND day >= %s""", (account_id, hoy_ba - timedelta(days=130)))
+                    for f in cur.fetchall():
+                        quiebres_dias.setdefault((f["item_id"], str(f.get("variation_id") or "")), set()).add(f["day"])
+        except Exception as e_ritmo:
+            print(f"Ritmo limpio apagado por un error al leer el historial: {e_ritmo}")
+            ventas_dias, quiebres_dias = {}, {}
+
         # Estado del galpón de lo que está en preparación (solo si existe la columna).
         galpon_por_clave = {}
         if _esquema.tiene_columna(cur, "inbound_shipment_items", "prep_status"):
@@ -1598,6 +1619,21 @@ def get_full_items():
                 if t:
                     sin7, sin15, sin30 = max(sin7, t[0]), max(sin15, t[1]), max(sin30, t[2])
             vpd = _proy.vpd_ponderado(s7, s15, s30, sin7, sin15, sin30)
+            if ventas_dias:
+                try:
+                        serie_total, sin_total = {}, set()
+                        for ch in c_item.get("channels", []):
+                            clave_v = (ch["item_id"], str(c_item.get("variation_id") or ""))
+                            for dia, u in ventas_dias.get(clave_v, {}).items():
+                                serie_total[dia] = serie_total.get(dia, 0) + u
+                            sin_total |= quiebres_dias.get(clave_v, set())
+                        ritmo = _demanda.ritmo_para_panel(serie_total, hoy_ba, sin_total, vpd)
+                        c_item["ritmo"] = {k: ritmo[k] for k in ("fuente", "bajo", "base", "alto", "ultimos7", "tendencia", "confianza",
+                                                                  "descartados", "media_con_stock", "quiebres", "dias_analizados", "vpd_anterior")}
+                        vpd = ritmo["vpd"]
+                except Exception as e_ritmo:
+                    print(f"Ritmo limpio no disponible para {c_item.get('item_id')}: {e_ritmo}")
+                    c_item.pop("ritmo", None)
             c_item["vpd_weighted"] = vpd
             c_item["dias_sin_stock_30d"] = sin30
 
@@ -1673,6 +1709,16 @@ def get_full_items():
             c_item["stock_al_ingreso"] = round(_proy.stock_al_ingreso(stock, vpd, dias_ingreso), 1)
             c_item["cobertura_post_colecta"] = _proy.cobertura_post_colecta(stock, vpd, dias_ingreso, total_incoming)
             c_item["sugerido_al_ingreso"] = _proy.sugerido_al_ingreso(stock, vpd, dias_ingreso, total_incoming, target_cov)
+            if c_item.get("ritmo") and c_item["ritmo"]["fuente"] == "limpio":
+                try:
+                    r = c_item["ritmo"]
+                    r["dias_stock_min"] = _demanda.dias_de_stock(total_covered_stock, r["alto"])
+                    r["dias_stock_max"] = _demanda.dias_de_stock(total_covered_stock, r["bajo"])
+                    r["sugerido_bajo"] = _proy.sugerido_al_ingreso(stock, r["bajo"], dias_ingreso, total_incoming, target_cov)
+                    r["sugerido_alto"] = _proy.sugerido_al_ingreso(stock, r["alto"], dias_ingreso, total_incoming, target_cov)
+                except Exception as e_ritmo:
+                    print(f"Rango de ritmo no disponible para {c_item.get('item_id')}: {e_ritmo}")
+
             c_item["aviso_ajuste_units"] = _proy.aviso_ajuste(stock, vpd, dias_ingreso, prep_units, target_cov) if prep_units > 0 else None
             c_item["fecha_ingreso"] = (today + timedelta(days=dias_ingreso)).isoformat()
             c_item["sobrestock"] = _proy.es_sobrestock(stock, total_incoming, vpd, target_cov, factor_sobrestock)

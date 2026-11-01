@@ -391,6 +391,7 @@ function adaptarItemDesdeBackend(raw) {
         buffer_days: raw.effective_buffer !== undefined ? raw.effective_buffer : 2,         // COLCHÓN SEGURIDAD
         target_stock_days: raw.target_coverage_days || 30,
         vpd: raw.vpd_weighted || 0,
+        ritmo: raw.ritmo || null,
         channels: raw.channels || [],
         pausado: !!raw.pausado,
         pausa_por_quiebre: !!raw.pausa_por_quiebre,
@@ -654,6 +655,8 @@ function identificacionItem(it) {
 const UMBRAL_EXCEDENTE_ML_DIAS = 60;
 
 function vpdParaExcedente(it) {
+    // Con el ritmo limpio (sin días sin stock, rebote ni picos) no se mezcla el promedio de 30 días, que arrastra ese rebote.
+    if (it.ritmo && it.ritmo.fuente === 'limpio') return Number(it.vpd) || 0;
     return Math.max(Number(it.vpd) || 0, (Number(it.ventas_30d) || 0) / 30);
 }
 
@@ -688,6 +691,31 @@ function cuentaDeDias(it) {
         (v > 0 ? ' → ' + dec(total) + ' ÷ ' + dec(v) + ' = ' + Math.round(total / v) + ' días' : '');
 }
 
+// Explica de dónde sale el ritmo de venta y entre qué valores se mueve, para decidir con más o menos cautela.
+function explicacionRitmo(it) {
+    const r = it.ritmo;
+    if (!r || r.fuente !== 'limpio') return '';
+    const dec = function (n) { return (Math.round(n * 10) / 10).toLocaleString('es-AR'); };
+    const partes = ['Ritmo normal ' + dec(r.base) + ' u. por día (entre ' + dec(r.bajo) + ' y ' + dec(r.alto) + ')'];
+    const desc = r.descartados || {};
+    const sacados = [];
+    if (desc.sin_stock) sacados.push(desc.sin_stock + ' días sin stock');
+    if (desc.rebote) sacados.push(desc.rebote + ' de rebote tras quedarse sin stock');
+    if (sacados.length) partes.push('no cuento ' + sacados.join(' ni '));
+    if (r.vpd_anterior && Math.abs(r.vpd_anterior - r.base) >= 0.5) partes.push('el cálculo anterior daba ' + dec(r.vpd_anterior));
+    if (r.quiebres >= 2) partes.push('se quedó sin stock ' + r.quiebres + ' veces en ' + r.dias_analizados + ' días');
+    if (r.tendencia === 'baja') partes.push('la última semana vende bastante menos que antes');
+    if (r.tendencia === 'suba') partes.push('la última semana vende bastante más que antes');
+    if (r.dias_stock_min && r.dias_stock_max) {
+        partes.push('el stock alcanza entre ' + Math.round(r.dias_stock_min) + ' y ' + Math.round(r.dias_stock_max) + ' días');
+    }
+    if (r.sugerido_bajo !== undefined && r.sugerido_alto !== undefined && r.sugerido_bajo !== r.sugerido_alto) {
+        partes.push('para ' + it.target_stock_days + ' días mandarías entre ' + r.sugerido_bajo + ' y ' + r.sugerido_alto + ' u.');
+    }
+    if (r.confianza === 'media' || r.confianza === 'baja') partes.push('poca historia: tomalo con cautela');
+    return partes.join(' · ');
+}
+
 // Cada fila muestra lo esencial (nombre, SKU, acción y barra); los códigos, publicaciones y la cuenta
 // de días quedan escondidos tras la flechita de la fila. Se recuerda cuáles quedaron abiertas
 // porque el panel se redibuja cada minuto.
@@ -716,6 +744,7 @@ function filaConBarra(it, opciones) {
             <div class="pc-fila-ident">${identificacionItem(it)}</div>
             <div class="pc-fila-nota">${opciones.nota}</div>
             <div class="pc-fila-nota pc-fila-cuenta">${escapeHtml(cuentaDeDias(it))}</div>
+            ${explicacionRitmo(it) ? `<div class="pc-fila-nota pc-fila-cuenta">${escapeHtml(explicacionRitmo(it))}</div>` : ''}
         </div>
     </div>`;
 }
