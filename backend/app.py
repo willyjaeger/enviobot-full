@@ -37,6 +37,7 @@ import equipo as _equipo
 import proyeccion as _proy
 import demanda as _demanda
 import ventas_historial as _ventas_hist
+import ml_reposicion as _ml_repo
 import avisos_tipos as _avisos
 import esquema as _esquema
 from inbound_service import render_remito_html
@@ -1567,6 +1568,15 @@ def get_full_items():
             print(f"Ritmo limpio apagado por un error al leer el historial: {e_ritmo}")
             ventas_dias, quiebres_dias = {}, {}
 
+        # Lo que informa Mercado Libre de cada producto (migración 007): ritmo de venta y recomendación de reposición.
+        ml_por_item = {}
+        try:
+            if _esquema.tiene_tabla(cur, "ml_reposicion"):
+                cur.execute("SELECT * FROM ml_reposicion WHERE user_id = %s", (account_id,))
+                ml_por_item = {f["item_id"]: f for f in cur.fetchall()}
+        except Exception as e_ml:
+            print(f"Datos de ML no disponibles: {e_ml}")
+
         # Estado del galpón de lo que está en preparación (solo si existe la columna).
         galpon_por_clave = {}
         if _esquema.tiene_columna(cur, "inbound_shipment_items", "prep_status"):
@@ -1635,6 +1645,11 @@ def get_full_items():
                     print(f"Ritmo limpio no disponible para {c_item.get('item_id')}: {e_ritmo}")
                     c_item.pop("ritmo", None)
             c_item["vpd_weighted"] = vpd
+            for ch in c_item.get("channels", []):
+                datos_ml = _ml_repo.para_panel(ml_por_item.get(ch["item_id"]))
+                if datos_ml:
+                    c_item["ml_ritmo"] = datos_ml
+                    break
             c_item["dias_sin_stock_30d"] = sin30
 
             if vpd > 0:

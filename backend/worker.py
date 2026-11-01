@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import esquema
 import proyeccion
 import ventas_historial
+import ml_reposicion
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -422,6 +423,10 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
                                                       variaciones_por_item[item_id])
                 except Exception as e:
                     print(f"No se pudo guardar el historial de ventas de {item_id}: {e}")
+                try:
+                    ml_reposicion.sincronizar_item(conn, access_token, user_id, item_id)
+                except Exception as e:
+                    print(f"No se pudo guardar lo que informa ML de {item_id}: {e}")
             sin7, sin15, sin30 = registrar_y_contar_dias_sin_stock(conn, user_id, item_id, var_id, stock_real, stock_es_real)
             vpd = proyeccion.vpd_ponderado(v7, v15, v30, sin7, sin15, sin30)
             vpd = ventas_historial.ritmo_limpio(conn, user_id, item_id, var_id, vpd)  # sin días sin stock, rebote ni picos

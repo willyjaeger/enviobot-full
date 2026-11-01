@@ -261,7 +261,7 @@ async function cargarDatos() {
         itemsData = [];
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" style="text-align: center; padding: 48px 20px; color: var(--text2);">
+                <td colspan="9" style="text-align: center; padding: 48px 20px; color: var(--text2);">
                     <div style="font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 8px;">Conectá tu cuenta de Mercado Libre</div>
                     <div style="font-size: 13px; max-width: 460px; margin: 0 auto 18px auto; line-height: 1.5;">Para consultar tu inventario real en depósito Full y calcular automáticamente tus días de stock y fechas de quiebre, vinculá tu cuenta de vendedor.</div>
                     <button onclick="iniciarConexionMeLi()" class="btn btn-meli" style="padding: 10px 22px; font-weight: 700; font-size: 13px; cursor: pointer;">Conectar Mercado Libre</button>
@@ -274,7 +274,7 @@ async function cargarDatos() {
     const wh = WAREHOUSES[currentWarehouse] || WAREHOUSES.meli_full;
     tbody.innerHTML = `
         <tr>
-            <td colspan="8" style="text-align: center; padding: 42px 20px; color: var(--text2);">
+            <td colspan="9" style="text-align: center; padding: 42px 20px; color: var(--text2);">
                 <div style="margin-bottom: 8px;">
                     <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6; animation: spin 1s linear infinite;">
                         <circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12"></circle>
@@ -324,7 +324,7 @@ async function cargarDatos() {
                 itemsData = [];
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="8" style="text-align: center; padding: 50px 20px; color: var(--text2);">
+                        <td colspan="9" style="text-align: center; padding: 50px 20px; color: var(--text2);">
                             <div style="margin-bottom: 12px;">
                                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6;">
                                     <path d="M13.21 2.97 L 19.71 6.59 A 2.50 2.50 0 0 1 21.00 8.77 L 21.00 15.23 A 2.50 2.50 0 0 1 19.71 17.41 L 13.21 21.03 A 2.50 2.50 0 0 1 10.79 21.03 L 4.29 17.41 A 2.50 2.50 0 0 1 3.00 15.23 L 3.00 8.77 A 2.50 2.50 0 0 1 4.29 6.59 L 10.79 2.97 A 2.50 2.50 0 0 1 13.21 2.97 Z"></path>
@@ -351,7 +351,7 @@ async function cargarDatos() {
         itemsData = [];
         tbody.innerHTML = `
             <tr>
-                <td colspan="8" style="text-align: center; padding: 40px; color: var(--text2);">
+                <td colspan="9" style="text-align: center; padding: 40px; color: var(--text2);">
                     <div style="margin-bottom: 8px;">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.6;">
                             <circle cx="12" cy="12" r="10"></circle>
@@ -392,6 +392,7 @@ function adaptarItemDesdeBackend(raw) {
         target_stock_days: raw.target_coverage_days || 30,
         vpd: raw.vpd_weighted || 0,
         ritmo: raw.ritmo || null,
+        ml_ritmo: raw.ml_ritmo || null,
         channels: raw.channels || [],
         pausado: !!raw.pausado,
         pausa_por_quiebre: !!raw.pausa_por_quiebre,
@@ -3019,6 +3020,19 @@ window.abrirModalColectaConItem = abrirModalColectaConItem;
 let currentSortColumn = 'days_left';
 let currentSortOrder = 'asc';
 
+// Lo que Mercado Libre informa del producto: ritmo de los últimos 30 días, el de la última semana y lo que recomienda reponer.
+function celdaRitmoML(it) {
+    const m = it.ml_ritmo;
+    if (!m) return '<span style="color: var(--text2);" title="Mercado Libre todavía no informó datos de este producto">-</span>';
+    const dec = n => (Math.round(n * 10) / 10).toLocaleString('es-AR');
+    const urgencias = { THIS_WEEK: 'esta semana', NEXT_WEEK: 'la semana próxima', IN_TWO_WEEKS: 'en dos semanas', NO_URGENCY: 'sin urgencia', EXCEDENT: 'tenés de más' };
+    const semanas = (m.semanas || []).map(dec).join(' · ');
+    const detalle = 'Según Mercado Libre: ' + dec(m.vpd_30) + ' u. por día en los últimos 30 días. Por semana (de la más nueva a la más vieja): ' + semanas + ' u. por día.' +
+        (m.sugerido ? ' ML recomienda reponer ' + m.sugerido + ' u.' : '') + (m.urgencia ? ' Urgencia: ' + (urgencias[m.urgencia] || m.urgencia) + '.' : '');
+    return '<span title="' + escapeHtml(detalle) + '">' + dec(m.vpd_30) + ' un./d' +
+        (m.vpd_ultima_semana !== null && m.vpd_ultima_semana !== undefined ? '<br><small style="color: var(--text2);">últ. sem. ' + dec(m.vpd_ultima_semana) + '</small>' : '') + '</span>';
+}
+
 function ordenarPor(columna) {
     if (currentSortColumn === columna) {
         currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
@@ -3032,7 +3046,7 @@ function ordenarPor(columna) {
 }
 
 function actualizarIconosOrden() {
-    const cols = ['title', 'current_stock', 'vpd', 'days_left', 'stockout_date', 'reorder_deadline_date', 'target_stock_days', 'status'];
+    const cols = ['title', 'current_stock', 'vpd', 'ml_vpd', 'days_left', 'stockout_date', 'reorder_deadline_date', 'target_stock_days', 'status'];
     cols.forEach(col => {
         const icon = document.getElementById(`sort-icon-${col}`);
         if (!icon) return;
@@ -3069,7 +3083,7 @@ function renderizarTabla() {
     }
 
     if (filtrados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 30px; color: var(--text2);">No hay publicaciones con los filtros seleccionados.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 30px; color: var(--text2);">No hay publicaciones con los filtros seleccionados.</td></tr>';
         return;
     }
 
@@ -3087,6 +3101,9 @@ function renderizarTabla() {
         } else if (currentSortColumn === 'vpd') {
             valA = Number(a.vpd !== undefined ? a.vpd : 0);
             valB = Number(b.vpd !== undefined ? b.vpd : 0);
+        } else if (currentSortColumn === 'ml_vpd') {
+            valA = a.ml_ritmo ? a.ml_ritmo.vpd_30 : -1;
+            valB = b.ml_ritmo ? b.ml_ritmo.vpd_30 : -1;
         } else if (currentSortColumn === 'days_left') {
             valA = Number(a.days_left !== undefined ? a.days_left : 999);
             valB = Number(b.days_left !== undefined ? b.days_left : 999);
@@ -3261,6 +3278,7 @@ function renderizarTabla() {
                 <strong>${it.current_stock}</strong> un.${incomingSummary}
             </td>
             <td class="num-cell">${it.vpd} un./d</td>
+            <td class="num-cell">${celdaRitmoML(it)}</td>
             <td class="num-cell" style="font-weight: 600; color: ${it.days_left <= (prep + transit) ? 'var(--danger)' : 'var(--text)'};">
                 ${diasRestantesText}
             </td>
