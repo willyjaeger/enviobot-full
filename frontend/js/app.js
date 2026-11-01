@@ -2726,11 +2726,11 @@ function tarjetaColectaHoy() {
     }
     return `<div class="pc-banner" id="colectaAutomaticaTarjeta"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
-            <div class="pc-banner-titulo">Colecta automática (borrador): ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
+            <div class="pc-banner-titulo">${colAb ? 'Agregar a la colecta ' + escapeHtml(numeroColecta(colAb)) + ' del ' + escapeHtml(formatearFechaCorta(colAb.fecha_retiro)) : 'Colecta automática (borrador)'}: ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
             <div class="pc-banner-sub"><b>${escapeHtml(recomendacion)}</b></div>
-            <div class="pc-banner-sub">Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.</div>
+            <div class="pc-banner-sub">Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). ${colAb ? 'La colecta ya está en Mercado Libre: sumalos acá y te dejo la hoja con lo que hay que cambiar allá (Mercado Libre no se modifica solo).' : 'Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.'}</div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${botonColectaAutomatica}<button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('hoy')" title="Baja el Excel para subir a Mercado Libre; no guarda nada">Descargar planilla Excel</button></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${botonColectaAutomatica}${colAb ? '' : `<button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('hoy')" title="Baja el Excel para subir a Mercado Libre; no guarda nada">Descargar planilla Excel</button>`}</div>
         <details class="pc-detalle" data-sec="Productos de la colecta automática" ${seccionesAbiertasSesion['Productos de la colecta automática'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
             <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;

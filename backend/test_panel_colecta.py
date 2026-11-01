@@ -315,6 +315,8 @@ process.stdout.write(JSON.stringify({ ok: sku(r.ok), tiempo: sku(r.hay_tiempo), 
                    'limite_edicion': '2099-01-01T09:44:00-03:00', 'abierta': True, 'total_unidades': 5, 'etapa': 'armada', 'de_ml': True,
                    'productos': [{'sku': 'X', 'unidades': 5}]}
         h = self._correr([sin], prox=self._prox(), colectas=[abierta])['html']
+        self.assertIn('Agregar a la colecta #81021895 del', h)      # con una colecta abierta se agrega a ella, no es un borrador nuevo
+        self.assertNotIn('Colecta automática (borrador): 1 producto', h.split('colectaSiguienteTarjeta')[0])
         self.assertIn('Retiro recomendado: la colecta #81021895', h)
         self.assertIn('Sumar a la colecta #81021895', h)
 
