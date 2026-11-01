@@ -939,6 +939,14 @@ function calcularIndiceQuiebres(items, colectas, hoy, demora, horizonte, colAbie
             salida.hay_tiempo.push(fila);
             return;
         }
+        // Ya está resuelto: lo que viene en colectas cubre todo lo que se puede cubrir. Si igual queda unos días sin stock antes de que
+        // entre, eso ya no se arregla agregando unidades: no pide acción hoy (se marca para poder decirlo).
+        if (evitable < 0.5) {
+            fila.tipo = 'resuelto';
+            fila.quiebraIgual = true;
+            salida.ok.push(fila);
+            return;
+        }
         salida.perdida += perdida;
         salida.perdidaInevitable += inevitable;
         salida.perdidaEvitable += evitable;
@@ -992,6 +1000,7 @@ function mostrarDetalleIndice(ev, clave) {
         let dato = '';
         if (clave === 'sumar' || clave === 'rojo') dato = `<b>${escapeHtml(Math.max(1, Math.ceil(f.evitable)))} u.</b> <span class="pc-tip-sub">(sin stock el ${escapeHtml(fechaDeProyeccion(f.primerQuiebre, hoy))})</span>`;
         else if (f.fechaLimite !== undefined) dato = `<span class="pc-tip-sub">armala antes del</span> <b>${escapeHtml(fechaDeProyeccion(Math.max(0, f.fechaLimite), hoy))}</b>`;
+        else if (f.quiebraIgual) dato = '<span class="pc-tip-sub">ya está en colecta; igual queda unos días sin stock antes de que entre</span>';
         else dato = `<b>${escapeHtml(Math.round(f.it.covered_days_left || f.it.days_left || 0))} días</b>`;
         return `<div class="pc-tip-fila"><span class="pc-tip-nombre">${escapeHtml(f.it.title)}${f.it.variation_name ? ` (${escapeHtml(f.it.variation_name)})` : ''}</span><span class="pc-tip-dato">${dato}</span></div>`;
     }).join('');
@@ -2583,6 +2592,13 @@ function colectaAutomaticaVirtual() {
     return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.length, hoy: hoy };
 }
 
+// Primer día (desde hoy) en que entraría mercadería de una colecta nueva armada hoy: preparar + flete + acreditación (la mediana de los productos).
+function primerDiaNuevaColecta() {
+    const hoy = new Date(), dem = demoraAcreditacionDias();
+    const dias = (itemsData || []).filter(it => !it.pausado && Number(it.vpd) > 0).map(it => primerDiaPosibleDeIngreso(it, hoy, dem, null)).sort((a, b) => a - b);
+    return dias.length ? dias[Math.floor(dias.length / 2)] : 0;
+}
+
 // La colecta automática a la vista: qué mandar, cuánto y por qué. "Armar" abre el armado con ESTA misma lista.
 function tarjetaColectaAutomatica() {
     let v;
@@ -2590,12 +2606,23 @@ function tarjetaColectaAutomatica() {
     if (!v.productos) return '';
     const nf = n => Math.round(n).toLocaleString('es-AR');
     const filas = v.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>${f.quiebre !== null && f.quiebre !== undefined ? 'Sin stock el ' + escapeHtml(fechaDeProyeccion(f.quiebre, v.hoy)) + '. ' : ''}Cubre ${escapeHtml(f.it.target_stock_days)} días de objetivo</td></tr>`).join('');
+    // Retiro óptimo: lo más rápido que pueden entrar. Si hay una colecta abierta, sumarlos a esa gana a armar una nueva.
+    const colAb = colectaAbiertaVigente();
+    let recomendacion, botonColectaAutomatica;
+    if (colAb) {
+        recomendacion = `Retiro recomendado: la colecta ${numeroColecta(colAb)}, que retira el ${formatearFechaCorta(colAb.fecha_retiro)} y entra a Full el ${formatearFechaCorta(colAb.fecha_ingreso)}. Se puede editar hasta el ${textoLimiteEdicion(colAb.limite_edicion)}. Una colecta nueva entraría recién el ${fechaDeProyeccion(primerDiaNuevaColecta(), v.hoy)}.`;
+        botonColectaAutomatica = `<button type="button" class="btn btn-sm" onclick="sumarAutomaticaAColectaAbierta()">Sumar a la colecta ${escapeHtml(numeroColecta(colAb))}</button>`;
+    } else {
+        recomendacion = `No hay colecta abierta. Si la armás hoy, el primer retiro posible es el ${fechaDeProyeccion(primerDiaNuevaColecta() - ((Number(v.filas[0] && v.filas[0].it.transit_delay_days) || 0) + demoraAcreditacionDias()), v.hoy)} y entra a Full el ${fechaDeProyeccion(primerDiaNuevaColecta(), v.hoy)}.`;
+        botonColectaAutomatica = '<button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button>';
+    }
     return `<div class="pc-banner" id="colectaAutomaticaTarjeta"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">Colecta automática (borrador): ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
+            <div class="pc-banner-sub"><b>${escapeHtml(recomendacion)}</b></div>
             <div class="pc-banner-sub">Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.</div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${botonColectaAutomatica}</div>
         <details class="pc-detalle" data-sec="Productos de la colecta automática" ${seccionesAbiertasSesion['Productos de la colecta automática'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
             <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;
@@ -5461,7 +5488,24 @@ async function sumarAColectaAbierta(itemId) {
 }
 window.sumarAColectaAbierta = sumarAColectaAbierta;
 
-function agregarItemCriticoAEdicion(itemId, sugUnits) {
+// Suma a la colecta abierta toda la colecta automática (los mismos productos y unidades que muestra el panel); queda para revisar y guardar.
+async function sumarAutomaticaAColectaAbierta() {
+    const col = colectaAbiertaVigente();
+    if (!col) { abrirModalColecta(); return; }
+    const v = colectaAutomaticaVirtual();
+    await abrirModalEditarEnvio(col.id);
+    if (edicionCerrada) { showToast('Esa colecta ya cerró: no se puede cambiar.', 'error'); return; }
+    let sumados = 0;
+    v.filas.forEach(f => {
+        if (itemsEnEdicion.some(x => String(x.item_id) === String(f.it.item_id || f.it.id))) return;
+        agregarItemCriticoAEdicion(f.it.id, f.unidades, true);
+        sumados++;
+    });
+    showToast(sumados ? `Sumé ${sumados} ${sumados === 1 ? 'producto' : 'productos'} a la colecta. Revisá las unidades y apretá Guardar.` : 'Esos productos ya están en la colecta.', 'info');
+}
+window.sumarAutomaticaAColectaAbierta = sumarAutomaticaAColectaAbierta;
+
+function agregarItemCriticoAEdicion(itemId, sugUnits, silencioso) {
     if (edicionCerrada) return;
     const it = itemsData.find(x => x.id === itemId);
     if (!it) return;
@@ -5486,7 +5530,7 @@ function agregarItemCriticoAEdicion(itemId, sugUnits) {
 
     renderizarItemsEdicion();
     verificarAlertasStockEdicion();
-    showToast(`Artículo "${it.sku || it.title.substring(0, 25)}" sumado al envío (${unitsToSend} un.).`, "info");
+    if (!silencioso) showToast(`Artículo "${it.sku || it.title.substring(0, 25)}" sumado al envío (${unitsToSend} un.).`, "info");
 }
 window.agregarItemCriticoAEdicion = agregarItemCriticoAEdicion;
 

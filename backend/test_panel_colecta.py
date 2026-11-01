@@ -286,12 +286,37 @@ process.stdout.write(JSON.stringify({ ok: sku(r.ok), tiempo: sku(r.hay_tiempo), 
         r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         d = json.loads(r.stdout)
-        self.assertEqual(d['ok'], ['BIEN'])
+        # GIRASOL ya tiene 500 u. en la colecta abierta: igual queda unos días sin stock antes de que entre, pero agregar unidades no lo arregla
+        self.assertEqual(sorted(d['ok']), ['BIEN', 'GIRASOL'])
         # se quedan sin stock el día 17, 19 y 20, o sea después de que podría entrar la colecta SIGUIENTE (8 + 7 = 15): no hay apuro
         self.assertEqual(d['tiempo'], ['LENTEJAS', 'NUECES', 'ALMENDRAS'])
         self.assertEqual(d['limites'], [9, 11, 12])      # día en que hay que tener armada la colecta: quiebre menos 8 días
         self.assertEqual(d['sumar'], ['GARBANZOS'])      # se queda sin stock el día 8, justo cuando entra la abierta: hay que sumarlo ya
-        self.assertEqual(d['rojo'], ['LENTEJON', 'GIRASOL'])   # ya estarán unos días sin stock antes de que entre la abierta
+        self.assertEqual(d['rojo'], ['LENTEJON'])   # sin stock hoy y nada en camino: hay que armar la colecta
+
+    def test_un_producto_agregado_a_la_colecta_sale_de_la_automatica(self):
+        # Lentejón sin stock hoy: está en la automática; con unidades de sobra en la colecta abierta ya no hay nada que hacer
+        sin = _item(id=5, title='Lentejon', sku='L', vpd=10, current_stock=0, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        r0 = self._correr([sin])['html']
+        self.assertIn('Colecta automática (borrador): 1 producto', r0)
+        import datetime
+        d = lambda n: (datetime.date.today() + datetime.timedelta(days=n)).isoformat()
+        abierta = {'id': 1, 'codigo': 'ML-1', 'estado': 'scheduled', 'fecha_retiro': d(2), 'fecha_ingreso': d(3),
+                   'limite_edicion': '2099-01-01T09:44:00-03:00', 'abierta': True, 'total_unidades': 600, 'etapa': 'armada', 'de_ml': True,
+                   'productos': [{'sku': 'L', 'unidades': 600}]}
+        con = _item(id=5, title='Lentejon', sku='L', vpd=10, current_stock=0, total_incoming=600, in_preparation_stock=600, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        r1 = self._correr([con], prox=self._prox(), colectas=[abierta])['html']
+        self.assertNotIn('Colecta automática (borrador)', r1)
+
+    def test_la_colecta_automatica_recomienda_el_retiro_mas_rapido(self):
+        sin = _item(id=5, title='Lentejon', sku='L', vpd=10, current_stock=0, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        self.assertIn('No hay colecta abierta', self._correr([sin])['html'])
+        abierta = {'id': 1, 'codigo': 'ML-81021895', 'estado': 'scheduled', 'fecha_retiro': '2099-01-02', 'fecha_ingreso': '2099-01-03',
+                   'limite_edicion': '2099-01-01T09:44:00-03:00', 'abierta': True, 'total_unidades': 5, 'etapa': 'armada', 'de_ml': True,
+                   'productos': [{'sku': 'X', 'unidades': 5}]}
+        h = self._correr([sin], prox=self._prox(), colectas=[abierta])['html']
+        self.assertIn('Retiro recomendado: la colecta #81021895', h)
+        self.assertIn('Sumar a la colecta #81021895', h)
 
     def test_el_texto_de_lo_que_ya_no_se_salva_dice_hasta_cuando(self):
         harness = r"""
