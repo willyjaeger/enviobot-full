@@ -2153,3 +2153,16 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 
 /* Colecta automática en el calendario: borrador, con el acento de la app. */
 .pc-cal-ev.pc-cal-auto { --c: var(--accent); border-style: dashed; font-weight: 700; }
+
+/* Cita de la colecta: cuánto permite Mercado Libre */
+.cita-ml { margin-top: 10px; padding: 10px 14px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--surf2); }
+.cita-ml.cita-ok { border-color: var(--good-border); background: var(--good-bg); }
+.cita-ml.cita-bajo, .cita-ml.cita-alto { border-color: var(--danger-border); background: var(--danger-bg); }
+.cita-ml-linea { font-size: 13px; color: var(--text); line-height: 1.5; }
+.cita-ml-msg { color: var(--text2); }
+.cita-ml-sub { font-size: 12px; color: var(--text2); margin-top: 2px; line-height: 1.45; }
+.cita-ml-corregir { margin-top: 6px; font-size: 12px; color: var(--text2); }
+.cita-ml-corregir summary { cursor: pointer; }
+.cita-ml-campos { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.cita-ml-campos input { width: 80px; padding: 4px 6px; }
+.guardado-pendiente-ml #editarEnvioCita { display: none !important; }

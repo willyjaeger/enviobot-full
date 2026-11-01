@@ -43,6 +43,7 @@ import esquema as _esquema
 from inbound_service import render_remito_html
 import pdf_envio_ml as _pdf_ml
 import base_ml as _base_ml
+import cita_ml as _cita_ml
 
 load_dotenv()
 
@@ -3845,6 +3846,7 @@ def import_inbound_pdf():
                     # Mercado Libre manda: lo que dice el PDF es lo que Mercado Libre tiene ahora.
                     cur.execute("UPDATE inbound_shipments SET ml_base=%s WHERE id=%s AND user_id=%s",
                                 (_base_ml.desde_pdf(encontrados), sid, account_id))
+                _cita_ml.fijar_declarado(cur, sid, account_id, total_units)   # una sola vez: el rango de la cita sale de lo declarado al agendar
             return jsonify({"ok": True, "preview": False, "actualizada": True,
                             "message": f"Colecta {codigo} actualizada con lo que dice Mercado Libre.",
                             "shipment": {"id": sid, "shipment_code": codigo, "status": existente["status"],
@@ -3869,6 +3871,7 @@ def import_inbound_pdf():
             shipment_id = cur.lastrowid
             if _esquema.tiene_columna(cur, "inbound_shipments", "ml_base"):
                 cur.execute("UPDATE inbound_shipments SET ml_base=%s WHERE id=%s", (_base_ml.desde_pdf(encontrados), shipment_id))
+            _cita_ml.fijar_declarado(cur, shipment_id, account_id, total_units)
             for p in encontrados:
                 f = p["fila"]
                 cur.execute("""
@@ -3919,6 +3922,8 @@ def get_inbound_shipment_detail(shipment_id):
 
     # Lo que Mercado Libre tiene de esta colecta (último PDF cargado): con eso se arma la hoja de cambios para hacer allá.
     shipment["ml_base"] = _base_ml.cargar(shipment.get("ml_base"))
+    # Lo que permite la cita (30 % sobre lo declarado al agendar, o el rango que el usuario corrigió).
+    shipment["cita"] = _cita_ml.resumen(shipment)
 
     return jsonify({"ok": True, "shipment": shipment, "items": items}), 200
 
@@ -3958,6 +3963,12 @@ def update_inbound_shipment(shipment_id):
     if not items:
         conn.close()
         return jsonify({"ok": False, "error": "El envío debe contener al menos un producto."}), 400
+
+    try:
+        cita_manual = _cita_ml.leer_manual(data)
+    except ValueError as e:
+        conn.close()
+        return jsonify({"ok": False, "error": str(e)}), 400
 
     pickup_date_str = data.get("pickup_date")
     carrier_notes = data.get("carrier_notes", "").strip() if "carrier_notes" in data else (shipment.get("carrier_notes") or "")
@@ -4035,6 +4046,10 @@ def update_inbound_shipment(shipment_id):
             account_id
         ))
 
+        if "total_declarado" in shipment and shipment.get("total_declarado") is None and str(shipment.get("shipment_code") or "").startswith("ML-"):
+            # Primera vez que se cambia acá una colecta de Mercado Libre: el total de antes es el declarado al agendar.
+            _cita_ml.fijar_declarado(cur, shipment_id, account_id, shipment.get("total_units"))
+        _cita_ml.guardar_manual(cur, shipment_id, account_id, cita_manual)
         if "ml_base" in shipment and not shipment.get("ml_base") and str(shipment.get("shipment_code") or "").startswith("ML-"):
             # Primera vez que se cambia acá una colecta de Mercado Libre: lo que había es lo que Mercado Libre tiene.
             cur.execute("SELECT item_id, inventory_id, variation_id, variation_name, sku, title, units_to_send "

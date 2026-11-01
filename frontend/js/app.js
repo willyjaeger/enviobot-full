@@ -5560,6 +5560,8 @@ async function abrirModalEditarEnvio(shipmentId) {
 
         itemsOriginalesEdicion = itemsEnEdicion.map(it => Object.assign({}, it));   // para saber qué hay que cambiar en Mercado Libre
         codigoEnvioEnEdicion = String(sh.shipment_code || '');
+        citaEnEdicion = sh.cita || null;
+        citaCorregida = undefined;
         // Si ya se guardaron cambios acá que todavía no están en Mercado Libre, la base para comparar es lo que Mercado Libre tiene (el último PDF).
         // La base viene del servidor (todas las computadoras ven la misma); este navegador queda de respaldo si el servidor todavía no la guarda.
         const baseServidor = Array.isArray(sh.ml_base) ? sh.ml_base.map(it => Object.assign({}, it, { units_to_send: parseInt(it.units_to_send, 10) || 0 })) : null;
@@ -6062,6 +6064,76 @@ function copiarCambiosML() {
 }
 window.copiarCambiosML = copiarCambiosML;
 
+// ── Lo que permite la cita ───────────────────────────────────────────────────────
+// Mercado Libre muestra "Tu cita permite entre X y Y u." al editar el envío. No está en la API ni en el PDF: con dos colectas
+// reales resultó ser el 30 % arriba y abajo de lo declarado al agendar (no del total actual). Es una deducción, por eso se
+// marca como calculado y se puede corregir a mano con lo que muestre Mercado Libre.
+let citaEnEdicion = null;        // lo que guardó el servidor (calculado o corregido)
+let citaCorregida;               // undefined = sin tocar; {min,max} = corregida acá; null = volver al cálculo
+
+function rangoCitaML(declarado) {
+    const d = parseInt(declarado, 10) || 0;
+    if (d <= 0) return null;
+    return { min: Math.floor(d * 70 / 100), max: Math.ceil(d * 130 / 100) };
+}
+
+function estadoCitaML(total, rango) {
+    const t = parseInt(total, 10) || 0;
+    if (t < rango.min) return { estado: 'bajo', faltan: rango.min - t, sobran: 0 };
+    if (t > rango.max) return { estado: 'alto', faltan: 0, sobran: t - rango.max };
+    return { estado: 'ok', faltan: 0, sobran: 0 };
+}
+
+function citaVigenteEdicion() {
+    if (citaCorregida) return { min: citaCorregida.min, max: citaCorregida.max, manual: true, estimada: false };
+    if (citaCorregida === undefined && citaEnEdicion) return { min: citaEnEdicion.min, max: citaEnEdicion.max, manual: !!citaEnEdicion.manual, estimada: false };
+    // Sin total declarado guardado: se estima con lo que había al abrir la ventana (puede no ser lo que se declaró).
+    const base = (itemsOriginalesEdicion || []).reduce((a, it) => a + (parseInt(it.units_to_send, 10) || 0), 0);
+    const r = rangoCitaML(base);
+    return r ? { min: r.min, max: r.max, manual: false, estimada: true } : null;
+}
+
+function renderizarCitaML() {
+    const caja = document.getElementById('editarEnvioCita');
+    if (!caja) return;
+    if (edicionCerrada || !/^ML-/i.test(codigoEnvioEnEdicion)) { caja.style.display = 'none'; caja.innerHTML = ''; return; }
+    const cita = citaVigenteEdicion();
+    if (!cita) { caja.style.display = 'none'; caja.innerHTML = ''; return; }
+    const total = itemsEnEdicion.reduce((a, it) => a + (parseInt(it.units_to_send, 10) || 0), 0);
+    const e = estadoCitaML(total, cita);
+    const origen = cita.manual ? 'Rango cargado a mano.' : (cita.estimada ? 'Calculado con lo cargado (30 % sobre lo que había al abrir); puede no coincidir con Mercado Libre.' : 'Calculado: 30 % sobre lo declarado al agendar.');
+    const msg = e.estado === 'ok' ? `Con ${Number(total)} u. estás dentro de la cita.`
+        : e.estado === 'bajo' ? `Con ${Number(total)} u. te faltan ${Number(e.faltan)} para entrar en la cita.`
+        : `Con ${Number(total)} u. te pasás ${Number(e.sobran)} de lo que permite la cita.`;
+    const abierto = caja.querySelector('details') && caja.querySelector('details').open;
+    caja.style.display = 'block';
+    caja.className = 'cita-ml cita-' + e.estado;
+    caja.innerHTML = `<div class="cita-ml-linea"><strong>Tu cita permite entre ${Number(cita.min)} y ${Number(cita.max)} u.</strong> <span class="cita-ml-msg">${escapeHtml(msg)}</span></div>
+        <div class="cita-ml-sub">${escapeHtml(origen)}</div>
+        <details class="cita-ml-corregir"${abierto ? ' open' : ''}><summary>Corregir con lo que dice Mercado Libre</summary>
+            <div class="cita-ml-campos">
+                <label>Mínimo <input type="number" min="0" id="citaMinEdicion" value="${Number(cita.min)}"></label>
+                <label>Máximo <input type="number" min="0" id="citaMaxEdicion" value="${Number(cita.max)}"></label>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="corregirCitaML()">Usar este rango</button>
+                ${cita.manual ? '<button type="button" class="btn btn-secondary btn-sm" onclick="corregirCitaML(true)">Volver al cálculo</button>' : ''}
+            </div>
+            <div class="cita-ml-sub">Se guarda al apretar Guardar Cambios.</div>
+        </details>`;
+}
+
+function corregirCitaML(volverAlCalculo) {
+    if (volverAlCalculo) {
+        citaCorregida = null;
+    } else {
+        const mn = parseInt(document.getElementById('citaMinEdicion')?.value, 10);
+        const mx = parseInt(document.getElementById('citaMaxEdicion')?.value, 10);
+        if (!(mn >= 0) || !(mx >= mn)) { showToast('El mínimo no puede ser mayor que el máximo.', 'error'); return; }
+        citaCorregida = { min: mn, max: mx };
+    }
+    renderizarCitaML();
+}
+window.corregirCitaML = corregirCitaML;
+
 function actualizarTotalesEdicion() {
     const totalItems = itemsEnEdicion.length;
     const totalUnits = itemsEnEdicion.reduce((acc, it) => acc + (it.units_to_send || 0), 0);
@@ -6074,6 +6146,7 @@ function actualizarTotalesEdicion() {
     if (elItems) elItems.textContent = totalItems;
     if (elUnits) elUnits.textContent = `${totalUnits} un.`;
     if (elBoxes) elBoxes.textContent = `${totalBoxes} cajas`;
+    renderizarCitaML();
     renderizarCambiosML();
 }
 
@@ -6197,6 +6270,7 @@ async function guardarEdicionEnvio() {
         pickup_date: fechaRetiro,
         packaging_type: packagingType,
         carrier_notes: carrierNotes,
+        ...(citaCorregida !== undefined ? { cita_min: citaCorregida ? citaCorregida.min : null, cita_max: citaCorregida ? citaCorregida.max : null } : {}),
         items: itemsEnEdicion.map(it => ({
             item_id: it.item_id,
             inventory_id: it.inventory_id,

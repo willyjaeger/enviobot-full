@@ -1411,7 +1411,7 @@ class TestPasoMercadoLibreTrasGuardar(unittest.TestCase):
         js = self._js()
         cuerpo = js[js.index('async function guardarEdicionEnvio'):js.index('window.guardarEdicionEnvio')]
         self.assertIn('entrarEnPasoMercadoLibre()', cuerpo)
-        self.assertIn('else cerrarModalEditarEnvio(true)', cuerpo)
+        self.assertRegex(cuerpo, r'else\s*\{[^}]*cerrarModalEditarEnvio\(true\)')
 
     def test_la_ventana_nueva_o_cerrada_vuelve_al_modo_normal(self):
         js = self._js()
