@@ -560,12 +560,39 @@ function nombreItemPanel(it) {
 //  - urgentes / conviene mandar pronto: faltan y todavía no están en ninguna colecta
 //  - tienen de más: cobertura por encima del umbral de exceso
 //  - tranquilos: todo lo demás (incluye lo que ya viaja en una colecta)
+// UNA sola regla para "hay que mandar hoy": la del índice de quiebres (calcularIndiceQuiebres). Un producto es de hoy si, con lo que
+// hay en Full y las colectas cargadas, se queda sin stock antes de que una colecta nueva pueda llegar. 'rojo' = además va a estar
+// unos días sin stock; 'sumar' = hay que sumarlo a la colecta; 'ok' = no hace falta nada hoy (incluye los que tienen tiempo).
+// Lo usan la dona de estado, la de la meta, la colecta automática, "Qué hacer hoy" y el filtro "Requieren colecta".
+// Los productos sin ritmo de venta no están en el índice: para esos queda el estado de siempre.
+function accionHoyPorProducto() {
+    const mapa = {};
+    try {
+        const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), new Date(), demoraAcreditacionDias(), DIAS_INDICE_QUIEBRES, colectaAbiertaVigente());
+        r.ok.concat(r.hay_tiempo).forEach(f => { mapa[f.it.id] = 'ok'; });
+        r.evitables.forEach(f => { mapa[f.it.id] = 'sumar'; });
+        r.inevitables.forEach(f => { mapa[f.it.id] = 'rojo'; });
+    } catch (e) { /* sin datos de colectas: queda la regla de siempre */ }
+    return mapa;
+}
+
+function requiereColectaHoy(it, mapa) {
+    const a = (mapa || accionHoyPorProducto())[it.id];
+    if (a) return a === 'sumar' || a === 'rojo';
+    return it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock';
+}
+
 function clasificarItemsPanel(items) {
     const g = { urgentes: [], pronto: [], deMas: [], tranquilos: [], enColecta: [], pausados: [] };
+    const hoy = accionHoyPorProducto();
     items.forEach(it => {
         if (it.pausado) { g.pausados.push(it); return; }
         const cubierto = (it.total_incoming || 0) > 0;
-        if (it.sobrestock) g.deMas.push(it);
+        const a = hoy[it.id];
+        if (a === 'rojo') g.urgentes.push(it);
+        else if (a === 'sumar') g.pronto.push(it);
+        else if (it.sobrestock) g.deMas.push(it);
+        else if (a === 'ok') g.tranquilos.push(it);
         else if (!cubierto && (it.status === 'critical' || it.status === 'out_of_stock')) g.urgentes.push(it);
         else if (!cubierto && it.status === 'warning') g.pronto.push(it);
         else g.tranquilos.push(it);
@@ -2907,7 +2934,7 @@ const FILTROS_LISTADO = [
 function pasaFiltroListado(it, filtro) {
     if (filtro === 'all') return true;
     if (String(filtro).indexOf('col:') === 0) return colectasDeItem(it).some(x => String(x.colecta.id) === String(filtro).slice(4));
-    if (filtro === 'action_required') return it.status === 'warning' || it.status === 'critical' || it.status === 'out_of_stock';
+    if (filtro === 'action_required') return !it.pausado && requiereColectaHoy(it);
     if (filtro === 'in_process') return it.status === 'in_preparation' || it.status === 'in_transit' || it.status === 'in_reception';
     if (filtro === 'critical') return !it.pausado && (it.status === 'critical' || it.status === 'out_of_stock' || it.current_stock <= 0);
     if (filtro === 'paused') return it.status === 'paused' || it.pausa_por_quiebre;
