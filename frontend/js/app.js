@@ -2612,6 +2612,15 @@ function primerDiaNuevaColecta() {
     return dias.length ? dias[Math.floor(dias.length / 2)] : 0;
 }
 
+// Planilla de Excel directo desde una tarjeta de la colecta automática, sin armar ni guardar nada: se baja, se sube a Mercado Libre y listo.
+async function planillaDeTarjeta(cual) {
+    let v;
+    try { v = cual === 'siguiente' ? colectaSiguienteVirtual() : colectaAutomaticaVirtual(); } catch (e) { v = null; }
+    if (!v || !v.filas.length) { showToast('No hay productos para armar la planilla.', 'error'); return; }
+    const r = await descargarPlanillaML(v.filas.map(f => ({ it: f.it, unidades: f.unidades })), cual === 'siguiente' ? 'siguiente' : '');
+    if (r.ok) showToast(`Se bajó ${r.nombre}: ${r.productos} productos, ${r.unidades} unidades. En Mercado Libre elegí Planificar desde Excel y adjuntala. No se guardó nada acá.`, 'success', 14000);
+}
+
 // La colecta automática a la vista: qué mandar, cuánto y por qué. "Armar" abre el armado con ESTA misma lista.
 function tarjetaColectaHoy() {
     let v;
@@ -2663,7 +2672,7 @@ function tarjetaColectaHoy() {
             <div class="pc-banner-sub"><b>${escapeHtml(recomendacion)}</b></div>
             <div class="pc-banner-sub">Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.</div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${botonColectaAutomatica}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${botonColectaAutomatica}<button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('hoy')" title="Baja el Excel para subir a Mercado Libre; no guarda nada">Descargar planilla Excel</button></div>
         <details class="pc-detalle" data-sec="Productos de la colecta automática" ${seccionesAbiertasSesion['Productos de la colecta automática'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
             <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;
@@ -2728,6 +2737,7 @@ function tarjetaColectaSiguiente() {
             <div class="pc-banner-sub"><b>Retiro recomendado: ${escapeHtml(f(v.retiro))}. Entra a Full el ${escapeHtml(f(v.ingreso))} y queda en venta el ${escapeHtml(f(v.entra))} (${escapeHtml(demoraAcreditacionDias())} ${demoraAcreditacionDias() === 1 ? 'día' : 'días'} de acreditación: es un supuesto de la app, no un dato de Mercado Libre). La fecha la manda ${escapeHtml(nom)}, el primero que se queda sin stock (${escapeHtml(f(v.primero.quiebre))}).${escapeHtml(tarde)}</b></div>
             <div class="pc-banner-sub">Con esta colecta todos los productos llegan hasta la que sigue, que apuntaría a los ${escapeHtml(v.objetivo)} días: alrededor del ${escapeHtml(f(v.retiro + v.objetivo))}. Si la anterior cambia (otras unidades, otra fecha) este cálculo se actualiza solo.</div>
         </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('siguiente')" title="Baja el Excel para cuando armes esta colecta; no guarda nada">Descargar planilla Excel</button></div>
         <details class="pc-detalle" data-sec="Productos de la colecta siguiente" ${seccionesAbiertasSesion['Productos de la colecta siguiente'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
             <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;
@@ -4441,10 +4451,12 @@ function exportarColectaCSV() {
 
 // Planilla de Excel de Mercado Libre ("Planificar desde Excel") completa con lo que se armó acá.
 // Mercado Libre no permite crear el envío por API: se sube esta planilla en su pantalla de carga.
-async function descargarPlanillaML() {
+async function descargarPlanillaML(filas, sufijoNombre) {
     const productos = [];
-    itemsData.forEach(it => {
-        const units = colectaSelectedItems.get(it.id) || 0;
+    // Sin lista: lo elegido en el armado. Con lista ([{it, unidades}]): la de una tarjeta de la colecta automática.
+    const elegidos = filas ? filas.map(f => [f.it, f.unidades]) : itemsData.map(it => [it, colectaSelectedItems.get(it.id) || 0]);
+    elegidos.forEach(par => {
+        const it = par[0], units = par[1];
         if (units > 0) {
             // ML pide UN número de publicación cuando el producto tiene varias: se toma una activa si la hay.
             const canales = it.channels || [];
@@ -4471,7 +4483,7 @@ async function descargarPlanillaML() {
         const url = URL.createObjectURL(await resp.blob());
         const link = document.createElement('a');
         link.href = url;
-        link.download = `Envio-de-stock-Full-${new Date().toISOString().split('T')[0]}.xlsx`;
+        link.download = `Envio-de-stock-Full${sufijoNombre ? '-' + sufijoNombre : ''}-${new Date().toISOString().split('T')[0]}.xlsx`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
