@@ -4553,7 +4553,25 @@ async function cargarAvisos(soloContador = false) {
                     ${a.revertido ? '' : '<div style="font-size: 12px; color: var(--text2); margin-top: 6px;">Te recomendamos verificar qué sucede y si tenés stock suficiente para la próxima colecta.</div>'}
                 </div>
             </details>`;
-        }).join('') : `<div style="text-align: center; padding: 40px; color: var(--text2);">No hay avisos. Cuando se acelere la venta de un producto y pueda faltarte stock antes de reponer, vas a verlo acá.</div>`;
+        }).join('') : `<div style="text-align: center; padding: 40px; color: var(--text2);">No hay avisos. Cuando la venta de un producto baje de forma sostenida y te pueda sobrar stock, vas a verlo acá.</div>`;
+
+        // Registro de WhatsApp: qué se habría mandado (modo prueba) y cuándo se frenaría, para decidir si es una molestia.
+        const registro = data.registro || [];
+        const reglas = data.reglas || [];
+        const cuandoDe = r => r.fecha ? new Date(r.fecha).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+        cont.innerHTML += `<details class="aviso-cartel" style="border: 1px solid var(--border); border-radius: 8px; margin-top: 16px; background: var(--surf2);">
+            <summary><strong>Registro de WhatsApp${data.modo_prueba ? ' (modo prueba: no se manda nada)' : ''}</strong>
+                <span style="font-size: 12px; color: var(--text2);">${registro.length} en los últimos 30 días</span></summary>
+            <div class="aviso-cuerpo">
+                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">Cuándo se manda y cuándo se frena</div>
+                <ul style="margin: 0 0 10px 18px; padding: 0; font-size: 13px;">${reglas.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul>
+                <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">${data.modo_prueba ? 'Lo que se habría mandado' : 'Lo que se mandó'}</div>
+                ${registro.length ? registro.map(r => `<div style="font-size: 13px; padding: 6px 0; border-top: 1px solid var(--border);">
+                    <span style="color: var(--text2);">${escapeHtml(cuandoDe(r))}</span>
+                    ${r.producto ? ' · <strong>' + escapeHtml(r.producto) + '</strong>' : ''}<br>${escapeHtml(r.detalle)}</div>`).join('')
+                    : '<div style="font-size: 13px; color: var(--text2);">Todavía no hubo nada que mandar.</div>'}
+            </div>
+        </details>`;
 
         _avisosVistosHasta = Date.now();
         try { localStorage.setItem('avisosVistosHasta', String(_avisosVistosHasta)); } catch (e) { /* sin almacenamiento */ }

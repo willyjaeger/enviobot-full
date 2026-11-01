@@ -155,6 +155,49 @@ class _Conn:
         return self.cur
 
 
+class TestModoPrueba(unittest.TestCase):
+    CAMBIO = TestTextos.CAMBIO
+
+    def test_por_defecto_no_se_manda(self):
+        os.environ.pop("ENVIOBOT_CAMBIO_TASA_WA", None)
+        self.assertFalse(c.whatsapp_real_activo())
+        os.environ["ENVIOBOT_CAMBIO_TASA_WA"] = "activo"
+        try:
+            self.assertTrue(c.whatsapp_real_activo())
+        finally:
+            os.environ.pop("ENVIOBOT_CAMBIO_TASA_WA", None)
+
+    def test_registro_de_lo_que_se_habria_mandado(self):
+        reg = c._registro_prueba(dict(self.CAMBIO, exceso=130, en_prep=0), "5491122334455")
+        self.assertLess(len(reg), 255)
+        r = c.texto_registro(reg, "wasim:5491122334455:abc")
+        self.assertEqual(r["tipo"], "habria")
+        for parte in ("...4455", "6,0 por día", "52 días", "130 unidades"):
+            self.assertIn(parte, r["detalle"])
+
+    def test_registro_de_un_frenado(self):
+        r = c.texto_registro('{"w":"4455","m":"un aviso hoy","n":2}', "wacap:5491122334455:261102")
+        self.assertEqual(r["tipo"], "frenado")
+        self.assertIn("un aviso hoy", r["detalle"])
+
+    def test_registro_roto_se_ignora(self):
+        self.assertIsNone(c.texto_registro("no es json", "wasim:1:2"))
+
+    def test_las_reglas_dicen_el_tope(self):
+        texto = " ".join(c.reglas())
+        self.assertIn("1 WhatsApp por día", texto)
+        self.assertIn("3 por semana", texto)
+
+    def test_tope_diario_y_semanal(self):
+        from datetime import date, timedelta
+        hoy = date(2026, 11, 2)
+        self.assertIsNone(c._tope_alcanzado(_Conn([]), 1, "549", hoy))
+        self.assertEqual(c._tope_alcanzado(_Conn([{"d": hoy}]), 1, "549", hoy), "dia")
+        tres = [{"d": hoy - timedelta(days=n)} for n in (1, 2, 3)]
+        self.assertEqual(c._tope_alcanzado(_Conn(tres), 1, "549", hoy), "semana")
+        self.assertIsNone(c._tope_alcanzado(_Conn(tres[:2]), 1, "549", hoy))
+
+
 class TestLimpieza(unittest.TestCase):
     def setUp(self):
         from datetime import datetime, timedelta

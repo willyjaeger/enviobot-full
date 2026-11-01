@@ -2878,15 +2878,23 @@ def listar_avisos():
     try:
         account_id = get_account_user_id(user_id, conn)
         filas = cambio_tasa.avisos_visibles(conn, account_id)
+        filas_registro = cambio_tasa.registro_prueba_visible(conn, account_id)
     finally:
         conn.close()
+    registro = []
+    for f in filas_registro:
+        r = cambio_tasa.texto_registro(f["message"], f["item_id"])
+        if r:
+            r["fecha"] = f["sent_at"].isoformat() + "Z" if f.get("sent_at") else None
+            registro.append(r)
     avisos = []
     for f in filas:
         a = cambio_tasa.texto_panel(f["message"])
         if a:
             a["fecha"] = f["sent_at"].isoformat() + "Z" if f.get("sent_at") else None
             avisos.append(a)
-    return jsonify({"ok": True, "avisos": avisos}), 200
+    return jsonify({"ok": True, "avisos": avisos, "registro": registro, "reglas": cambio_tasa.reglas(),
+                    "modo_prueba": not cambio_tasa.whatsapp_real_activo()}), 200
 
 
 @app.route("/api/full/whatsapp/status", methods=["GET"])

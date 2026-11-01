@@ -24,6 +24,7 @@ Lo llama el motor de alertas después de cada sincronización (cada 4 horas) y e
 import hashlib
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 
 import alerts_engine
@@ -37,6 +38,10 @@ from whatsapp_service import enviar_lote_con_demora, normalizar_telefono, obtene
 logger = logging.getLogger("cambio_tasa")
 
 TIPO_ALERTA = "cambio_tasa"
+TIPO_REGISTRO = "cambio_tasa_wa"  # lo que se habría mandado por WhatsApp (modo prueba) y cuándo se frenó
+TOPE_DIA = 1              # a cada persona, como mucho un WhatsApp de este tipo por día...
+TOPE_SEMANA = 3           # ...y en tres días distintos por semana; si hay más, esperan al día siguiente
+REGISTRO_DIAS = 30        # cuánto se guarda el registro del modo prueba
 UMBRAL_BAJA = 0.70        # hoy vende 70 % o menos de la referencia (baja de 30 % o más)
 MIN_EXCESO_UNIDADES = 20  # menos unidades de más que esto no vale un aviso
 MIN_EXCESO_DIAS = 10      # ...ni un sobrante de menos de 10 días de venta
@@ -173,6 +178,74 @@ def detectar(conn, user_id, hoy=None):
     # primero lo que más sobra
     cambios.sort(key=lambda c: -c["exceso"])
     return cambios, medibles
+
+
+def whatsapp_real_activo():
+    """El WhatsApp de este aviso está en modo prueba (solo se anota lo que se habría mandado) hasta que
+    se ponga ENVIOBOT_CAMBIO_TASA_WA=activo en el .env del servidor y se reinicie (decisión de Guillermo, 2026-11-01)."""
+    return os.getenv("ENVIOBOT_CAMBIO_TASA_WA", "prueba").strip().lower() == "activo"
+
+
+def reglas():
+    """Cuándo se manda y cuándo se frena, en palabras, para mostrarlo en la ventana de Avisos."""
+    return [
+        "Solo se avisa una baja sostenida de la venta (30 % o más contra las buenas semanas recientes) que deja stock "
+        f"de más: sobran al menos {MIN_EXCESO_UNIDADES} unidades y {MIN_EXCESO_DIAS} días de venta por encima del umbral de sobrestock.",
+        "Un aviso por producto y por situación: mientras siga abierto no se repite, ni por el panel ni por WhatsApp "
+        f"(se sigue hasta {REPETIR_DIAS} días). Nunca un mensaje diario por lo mismo.",
+        f"Como mucho {TOPE_DIA} WhatsApp por día y {TOPE_SEMANA} por semana a cada persona; si hay más, esperan al día siguiente.",
+        "Solo dentro del horario permitido de cada destinatario (lunes a viernes, sin feriados).",
+        "Antes de mandar se vuelve a controlar: si la situación se revirtió no se manda nada y queda anotado.",
+    ]
+
+
+def _registro_prueba(c, tel_n):
+    """Lo que se anota cuando el WhatsApp está en modo prueba (alert_logs.message es corto)."""
+    return json.dumps({"t": c["titulo"][:60], "a": c["antes"], "n": c["ahora"], "d": c["dias_stock"],
+                       "x": c.get("exceso", 0), "w": tel_n[-4:], "p": c.get("en_prep", 0)},
+                      ensure_ascii=False, separators=(",", ":"))
+
+
+def texto_registro(registro, item_id):
+    """Una línea del registro de modo prueba a partir de lo guardado. None si no sirve."""
+    try:
+        d = json.loads(registro)
+        if item_id.startswith("wacap:"):
+            return {"tipo": "frenado", "producto": "",
+                    "detalle": f"No se mandaría a ...{d['w']}: ya hubo {d['m']}. Esperan al día siguiente ({d['n']} aviso(s) pendientes)."}
+        return {"tipo": "habria", "producto": d["t"],
+                "detalle": (f"Se habría mandado a ...{d['w']}: vende {_ritmo(d['n'])} por día (antes {_ritmo(d['a'])}); "
+                            f"con lo que hay alcanza para {int(round(d['d']))} días, sobran unas {d['x']} unidades."
+                            + (f" Había una colecta en preparación de {d['p']} unidades para achicar." if d.get("p") else ""))}
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def registro_prueba_visible(conn, user_id):
+    """Lo que el WhatsApp en modo prueba habría mandado (o frenado), lo más nuevo primero."""
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT item_id, message, sent_at FROM alert_logs
+            WHERE user_id=%s AND alert_type=%s AND sent_at >= %s ORDER BY id DESC
+        """, (user_id, TIPO_REGISTRO, datetime.utcnow() - timedelta(days=REGISTRO_DIAS)))
+        return cur.fetchall()
+
+
+def _tope_alcanzado(conn, user_id, tel_n, hoy=None):
+    """'dia' o 'semana' si a esa persona ya le llegó (o le habría llegado) lo máximo; None si puede recibir."""
+    hoy = hoy or datetime.utcnow().date()
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT DATE(sent_at) AS d FROM alert_logs
+            WHERE user_id=%s AND alert_type IN (%s, %s) AND (item_id LIKE %s OR item_id LIKE %s) AND sent_at >= %s
+            GROUP BY DATE(sent_at)
+        """, (user_id, TIPO_ALERTA, TIPO_REGISTRO, f"wa:{tel_n}:%", f"wasim:{tel_n}:%", datetime.utcnow() - timedelta(days=7)))
+        dias = {f["d"] for f in cur.fetchall()}
+    if sum(1 for d in dias if d == hoy) >= TOPE_DIA:
+        return "dia"
+    if len(dias) >= TOPE_SEMANA:
+        return "semana"
+    return None
 
 
 def _clave(c):
@@ -325,6 +398,8 @@ def limpiar(conn, user_id):
                         [user_id] + viejos)
         cur.execute("DELETE FROM alert_logs WHERE user_id=%s AND alert_type=%s AND sent_at < %s",
                     (user_id, TIPO_ALERTA, datetime.utcnow() - timedelta(days=REPETIR_DIAS + 1)))
+        cur.execute("DELETE FROM alert_logs WHERE user_id=%s AND alert_type=%s AND sent_at < %s",
+                    (user_id, TIPO_REGISTRO, datetime.utcnow() - timedelta(days=REGISTRO_DIAS)))
     return len(viejos)
 
 
@@ -374,20 +449,38 @@ def procesar_usuario(conn, user_id, ahora=None):
         return res
     from aviso_limite_colecta import _destinatarios
     horas = REPETIR_DIAS * 24
+    real = whatsapp_real_activo()
+    # En modo prueba no se manda nada: se anota en alert_logs (tipo TIPO_REGISTRO) lo que se habría mandado.
+    tipo_marca, canal, prefijo = (TIPO_ALERTA, "whatsapp", "wa") if real else (TIPO_REGISTRO, "panel", "wasim")
     for tel, horario in _destinatarios(conn, user_id, settings, "cambio_tasa_venta").items():
         if not whatsapp_permitido(ahora, horario):
             continue
-        marcas = {_clave(c): f"wa:{normalizar_telefono(tel)}:{_hash_corto(_clave(c) + ':' + str(fila['id']))}" for c, fila in vigentes}
+        tel_n = normalizar_telefono(tel)
+        marcas = {_clave(c): f"{prefijo}:{tel_n}:{_hash_corto(_clave(c) + ':' + str(fila['id']))}" for c, fila in vigentes}
         pendientes = [c for c, _ in vigentes if not alerts_engine.ya_se_envio_alerta_hoy(
-            conn, user_id, TIPO_ALERTA, marcas[_clave(c)], horas_cooldown=horas, channel="whatsapp")]
+            conn, user_id, tipo_marca, marcas[_clave(c)], horas_cooldown=horas, channel=canal)]
         if not pendientes:
             continue
-        texto = texto_whatsapp(pendientes, alerts_engine.APP_URL)
-        enviar_lote_con_demora([tel], texto)
-        for c in pendientes:
-            alerts_engine.registrar_alerta_en_log(conn, user_id, marcas[_clave(c)], TIPO_ALERTA, texto, channel="whatsapp")
+        tope = _tope_alcanzado(conn, user_id, tel_n)
+        if tope:
+            marca_tope = f"wacap:{tel_n}:{ahora.strftime('%y%m%d')}"
+            if not alerts_engine.ya_se_envio_alerta_hoy(conn, user_id, TIPO_REGISTRO, marca_tope, horas_cooldown=20, channel="panel"):
+                motivo = "un aviso hoy" if tope == "dia" else f"{TOPE_SEMANA} avisos esta semana"
+                alerts_engine.registrar_alerta_en_log(conn, user_id, marca_tope, TIPO_REGISTRO,
+                                                      json.dumps({"w": tel_n[-4:], "m": motivo, "n": len(pendientes)}, separators=(",", ":")),
+                                                      channel="panel")
+            continue
+        if real:
+            texto = texto_whatsapp(pendientes, alerts_engine.APP_URL)
+            enviar_lote_con_demora([tel], texto)
+            for c in pendientes:
+                alerts_engine.registrar_alerta_en_log(conn, user_id, marcas[_clave(c)], tipo_marca, texto, channel=canal)
+            logger.info(f"[Cambio de ritmo] user_id={user_id}: aviso de {len(pendientes)} producto(s) enviado")
+        else:
+            for c in pendientes:
+                alerts_engine.registrar_alerta_en_log(conn, user_id, marcas[_clave(c)], tipo_marca, _registro_prueba(c, tel_n), channel=canal)
+            logger.info(f"[Cambio de ritmo] user_id={user_id}: modo prueba, se habrían mandado {len(pendientes)} producto(s)")
         res["mensajes_whatsapp"] += 1
-        logger.info(f"[Cambio de ritmo] user_id={user_id}: aviso de {len(pendientes)} producto(s) enviado")
     return res
 
 
