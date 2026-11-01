@@ -368,13 +368,29 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         html = self._correr([urgente, tiempo, bien])['html']
         self.assertIn('id="colectaSiguienteTarjeta"', html)
         sig = html[html.index('id="colectaSiguienteTarjeta"'):]
-        self.assertIn('Colecta siguiente (borrador): 1 producto', sig)
+        self.assertIn('Colecta siguiente (borrador):', sig)
         self.assertIn('Retiro recomendado:', sig)
         self.assertIn('La fecha la manda Almendras', sig)
         hoy = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('id="colectaSiguienteTarjeta"')]
         self.assertNotIn('Almendras', hoy)        # lo que tiene tiempo no va en la de hoy
         self.assertIn('Dátil', hoy)
         self.assertNotIn('Bien', sig)             # lo que alcanza de sobra no entra
+
+    def test_sin_nada_para_hoy_la_siguiente_es_la_colecta_automatica(self):
+        tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2, target_stock_days=10)
+        html = self._correr([tiempo])['html']
+        self.assertIn('id="colectaAutomaticaTarjeta"', html)
+        self.assertNotIn('id="colectaSiguienteTarjeta"', html)
+        tarjeta = html[html.index('id="colectaAutomaticaTarjeta"'):]
+        self.assertIn('Colecta automática (borrador): 1 producto', tarjeta)
+        self.assertIn('Almendras', tarjeta)
+        self.assertIn('sin bajar de cero', tarjeta)       # explica la cuenta
+
+    def test_la_colecta_siguiente_cuenta_lo_que_se_manda_hoy(self):
+        # Dátil: 30 u., vende 10 por día. La colecta de hoy le suma 300 (30 días de objetivo). La siguiente tiene que partir de eso.
+        urgente = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        out = self._correr([urgente])['html']
+        self.assertIn('id="colectaAutomaticaTarjeta"', out)
 
     def test_la_tarjeta_del_indice_dice_que_hacer_hoy_y_lo_que_tiene_tiempo(self):
         urgente = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
