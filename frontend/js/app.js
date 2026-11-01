@@ -466,6 +466,20 @@ function sugeridoEdicion(it) {
     return ideal > unidades ? ideal : null;
 }
 
+// Lo contrario de sugeridoEdicion: unidades que sobran respecto de los días objetivo (devuelve cuántas dejar, 0 = sacarlo)
+function sugeridoQuitarEdicion(it) {
+    const vivo = (itemsData || []).find(x =>
+        (it.inventory_id && x.inventory_id === it.inventory_id) ||
+        (it.sku && x.sku === it.sku) ||
+        (it.item_id && x.item_id === it.item_id));
+    if (!vivo || !(vivo.vpd > 0) || vivo.stock_al_ingreso === null || vivo.stock_al_ingreso === undefined) return null;
+    const objetivo = vivo.target_stock_days || 30;
+    const unidades = it.units_to_send || 0;
+    if ((vivo.stock_al_ingreso + unidades) / vivo.vpd <= objetivo * 1.25) return null;
+    const ideal = Math.max(0, Math.round(objetivo * vivo.vpd - vivo.stock_al_ingreso));
+    return ideal < unidades ? ideal : null;
+}
+
 const ESTADOS_GALPON = [['to_buy', 'A comprar'], ['packing', 'Envasando'], ['boxed', 'Listo en caja']];
 
 function selectorGalpon(it) {
@@ -5801,10 +5815,22 @@ function renderizarItemsEdicion() {
 
         let sugHintHtml = '';
         const sugerido = edicionCerrada ? null : sugeridoEdicion(it);
+        const sobra = edicionCerrada || sugerido ? null : sugeridoQuitarEdicion(it);
+        if (sobra !== null) {
+            const quitar = it.units_to_send - sobra;
+            sugHintHtml = `
+                <div style="font-size: 10.5px; color: var(--warning, #e0a800); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;">
+                    <span title="Con lo que ya hay y lo que se vende hasta que entre la colecta, estas unidades pasan tus días de stock objetivo">${sobra > 0 ? 'Sugerido quitar' : 'Sugerido sacarlo'}: <strong>${sobra > 0 ? quitar : it.units_to_send}</strong></span>
+                    <button type="button" class="btn btn-secondary btn-xs" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px;" onclick="${sobra > 0 ? `onAjustarSugeridoEdicion(${idx}, ${sobra})` : `quitarItemDeEdicion(${idx})`}" title="${sobra > 0 ? 'Dejar ' + sobra + ' unidades' : 'Sacar el producto del envío'}">
+                        ${sobra > 0 ? 'Ajustar' : 'Sacar'}
+                    </button>
+                </div>
+            `;
+        }
         if (sugerido) {
             sugHintHtml = `
                 <div style="font-size: 10.5px; color: var(--accent); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                    <span title="Para cubrir tu stock objetivo con lo que se vende hasta que entre la colecta">Sugerido: <strong>${sugerido}</strong></span>
+                    <span style="white-space: nowrap;" title="Para cubrir tu stock objetivo con lo que se vende hasta que entre la colecta">Sugerido: <strong>${sugerido}</strong></span>
                     <button type="button" class="btn btn-secondary btn-xs" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px;" onclick="onAjustarSugeridoEdicion(${idx}, ${sugerido})" title="Ajustar cantidad a unidades sugeridas">
                         Ajustar
                     </button>
@@ -5822,7 +5848,7 @@ function renderizarItemsEdicion() {
                     </div>
                 </td>
                 <td style="padding: 8px 10px; text-align: center; color: var(--text);">${it.current_full_stock}</td>
-                <td style="padding: 8px 10px; text-align: center; color: var(--text2);">${it.vpd}</td>
+                <td style="padding: 8px 10px; text-align: center; color: var(--text2); white-space: nowrap;">${it.vpd}</td>
                 <td style="padding: 8px 10px; text-align: center;">
                     <input type="number" min="1" max="99999" value="${it.units_to_send}" ${edicionCerrada ? 'disabled' : ''}
                            oninput="onCambiarUnidadesEdicion(${idx}, this.value)" 
