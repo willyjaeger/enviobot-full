@@ -326,6 +326,17 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         self.assertIn('Todavía no existe en Mercado Libre', html)
         self.assertNotIn('Colecta automática (borrador)', self._correr([bien])['html'])  # sin nada que mandar no hay borrador
 
+    def test_los_dias_de_equilibrio_avisan_si_el_objetivo_no_alcanza(self):
+        corto = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=500, target_stock_days=5, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        bien = _item(id=6, title='Bien', sku='B', vpd=10, current_stock=500, target_stock_days=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        html = self._correr([corto, bien])['html']
+        self.assertIn('Días de stock de equilibrio: 7', html)
+        self.assertIn('1 producto tiene un objetivo por debajo del equilibrio', html)
+        self.assertIn('Sin stock unos 2 de cada 7 días (29 % de las ventas)', html)
+        self.assertIn('Colecta cada 15 días', html)
+        ok = self._correr([bien])['html']
+        self.assertIn('Todos tus objetivos están en equilibrio', ok)
+
     def test_la_tarjeta_del_indice_dice_que_hacer_hoy_y_lo_que_tiene_tiempo(self):
         urgente = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         bien = _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)

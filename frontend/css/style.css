@@ -2147,3 +2147,4 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .aviso-emergente .ae-titulo { font-weight: 700; font-size: 13.5px; }
 .aviso-emergente .ae-detalle { font-size: 12.5px; line-height: 1.4; color: var(--text2); margin-top: 2px; }
 .aviso-emergente .ae-acciones { display: flex; gap: 8px; flex-shrink: 0; }
+.pc-banner-aviso { border-left: 4px solid var(--warn); }

@@ -2601,6 +2601,53 @@ function tarjetaColectaAutomatica() {
     </div>`;
 }
 
+// ── Días de stock de equilibrio ─────────────────────────────────────────────────────────────
+// Los días objetivo son la cobertura que queda al ENTRAR una colecta. Para no quebrar entre una colecta y la siguiente esa cobertura tiene que
+// durar hasta que llegue la otra: objetivo >= cada cuántos días entra una colecta. Con colectas semanales (DIAS_ENTRE_COLECTAS) el equilibrio es
+// 7 días; con un objetivo menor el producto se queda sin stock (cadencia - objetivo) días de cada ciclo, aunque se arme todo a tiempo.
+// La app no corrige el número del usuario (las decisiones son suyas): lo avisa. El margen por variación de ventas ya va en el ritmo protegido.
+function equilibrioDeStock(it) {
+    const objetivo = Number(it && it.target_stock_days) || 0;
+    const eq = DIAS_ENTRE_COLECTAS;
+    const corto = objetivo > 0 && objetivo < eq;
+    return { objetivo: objetivo, equilibrio: eq, corto: corto, diasSinStock: corto ? eq - objetivo : 0, pct: corto ? Math.round((eq - objetivo) / eq * 100) : 0,
+             plazo: primerDiaPosibleDeIngreso(it, new Date(), demoraAcreditacionDias(), null) };
+}
+
+function resumenEquilibrio(items) {
+    const vivos = (items || []).filter(it => !it.pausado && Number(it.vpd) > 0);
+    const eqs = vivos.map(it => ({ it: it, e: equilibrioDeStock(it) }));
+    const objs = eqs.map(x => x.e.objetivo).filter(n => n > 0);
+    const plazos = eqs.map(x => x.e.plazo).sort((a, b) => a - b);
+    return { n: vivos.length, equilibrio: DIAS_ENTRE_COLECTAS,
+             bajos: eqs.filter(x => x.e.corto).map(x => Object.assign({ it: x.it }, x.e)).sort((a, b) => a.objetivo - b.objetivo),
+             minObjetivo: objs.length ? Math.min.apply(null, objs) : 0, maxObjetivo: objs.length ? Math.max.apply(null, objs) : 0,
+             plazo: plazos.length ? plazos[Math.floor(plazos.length / 2)] : 0 };
+}
+
+function tarjetaEquilibrio() {
+    let r;
+    try { r = resumenEquilibrio(itemsData); } catch (e) { return ''; }
+    if (!r.n) return '';
+    const eq = r.equilibrio;
+    const filas = r.bajos.map(b => `<tr><td>${nombreItemPanel(b.it)}</td><td class="pc-num">${escapeHtml(b.objetivo)} d</td><td>Sin stock unos ${escapeHtml(b.diasSinStock)} de cada ${eq} días (${escapeHtml(b.pct)} % de las ventas)</td></tr>`).join('');
+    const aviso = r.bajos.length
+        ? `<div class="pc-banner-sub"><b>${pluralizar(r.bajos.length, 'producto tiene', 'productos tienen')} un objetivo por debajo del equilibrio:</b> van a quebrar aunque armes todas las colectas a tiempo. Subí su objetivo a ${eq} días o más.</div>`
+        : '<div class="pc-banner-sub">Todos tus objetivos están en equilibrio o por encima.</div>';
+    const cadencias = [eq, 15, 30].map(c => `<tr><td>Colecta cada ${c} días</td><td class="pc-num"><b>${c} días</b> de objetivo como mínimo</td></tr>`).join('');
+    return `<div class="pc-banner${r.bajos.length ? ' pc-banner-aviso' : ''}" id="equilibrioTarjeta">
+        <div class="pc-banner-text">
+            <div class="pc-banner-titulo">Días de stock de equilibrio: ${eq}</div>
+            <div class="pc-banner-sub">Con colectas semanales, cada producto necesita al menos ${eq} días de stock objetivo para no quebrar entre una colecta y la siguiente. ${r.minObjetivo === r.maxObjetivo ? 'Tu objetivo es de ' + escapeHtml(r.minObjetivo) + ' días' : 'Tus objetivos van de ' + escapeHtml(r.minObjetivo) + ' a ' + escapeHtml(r.maxObjetivo) + ' días'}: podés armar colecta como máximo cada ${escapeHtml(r.minObjetivo)} días. Cada colecta tiene que estar armada unos ${escapeHtml(r.plazo)} días antes de que el producto la necesite (preparar + flete + acreditación de Mercado Libre).</div>
+            ${aviso}
+        </div>
+        <details class="pc-detalle"><summary>${r.bajos.length ? 'Ver los productos que van a quebrar y la guía por frecuencia' : 'Ver la guía por frecuencia de colecta'}</summary>
+            ${filas ? `<table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Objetivo</th><th>Qué pasa</th></tr></thead><tbody>${filas}</tbody></table>` : ''}
+            <table class="pc-table"><thead><tr><th>Si querés</th><th class="pc-num">Necesitás</th></tr></thead><tbody>${cadencias}</tbody></table>
+        </details>
+    </div>`;
+}
+
 // Avisos que se calculan con lo que se ve en pantalla. Cada uno tiene un id que cambia si cambia la situación.
 function avisosDelPanel() {
     const lista = [];
@@ -2617,6 +2664,17 @@ function avisosDelPanel() {
             accion: editable ? 'Sacar ' + e.sacar + ' u.' : null
         });
     });
+    try {
+        const q = resumenEquilibrio(itemsData);
+        if (q.bajos.length) {
+            lista.push({
+                id: 'equilibrio:' + q.bajos.map(b => b.it.id + '-' + b.objetivo).join(','), tipo: 'equilibrio',
+                titulo: 'Objetivo de stock por debajo del equilibrio (' + q.equilibrio + ' días)',
+                detalle: pluralizar(q.bajos.length, 'producto tiene', 'productos tienen') + ' menos de ' + q.equilibrio + ' días de objetivo (por ejemplo ' + (q.bajos[0].it.title || q.bajos[0].it.sku) + ': ' + q.bajos[0].objetivo + ' d). Con colectas semanales van a quedarse sin stock unos ' + q.bajos[0].diasSinStock + ' de cada ' + q.equilibrio + ' días. Subí el objetivo a ' + q.equilibrio + ' o más.',
+                accion: null
+            });
+        }
+    } catch (e) { /* sin datos todavía */ }
     try {
         const v = colectaAutomaticaVirtual();
         if (v.productos > 0) {
@@ -2758,6 +2816,7 @@ function renderizarPanelColecta() {
     cont.innerHTML = `<div class="pc-hero-par">${tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)}${donaIndice}</div>`
         + detalleIndiceQuiebres
         + tarjetaColectaAutomatica()
+        + tarjetaEquilibrio()
         + htmlSacar
         + seccionPanel('Qué hacer hoy', htmlHacer, hacer.length)
         + htmlAjustar
@@ -3491,7 +3550,7 @@ function renderizarTabla() {
                            value="${it.target_stock_days}" 
                            oninput="if(this.value.length>2) this.value=this.value.slice(0,2);"
                            onchange="cambiarStockDeseado(${it.id}, this.value)"
-                           title="Días de venta que querés mantener guardados en este depósito">
+                           title="${equilibrioDeStock(it).corto ? 'Por debajo del equilibrio (' + equilibrioDeStock(it).equilibrio + ' días): con colectas semanales te quedás sin stock unos ' + equilibrioDeStock(it).diasSinStock + ' de cada ' + equilibrioDeStock(it).equilibrio + ' días.' : 'Días de venta que querés mantener guardados en este depósito'}"${equilibrioDeStock(it).corto ? ' style="border-color: var(--warn);"' : ''}>
                     <span style="color: var(--text2); font-size: 11.5px; font-weight: 600;">d</span>
                 </span>
             </td>
