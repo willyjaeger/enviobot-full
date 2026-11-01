@@ -964,7 +964,7 @@ function mostrarDetalleIndice(ev, clave) {
     const filas = t.lista.slice(0, max).map(f => {
         let dato = '';
         if (clave === 'sumar' || clave === 'rojo') dato = `<b>${escapeHtml(Math.max(1, Math.ceil(f.evitable)))} u.</b> <span class="pc-tip-sub">(sin stock el ${escapeHtml(fechaDeProyeccion(f.primerQuiebre, hoy))})</span>`;
-        else if (clave === 'tiempo') dato = `<span class="pc-tip-sub">armala antes del</span> <b>${escapeHtml(fechaDeProyeccion(Math.max(0, f.fechaLimite), hoy))}</b>`;
+        else if (f.fechaLimite !== undefined) dato = `<span class="pc-tip-sub">armala antes del</span> <b>${escapeHtml(fechaDeProyeccion(Math.max(0, f.fechaLimite), hoy))}</b>`;
         else dato = `<b>${escapeHtml(Math.round(f.it.covered_days_left || f.it.days_left || 0))} días</b>`;
         return `<div class="pc-tip-fila"><span class="pc-tip-nombre">${escapeHtml(f.it.title)}${f.it.variation_name ? ` (${escapeHtml(f.it.variation_name)})` : ''}</span><span class="pc-tip-dato">${dato}</span></div>`;
     }).join('');
@@ -1001,8 +1001,7 @@ function tarjetaIndiceQuiebres() {
     ultimoIndiceQuiebres = { productos: conVentas, ok: nOk + nTiempo, evitables: nSumar, inevitables: nRojo,
                              perdida_evitable_pct: Math.round(pct(r.perdidaEvitable) * 10) / 10, perdida_inevitable_pct: Math.round(pct(r.perdidaInevitable) * 10) / 10 };
     const trozos = [
-        { clave: 'ok', n: nOk, color: '--good', texto: 'sin riesgo en las próximas 4 semanas', lista: r.ok },
-        { clave: 'tiempo', n: nTiempo, color: '--text2', texto: 'con tiempo: se quedarían sin stock más adelante, todavía no entran en la colecta', lista: r.hay_tiempo },
+        { clave: 'ok', n: nOk + nTiempo, color: '--good', texto: 'no hace falta hacer nada hoy', lista: r.ok.concat(r.hay_tiempo) },
         { clave: 'sumar', n: nSumar, color: '--warn', texto: colAbierta ? 'hay que sumarlos a la colecta abierta' : 'hay que armarles una colecta', lista: r.evitables },
         { clave: 'rojo', n: nRojo, color: '--danger', texto: 'van a estar unos días sin stock antes de que entre mercadería', lista: r.inevitables }
     ];
@@ -1027,7 +1026,7 @@ function tarjetaIndiceQuiebres() {
             : `Hoy tenés que armar una colecta con ${pluralizar(accion, 'producto', 'productos')}`;
         sub = `Venta que se perdería si no lo hacés: <b>${txtPct(pct(r.perdidaEvitable + r.perdidaInevitable))}</b> (unas ${Math.round(r.perdidaEvitable + r.perdidaInevitable).toLocaleString('es-AR')} unidades en 4 semanas).` +
             (nRojo ? ` ${pluralizar(nRojo, 'producto va', 'productos van')} a estar unos días sin stock antes de que pueda entrar mercadería.` : '') +
-            (nTiempo ? ` Otros ${nTiempo} tienen tiempo.` : '');
+            (nTiempo ? `` : '');
     } else if (nTiempo > 0) {
         const primero = r.hay_tiempo[0];
         titulo = 'Hoy no tenés nada urgente';
@@ -1039,7 +1038,7 @@ function tarjetaIndiceQuiebres() {
     return `<div class="pc-hero pc-indice ${nRojo ? 'pc-hero-urgente' : (nSumar ? 'pc-hero-pronto' : 'pc-hero-ok')}">
         <div class="pc-hero-top"><span class="pc-hero-icono">${iconoSvg(accion ? 'alerta' : 'escudo', 28).replace('margin-right: 4px;', '')}</span>
             <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub} (Prueba)</div></div></div>
-        <div class="pc-meta-cero" title="Que ningún producto se quede sin stock: lo que hay que resolver hoy tiene que ser cero"><b>Meta: cero</b><span>Para resolver hoy: ${accion}${nTiempo ? ` · con tiempo: ${nTiempo}` : ''}</span></div>
+        <div class="pc-meta-cero" title="Que ningún producto se quede sin stock: lo que hay que resolver hoy tiene que ser cero"><b>Meta: cero</b><span>Para resolver hoy: ${accion}</span></div>
         <div class="pc-hero-dona">${dona}
             <div class="pc-hero-detalle"><div class="pc-leyenda">${trozos.map(t => t.n > 0 ? `<span class="pc-leyenda-item pc-ayuda pc-click" tabindex="0" data-ayuda="Tocá para ver estos productos" onclick="irADetalleIndice('${t.clave}')"><span class="pc-ley-num" style="color: var(${t.color});">${t.n}</span> ${escapeHtml(t.texto)}</span>` : '').join('')}</div></div></div></div>`;
 }
