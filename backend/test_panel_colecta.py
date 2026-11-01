@@ -318,10 +318,11 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         bien = _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         html = self._correr([urgente, tiempo, bien])['html']
-        self.assertIn('Colecta automática (borrador): 2 productos', html)
+        self.assertIn('Colecta automática (borrador): 1 producto, 220 unidades', html)
         self.assertIn('Armar esta colecta', html)
-        self.assertIn('Hacerlo hoy', html)
-        self.assertIn('Hay tiempo: armala antes del', html)
+        self.assertIn('Cubre 30 días de objetivo', html)
+        tarjeta = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('Qué hacer hoy')]
+        self.assertNotIn('Almendras', tarjeta)  # lo que tiene tiempo no entra en la colecta de hoy
         self.assertIn('Todavía no existe en Mercado Libre', html)
         self.assertNotIn('Colecta automática (borrador)', self._correr([bien])['html'])  # sin nada que mandar no hay borrador
 

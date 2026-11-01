@@ -757,7 +757,9 @@ const SECCIONES_CERRADAS_POR_DEFECTO = ['Artículos con stock suficiente'];
 function seccionesGuardadas() {
     try { return JSON.parse(localStorage.getItem('envioBotFullSecciones') || '{}') || {}; } catch (e) { return {}; }
 }
+const seccionesAbiertasSesion = {};
 function recordarSeccion(el) {
+    if (SECCIONES_CERRADAS_POR_DEFECTO.indexOf(el.dataset.sec) !== -1) { seccionesAbiertasSesion[el.dataset.sec] = el.open; return; }
     try {
         const g = seccionesGuardadas();
         g[el.dataset.sec] = el.open;
@@ -766,7 +768,9 @@ function recordarSeccion(el) {
 }
 function seccionPanel(titulo, contenidoHtml, cantidad) {
     const g = seccionesGuardadas();
-    const abierta = titulo in g ? g[titulo] : SECCIONES_CERRADAS_POR_DEFECTO.indexOf(titulo) === -1;
+    // Las cerradas por defecto no se recuerdan entre visitas: siempre arrancan cerradas (el panel se redibuja, pero en la sesión respeta lo que abras).
+    const porDefecto = SECCIONES_CERRADAS_POR_DEFECTO.indexOf(titulo) !== -1;
+    const abierta = porDefecto ? !!seccionesAbiertasSesion[titulo] : (titulo in g ? g[titulo] : true);
     const cuenta = cantidad ? `<span class="tab-panel-cont">${Number(cantidad)}</span>` : '';
     return `<details class="plegable pc-plegable" data-sec="${escapeHtml(titulo)}" ${abierta ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary class="pc-block-title">${titulo}${cuenta}</summary><div class="pc-lista">${contenidoHtml}</div></details>`;
 }
@@ -946,6 +950,41 @@ function textoFilaQuiebre(fila, hoy, colAbierta) {
 }
 
 let detalleIndiceQuiebres = '';
+let grupoIndicePanel = null;
+
+// Detalle al pasar el mouse por la dona de la meta: qué productos son y qué hacer con cada uno.
+function mostrarDetalleIndice(ev, clave) {
+    if (!grupoIndicePanel) return;
+    const t = grupoIndicePanel.trozos.find(x => x.clave === clave);
+    if (!t) return;
+    const hoy = grupoIndicePanel.hoy;
+    ev.currentTarget.classList.add('pc-seg-activo');
+    if (ev.currentTarget.parentElement) ev.currentTarget.parentElement.classList.add('pc-segmentos-activa');
+    const max = 10;
+    const filas = t.lista.slice(0, max).map(f => {
+        let dato = '';
+        if (clave === 'sumar' || clave === 'rojo') dato = `<b>${escapeHtml(Math.max(1, Math.ceil(f.evitable)))} u.</b> <span class="pc-tip-sub">(sin stock el ${escapeHtml(fechaDeProyeccion(f.primerQuiebre, hoy))})</span>`;
+        else if (clave === 'tiempo') dato = `<span class="pc-tip-sub">armala antes del</span> <b>${escapeHtml(fechaDeProyeccion(Math.max(0, f.fechaLimite), hoy))}</b>`;
+        else dato = `<b>${escapeHtml(Math.round(f.it.covered_days_left || f.it.days_left || 0))} días</b>`;
+        return `<div class="pc-tip-fila"><span class="pc-tip-nombre">${escapeHtml(f.it.title)}${f.it.variation_name ? ` (${escapeHtml(f.it.variation_name)})` : ''}</span><span class="pc-tip-dato">${dato}</span></div>`;
+    }).join('');
+    const resto = t.lista.length > max ? `<div class="pc-tip-mas">Y ${t.lista.length - max} más</div>` : '';
+    let tip = document.getElementById('pc-tip');
+    if (!tip) { tip = document.createElement('div'); tip.id = 'pc-tip'; document.body.appendChild(tip); }
+    tip.innerHTML = `<div class="pc-tip-titulo">${escapeHtml(t.n + ' ' + t.texto)}</div>${filas}${resto}<div class="pc-tip-mas">Tocá para ver el detalle</div>`;
+    tip.style.display = 'block';
+    moverDetalleSegmento(ev);
+}
+
+// Clic en la dona de la meta: lleva al detalle de ese grupo.
+function irADetalleIndice(clave) {
+    ocultarDetalleSegmento();
+    if (clave === 'ok') { irAEstado('ok'); return; }
+    const det = document.getElementById('detalleIndice');
+    if (!det) return;
+    det.open = true;
+    det.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 let ultimoIndiceQuiebres = null;
 
 function tarjetaIndiceQuiebres() {
@@ -963,18 +1002,19 @@ function tarjetaIndiceQuiebres() {
     ultimoIndiceQuiebres = { productos: conVentas, ok: nOk + nTiempo, evitables: nSumar, inevitables: nRojo,
                              perdida_evitable_pct: Math.round(pct(r.perdidaEvitable) * 10) / 10, perdida_inevitable_pct: Math.round(pct(r.perdidaInevitable) * 10) / 10 };
     const trozos = [
-        { n: nOk, color: '--good', texto: 'sin riesgo en las próximas 4 semanas' },
-        { n: nTiempo, color: '--text2', texto: 'colecta automática para crear: se quedarían sin stock más adelante, hay tiempo' },
-        { n: nSumar, color: '--warn', texto: colAbierta ? 'hay que sumarlos a la colecta abierta' : 'hay que armarles una colecta' },
-        { n: nRojo, color: '--danger', texto: 'van a estar unos días sin stock antes de que entre mercadería' }
+        { clave: 'ok', n: nOk, color: '--good', texto: 'sin riesgo en las próximas 4 semanas', lista: r.ok },
+        { clave: 'tiempo', n: nTiempo, color: '--text2', texto: 'con tiempo: se quedarían sin stock más adelante, todavía no entran en la colecta', lista: r.hay_tiempo },
+        { clave: 'sumar', n: nSumar, color: '--warn', texto: colAbierta ? 'hay que sumarlos a la colecta abierta' : 'hay que armarles una colecta', lista: r.evitables },
+        { clave: 'rojo', n: nRojo, color: '--danger', texto: 'van a estar unos días sin stock antes de que entre mercadería', lista: r.inevitables }
     ];
+    grupoIndicePanel = { trozos: trozos, hoy: hoy };
     const R_ = 44, C = 2 * Math.PI * R_;
     const visibles = trozos.filter(t => t.n > 0);
     const hueco = visibles.length > 1 ? 3 : 0;
     let acum = 0;
     const arcos = visibles.map(t => {
         const largo = (t.n / conVentas) * C;
-        const a = `<circle cx="60" cy="60" r="${R_}" fill="none" stroke="var(${t.color})" stroke-width="16" stroke-dasharray="${Math.max(largo - hueco, 0.5).toFixed(2)} ${(C - Math.max(largo - hueco, 0.5)).toFixed(2)}" stroke-dashoffset="${(-acum).toFixed(2)}" transform="rotate(-90 60 60)"></circle>`;
+        const a = `<circle class="pc-seg pc-click" cx="60" cy="60" r="${R_}" fill="none" stroke="var(${t.color})" stroke-width="16" stroke-dasharray="${Math.max(largo - hueco, 0.5).toFixed(2)} ${(C - Math.max(largo - hueco, 0.5)).toFixed(2)}" stroke-dashoffset="${(-acum).toFixed(2)}" transform="rotate(-90 60 60)" onclick="irADetalleIndice('${t.clave}')" onmouseenter="mostrarDetalleIndice(event, '${t.clave}')" onmousemove="moverDetalleSegmento(event)" onmouseleave="ocultarDetalleSegmento()"></circle>`;
         acum += largo;
         return a;
     }).join('');
@@ -989,8 +1029,8 @@ function tarjetaIndiceQuiebres() {
     }).join('') : '';
     const paraHoy = r.evitables.concat(r.inevitables).sort((a, b) => b.perdida - a.perdida);
     const tituloHoy = colAbierta ? `Para sumar a la colecta ${numeroColecta(colAbierta)} (hasta el ${textoLimiteEdicion(colAbierta.limite_edicion)})` : 'Para armar una colecta';
-    detalleIndiceQuiebres = (accion || nTiempo) ? `<details class="pc-detalle pc-indice-detalle"><summary>Ver el detalle producto por producto</summary>
-        ${grupo(paraHoy, tituloHoy)}${grupo(r.hay_tiempo, 'Colecta automática para crear: hay tiempo, se quedarían sin stock más adelante')}${nTiempo ? '<div class="pc-imp-cabecera"><button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar la colecta automática</button></div>' : ''}</details>` : '';
+    detalleIndiceQuiebres = (accion || nTiempo) ? `<details class="pc-detalle pc-indice-detalle" id="detalleIndice"><summary>Ver el detalle producto por producto</summary>
+        ${grupo(paraHoy, tituloHoy)}${grupo(r.hay_tiempo, 'Con tiempo: se quedarían sin stock más adelante, todavía no hace falta')}</details>` : '';
     let titulo, sub;
     const sinStockEn = d => fechaDeProyeccion(d, hoy);
     if (accion > 0) {
@@ -1003,7 +1043,7 @@ function tarjetaIndiceQuiebres() {
     } else if (nTiempo > 0) {
         const primero = r.hay_tiempo[0];
         titulo = 'Hoy no tenés nada urgente';
-        sub = `${pluralizar(nTiempo, 'producto se quedaría', 'productos se quedarían')} sin stock más adelante: hay una colecta automática para crear. Primera fecha límite para armar colecta: <b>${escapeHtml(sinStockEn(Math.max(0, primero.fechaLimite)))}</b> (${escapeHtml(primero.it.title)}).`;
+        sub = `${pluralizar(nTiempo, 'producto se quedaría', 'productos se quedarían')} sin stock más adelante, pero todavía tienen tiempo. Primera fecha límite para armar colecta: <b>${escapeHtml(sinStockEn(Math.max(0, primero.fechaLimite)))}</b> (${escapeHtml(primero.it.title)}).`;
     } else {
         titulo = 'Meta cumplida: ningún producto se quedaría sin stock en las próximas 4 semanas';
         sub = 'Cuenta lo que hay hoy en Full y las colectas ya cargadas, con la venta por día de cada producto.';
@@ -1013,7 +1053,7 @@ function tarjetaIndiceQuiebres() {
             <div><div class="pc-hero-titulo">${titulo}</div><div class="pc-hero-sub">${sub} (Prueba)</div></div></div>
         <div class="pc-meta-cero" title="Que ningún producto se quede sin stock: lo que hay que resolver hoy tiene que ser cero"><b>Meta: cero</b><span>Para resolver hoy: ${accion}${nTiempo ? ` · con tiempo: ${nTiempo}` : ''}</span></div>
         <div class="pc-hero-dona">${dona}
-            <div class="pc-hero-detalle"><div class="pc-leyenda">${trozos.map(t => t.n > 0 ? `<span class="pc-leyenda-item"><span class="pc-ley-num" style="color: var(${t.color});">${t.n}</span> ${escapeHtml(t.texto)}</span>` : '').join('')}</div></div></div></div>`;
+            <div class="pc-hero-detalle"><div class="pc-leyenda">${trozos.map(t => t.n > 0 ? `<span class="pc-leyenda-item pc-ayuda pc-click" tabindex="0" data-ayuda="Tocá para ver estos productos" onclick="irADetalleIndice('${t.clave}')"><span class="pc-ley-num" style="color: var(${t.color});">${t.n}</span> ${escapeHtml(t.texto)}</span>` : '').join('')}</div></div></div></div>`;
 }
 
 // Una vez por día guarda cómo estaba el índice (en el servidor), para ver con el tiempo si mejoramos. Si la tabla no existe todavía, no pasa nada.
@@ -2524,8 +2564,9 @@ async function sacarDeColecta(itemId) {
 function colectaAutomaticaVirtual() {
     const hoy = new Date();
     const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), hoy, demoraAcreditacionDias(), DIAS_INDICE_QUIEBRES, colectaAbiertaVigente());
-    const filas = r.evitables.concat(r.inevitables, r.hay_tiempo).map(f => ({ it: f.it, unidades: Math.max(1, Math.ceil(f.evitable || 0), Math.round(f.it.sugerido_al_ingreso || 0)), conTiempo: f.fechaLimite !== undefined, limite: f.fechaLimite }));
-    return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.filter(f => !f.conTiempo).length, hoy: hoy };
+    // Solo lo que no aguanta hasta la próxima colecta con tus días de stock objetivo; lo que todavía tiene tiempo no va.
+    const filas = r.evitables.concat(r.inevitables).map(f => ({ it: f.it, unidades: Math.max(1, Math.ceil(f.evitable || 0), Math.round(f.it.sugerido_al_ingreso || 0)), conTiempo: false }));
+    return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.length, hoy: hoy };
 }
 
 // La colecta automática a la vista: qué mandar, cuánto y por qué. "Armar" abre el armado con ESTA misma lista.
@@ -2534,18 +2575,15 @@ function tarjetaColectaAutomatica() {
     try { v = colectaAutomaticaVirtual(); } catch (e) { return ''; }
     if (!v.productos) return '';
     const nf = n => Math.round(n).toLocaleString('es-AR');
-    const filas = v.filas.slice().sort((a, b) => (a.conTiempo - b.conTiempo) || ((a.limite || 0) - (b.limite || 0))).map(f => {
-        const porque = f.conTiempo ? 'Hay tiempo: armala antes del ' + fechaDeProyeccion(Math.max(0, f.limite), v.hoy) : 'Hacerlo hoy';
-        return `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>${escapeHtml(porque)}</td></tr>`;
-    }).join('');
-    return `<div class="pc-banner"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
+    const filas = v.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>Cubre ${escapeHtml(f.it.target_stock_days)} días de objetivo</td></tr>`).join('');
+    return `<div class="pc-banner" id="colectaAutomaticaTarjeta"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">Colecta automática (borrador): ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
-            <div class="pc-banner-sub">Es lo que EnvioBot calcula que hay que mandar para no quebrar. Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.</div>
+            <div class="pc-banner-sub">Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button></div>
-        <details class="pc-detalle" open><summary>Ver los ${v.productos} productos</summary>
-            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Cuándo</th></tr></thead><tbody>${filas}</tbody></table></details>
+        <details class="pc-detalle" open><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
+            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué esas unidades</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;
 }
 
@@ -2571,8 +2609,7 @@ function avisosDelPanel() {
             lista.push({
                 id: 'auto:' + v.productos + ':' + v.unidades, tipo: 'automatica',
                 titulo: 'Colecta automática para crear',
-                detalle: v.productos + (v.productos === 1 ? ' producto' : ' productos') + ', ' + v.unidades.toLocaleString('es-AR') + ' u. para no quebrar' +
-                    (v.paraHoy ? ' (' + v.paraHoy + ' para hoy)' : ' (hay tiempo)') + '. Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.',
+                detalle: v.productos + (v.productos === 1 ? ' producto' : ' productos') + ', ' + v.unidades.toLocaleString('es-AR') + ' u. para armar hoy y no quebrar. Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.',
                 accion: 'Armar colecta'
             });
         }
@@ -2610,7 +2647,7 @@ function mostrarAvisosEmergentes() {
     if (!nuevos.length) return;
     const tarjetas = nuevos.slice(0, 3).map(a => {
         const boton = a.accion
-            ? `<button type="button" class="btn btn-sm" onclick="${a.tipo === 'exceso' ? 'sacarDeColecta(' + Number(a.itemId) + ')' : 'cerrarAvisosEmergentes(); abrirModalColecta()'}">${escapeHtml(a.accion)}</button>`
+            ? `<button type="button" class="btn btn-sm${a.tipo === 'exceso' ? ' btn-sacar' : ''}" onclick="${a.tipo === 'exceso' ? 'sacarDeColecta(' + Number(a.itemId) + ')' : 'cerrarAvisosEmergentes(); abrirModalColecta()'}">${escapeHtml(a.accion)}</button>`
             : '';
         return `<div class="aviso-emergente ae-${a.tipo}" role="alert">
             <div class="ae-texto"><div class="ae-titulo">${escapeHtml(a.titulo)}</div><div class="ae-detalle">${escapeHtml(a.detalle)}</div></div>
@@ -2668,9 +2705,10 @@ function renderizarPanelColecta() {
         'Colecta con exceso: conviene sacar unidades',
         deMasEnColecta.map(it => filaConBarra(it, {
             icono: iconoSvg('alerta', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
-            derecha: `Sacá ${escapeHtml(it.exceso_colecta.sacar)} u. de la colecta${colectaConItem(it) ? ` <button type="button" class="pc-btn-sumar" onclick="event.stopPropagation(); sacarDeColecta(${Number(it.id)})">Sacar</button>` : ''}`,
+            derecha: `Sacá ${escapeHtml(it.exceso_colecta.sacar)} u. de la colecta${colectaConItem(it) ? ` <button type="button" class="pc-btn-sacar" onclick="event.stopPropagation(); sacarDeColecta(${Number(it.id)})">Sacar</button>` : ''}`,
+            claseDerecha: 'pc-info',
             dias: it.cobertura_post_colecta,
-            claseBarra: 'pc-fill-warn',
+            claseBarra: 'pc-fill-sacar',
             nota: `Con ${escapeHtml(it.exceso_colecta.en_colecta)} u. cubrís ${Math.round(it.cobertura_post_colecta || 0)} días y tu objetivo es ${escapeHtml(it.target_stock_days)}. Con ${escapeHtml(it.exceso_colecta.recomendado)} u. alcanza. ${colectaConItem(it) ? 'Todavía se puede cambiar.' : 'Esa colecta ya no se puede cambiar desde acá.'}`
         })).join(''), deMasEnColecta.length);
 
@@ -4711,10 +4749,10 @@ async function cargarAvisos(soloContador = false) {
 
         const cont = document.getElementById('avisosContainer');
         if (!cont) return;
-const paraCorregir = delPanel.length ? `<div style="font-size: 13px; font-weight: 700; margin: 0 0 8px 0;">Para corregir ahora</div>` + delPanel.map(a => `<div class="aviso-cartel" style="border: 1px solid var(--border); border-left: 4px solid ${a.tipo === 'exceso' ? 'var(--danger, #e5484d)' : 'var(--accent, #f5a623)'}; border-radius: 8px; margin-bottom: 10px; padding: 10px 12px; background: var(--surf2);">
+const paraCorregir = delPanel.length ? `<div style="font-size: 13px; font-weight: 700; margin: 0 0 8px 0;">Para corregir ahora</div>` + delPanel.map(a => `<div class="aviso-cartel" style="border: 1px solid var(--border); border-left: 4px solid ${a.tipo === 'exceso' ? 'var(--info)' : 'var(--accent)'}; border-radius: 8px; margin-bottom: 10px; padding: 10px 12px; background: var(--surf2);">
             <strong>${escapeHtml(a.titulo)}</strong> <span style="font-size: 11px; color: var(--text2);">leído</span>
             <div style="font-size: 13px; margin-top: 4px;">${escapeHtml(a.detalle)}</div>
-            ${a.accion ? `<div style="margin-top: 8px;"><button type="button" class="btn btn-sm" onclick="cerrarAvisos(); ${a.tipo === 'exceso' ? 'sacarDeColecta(' + Number(a.itemId) + ')' : 'abrirModalColecta()'}">${escapeHtml(a.accion)}</button></div>` : ''}
+            ${a.accion ? `<div style="margin-top: 8px;"><button type="button" class="btn btn-sm${a.tipo === 'exceso' ? ' btn-sacar' : ''}" onclick="cerrarAvisos(); ${a.tipo === 'exceso' ? 'sacarDeColecta(' + Number(a.itemId) + ')' : 'abrirModalColecta()'}">${escapeHtml(a.accion)}</button></div>` : ''}
         </div>`).join('') : '';
         cont.innerHTML = paraCorregir + (avisos.length ? avisos.map(a => {
             const baja = a.sentido === 'baja';
@@ -9825,3 +9863,23 @@ window.quitarModoEventoColecta = quitarModoEventoColecta;
 
 
 
+
+// Cada ventana que se abre tiene su botón Volver arriba (además de la ✕); vuelve a donde estabas.
+function agregarBotonesVolver() {
+    document.querySelectorAll('.modal-overlay .modal-close').forEach(function (x) {
+        const tarjeta = x.closest('.modal-card');
+        if (!tarjeta || tarjeta.querySelector('.btn-volver') || tarjeta.textContent.indexOf('← Volver') !== -1) return;
+        const fila = document.createElement('div');
+        fila.className = 'volver-fila';
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-secondary btn-sm btn-volver';
+        b.textContent = '← Volver';
+        b.onclick = function () { x.click(); };
+        fila.appendChild(b);
+        tarjeta.insertBefore(fila, tarjeta.firstChild);
+    });
+}
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', agregarBotonesVolver); else agregarBotonesVolver();
+}
