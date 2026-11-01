@@ -43,3 +43,9 @@ Guillermo pidió expresamente que no se adivine con esta API ("cuando te pones a
 ## Sin evidencia (no afirmar que existe)
 - Crear o modificar la colecta (envío a Full), su franja horaria, transportista, código de autorización o patente por API.
 - Pausar/reactivar con `PUT /items/{id}` y cambiar precio: es de uso general, pero no lo usamos ni probamos en Full.
+
+## Revisado el 2026-11-01: ¿hay dato de la cita (mínimo y máximo de unidades) o de la colecta en la API?
+- **Doc leída** (`/es_ar/envios-fulfillment` y `/es_ar/planes-de-reposicion-para-fulfilment`): no hay recurso para consultar, ver el detalle ni editar un envío a Full, ni para saber cuánto permite la cita (ML mostró "Tu cita permite entre 451 y 839 u." en la pantalla de editar el envío #81021895). Lo único cercano: `stock.minimum_distributable_stock` de la reposición (es por producto, no por cita) y la advertencia de que la cantidad admitida depende de "validaciones operativas y de capacidad", sin endpoint para consultarlas.
+- **Verificado con la cuenta MISTERNUT** (producto 01011): la reposición devuelve `minimum_distributable_stock: 0`, `recommendation` REPLENISH exacta 606, `shipping_urgency` THIS_WEEK, `replenishment_frequency` 4.
+- Las operaciones `inbound_reception` traen `external_references` con tipo `inbound_id`, pero `operations/search` sigue dando 429.
+- No se miró ni se usa lo que llame la propia pantalla web de ML (punto 7.6 de los términos).
