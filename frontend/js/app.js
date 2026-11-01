@@ -781,24 +781,15 @@ function filaConBarra(it, opciones) {
 // Secciones del panel que se pueden plegar: la información no se quita, solo se esconde.
 // Cada una recuerda cómo la dejaste (el panel se redibuja cada minuto y no debe reabrirse solo).
 const SECCIONES_CERRADAS_POR_DEFECTO = ['Artículos con stock suficiente', 'Productos de la colecta automática', 'Productos de la colecta siguiente'];
-function seccionesGuardadas() {
-    try { return JSON.parse(localStorage.getItem('envioBotFullSecciones') || '{}') || {}; } catch (e) { return {}; }
-}
+// Pedido de Guillermo (2026-11-01): la app siempre abre con todos los desplegables cerrados. Lo que abras vale mientras la
+// página esté abierta (el panel se redibuja cada minuto y no debe cerrarse solo), pero no se recuerda entre visitas.
 const seccionesAbiertasSesion = {};
 function recordarSeccion(el) {
-    if (SECCIONES_CERRADAS_POR_DEFECTO.indexOf(el.dataset.sec) !== -1) { seccionesAbiertasSesion[el.dataset.sec] = el.open; return; }
-    try {
-        const g = seccionesGuardadas();
-        g[el.dataset.sec] = el.open;
-        localStorage.setItem('envioBotFullSecciones', JSON.stringify(g));
-    } catch (e) { /* sin almacenamiento: no pasa nada */ }
+    seccionesAbiertasSesion[el.dataset.sec] = el.open;
 }
 function seccionPanel(titulo, contenidoHtml, cantidad, clase) {
-    const g = seccionesGuardadas();
-    // Las cerradas por defecto no se recuerdan entre visitas: siempre arrancan cerradas (el panel se redibuja, pero en la sesión respeta lo que abras).
-    const porDefecto = SECCIONES_CERRADAS_POR_DEFECTO.indexOf(titulo) !== -1;
-    const abierta = porDefecto ? !!seccionesAbiertasSesion[titulo] : (titulo in g ? g[titulo] : true);
-    const cuenta = cantidad ? `<span class="tab-panel-cont">${Number(cantidad)}</span>` : '';
+    const abierta = !!seccionesAbiertasSesion[titulo];
+const cuenta = cantidad ? `<span class="tab-panel-cont">${Number(cantidad)}</span>` : '';
     return `<details class="plegable pc-plegable${clase ? ' ' + clase : ''}" data-sec="${escapeHtml(titulo)}" ${abierta ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary class="pc-block-title">${titulo}${cuenta}</summary><div class="pc-lista">${contenidoHtml}</div></details>`;
 }
 
@@ -2593,11 +2584,9 @@ function alternarSidebar(forzar) {
             document.body.classList.toggle('sb-abierto', abierto);
             const b = document.getElementById('sbToggle');
             if (b) b.setAttribute('aria-expanded', abierto ? 'true' : 'false');
-            // Bloques fijos plegables (ej. resumen y filtros de Productos): cerrados salvo que los hayas abierto.
+            // Bloques fijos plegables (ej. resumen y filtros de Productos): siempre arrancan cerrados.
             document.querySelectorAll('details[data-recordar]').forEach(d => {
-                const k = 'envioBotFullPleg_' + d.dataset.recordar;
-                try { d.open = localStorage.getItem(k) === '1'; } catch (e) { /* idem */ }
-                d.addEventListener('toggle', () => { try { localStorage.setItem(k, d.open ? '1' : '0'); } catch (e) { /* idem */ } });
+                d.open = false;   // siempre arrancan cerrados
             });
             // El menú solo existe con sesión: corremos el contenido cuando el panel está a la vista.
             const vista = document.getElementById('viewMainDashboard');
@@ -2621,12 +2610,10 @@ function mostrarPestana(nombre, guardar) {
         b.classList.toggle('activa', activa);
         b.setAttribute('aria-selected', activa ? 'true' : 'false');
     });
-    if (guardar !== false) { try { localStorage.setItem('envioBotFullPestana', nombre); } catch (e) { /* sin almacenamiento: no pasa nada */ } }
 }
 (function () {
-    let guardada = 'resumen';
-    try { guardada = localStorage.getItem('envioBotFullPestana') || 'resumen'; } catch (e) { /* idem */ }
-    const arrancar = () => { try { mostrarPestana(guardada, false); } catch (e) { /* sin página (tests) */ } };
+    // La app siempre abre en el Resumen (no se recuerda la pestaña de la visita anterior).
+    const arrancar = () => { try { mostrarPestana('resumen', false); } catch (e) { /* sin página (tests) */ } };
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', arrancar); else arrancar();
 })();
 
