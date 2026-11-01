@@ -4922,6 +4922,7 @@ async function confirmarImportPdf() {
             if (err) err.textContent = r.data.error || 'No pude cargar la colecta.';
             return;
         }
+        borrarBaseML(r.data.shipment.id);   // Mercado Libre y EnvioBot vuelven a ser lo mismo: ya no hay cambios pendientes
         showToast('Colecta ' + r.data.shipment.shipment_code + (r.data.actualizada ? ' actualizada con lo de Mercado Libre: ' : ' cargada: ') + r.data.shipment.total_units + ' unidades.', 'success');
         cerrarImportarColectaPdf();
         cargarDatos();
@@ -5467,6 +5468,9 @@ async function abrirModalEditarEnvio(shipmentId) {
 
         itemsOriginalesEdicion = itemsEnEdicion.map(it => Object.assign({}, it));   // para saber qué hay que cambiar en Mercado Libre
         codigoEnvioEnEdicion = String(sh.shipment_code || '');
+        // Si ya se guardaron cambios acá que todavía no están en Mercado Libre, la base para comparar es lo que Mercado Libre tiene (el último PDF).
+        const baseML = leerBaseML(shipmentId);
+        if (baseML) itemsOriginalesEdicion = baseML;
 
         // Llenar cabecera del modal
         const headerCode = document.getElementById('editarEnvioCodigoHeader');
@@ -5867,6 +5871,7 @@ function renderizarCambiosML() {
             <ol class="cambios-ml-lista cambios-ml-pasos">${cambios.map(c => `<li><label><input type="checkbox"> <strong>${etiqueta[c.tipo]}</strong> ${detalle(c)} <span class="cambios-ml-cod">${quien(c)}</span> ${escapeHtml(c.titulo)}</label><div class="cambios-ml-como">${escapeHtml(pasoEnML(c))}</div></li>`).join('')}</ol>
             <div class="cambios-ml-acciones">
                 ${abrirML}
+                <button type="button" class="btn btn-secondary btn-sm" onclick="imprimirCambiosML()">Imprimir hoja</button>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="copiarCambiosML()">Copiar cambios</button>
                 <button type="button" class="btn btn-sm" style="background: var(--accent); color: #111; font-weight: 800;" onclick="cerrarModalEditarEnvio(true)">Listo, ya lo hice en Mercado Libre</button>
             </div>`;
@@ -5876,6 +5881,7 @@ function renderizarCambiosML() {
         <div class="cambios-ml-sub">Guardar acá no modifica el envío de Mercado Libre: hay que corregirlo en su pantalla, antes del límite que ahí figura. Al guardar te dejo los pasos a mano.</div>
         <ul class="cambios-ml-lista">${cambios.map(c => `<li><strong>${etiqueta[c.tipo]}</strong> ${detalle(c)} <span class="cambios-ml-cod">${quien(c)}</span> ${escapeHtml(c.titulo)}</li>`).join('')}</ul>
         <div class="cambios-ml-acciones">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="imprimirCambiosML()">Imprimir hoja</button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="copiarCambiosML()">Copiar cambios</button>
             ${abrirML}
         </div>`;
@@ -5897,6 +5903,49 @@ function salirDelPasoMercadoLibre() {
     const cancelar = document.getElementById('btnCancelarEdicionEnvio');
     if (cancelar) cancelar.textContent = 'Cancelar';
 }
+
+// Lo que Mercado Libre tiene de cada envío (último PDF cargado), guardado en este navegador mientras EnvioBot lleve cambios que todavía
+// no se hicieron allá. Sirve para que la hoja de cambios siga diciendo qué hacer aunque cierres y vuelvas a abrir el envío.
+function claveBaseML(id) { return 'enviobot_base_ml_' + id; }
+function leerBaseML(id) {
+    try { const c = JSON.parse(window.localStorage.getItem(claveBaseML(id)) || 'null'); return c && Array.isArray(c.items) ? c.items : null; } catch (e) { return null; }
+}
+function guardarBaseML(id, items) {
+    try { if (!window.localStorage.getItem(claveBaseML(id))) window.localStorage.setItem(claveBaseML(id), JSON.stringify({ ts: Date.now(), items: items })); } catch (e) { /* sin almacenamiento: se compara con lo guardado */ }
+}
+function borrarBaseML(id) { try { window.localStorage.removeItem(claveBaseML(id)); } catch (e) { /* nada */ } }
+
+// Hoja para imprimir con lo que hay que hacer en Mercado Libre, producto por producto, en columnas y con la acción en negrita.
+function imprimirCambiosML() {
+    const cambios = calcularCambiosML(itemsOriginalesEdicion, itemsEnEdicion);
+    if (cambios.length === 0) { showToast('No hay cambios para hacer en Mercado Libre.', 'info'); return; }
+    const m = /^ML-(\d+)/i.exec(codigoEnvioEnEdicion);
+    const num = m ? '#' + m[1] : escapeHtml(codigoEnvioEnEdicion);
+    const orden = { quitar: 0, cambiar: 1, agregar: 2 };
+    const filas = cambios.slice().sort((a, b) => orden[a.tipo] - orden[b.tipo]).map(c => {
+        const que = c.tipo === 'agregar' ? 'AGREGAR' : c.tipo === 'quitar' ? 'SACAR' : 'CAMBIAR';
+        const hoy = c.tipo === 'agregar' ? '—' : c.antes + ' u.';
+        const dejar = c.tipo === 'quitar' ? 'Sacarlo del envío' : c.ahora + ' u.';
+        return `<tr><td class="q q-${c.tipo}">${que}</td><td>${escapeHtml(c.titulo)}</td><td>${escapeHtml(c.sku)}</td><td>${escapeHtml(c.codigo_ml)}</td><td class="n">${escapeHtml(hoy)}</td><td class="n d">${escapeHtml(dejar)}</td><td class="t"></td></tr>`;
+    }).join('');
+    const sum = lista => lista.reduce((a, it) => a + (parseInt(it.units_to_send, 10) || 0), 0);
+    const w = window.open('', '_blank');
+    if (!w) { showToast('El navegador bloqueó la hoja. Permití ventanas emergentes para imprimirla.', 'error'); return; }
+    w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Cambios para Mercado Libre - envío ${num}</title><style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;} h1{font-size:20px;margin:0 0 4px;} .sub{font-size:13px;color:#444;margin-bottom:14px;}
+        table{border-collapse:collapse;width:100%;font-size:13px;} th,td{border:1px solid #888;padding:7px 8px;text-align:left;vertical-align:middle;}
+        th{background:#eee;} .n{text-align:right;white-space:nowrap;} .d{font-weight:700;font-size:15px;} .q{font-weight:800;font-size:14px;white-space:nowrap;}
+        .q-quitar{color:#b00020;} .q-agregar{color:#0a6b2f;} .t{width:34px;} .tot{margin-top:12px;font-size:13px;} ol{font-size:13px;line-height:1.5;margin:14px 0 0 18px;padding:0;}
+        @media print{body{margin:10mm;}}</style></head><body>
+        <h1>Cambios para hacer en Mercado Libre: envío ${num}</h1>
+        <div class="sub">Impreso el ${escapeHtml(new Date().toLocaleDateString('es-AR'))}. EnvioBot sugiere estos cambios; Mercado Libre no se modifica solo. Tildá cada fila cuando la hagas.</div>
+        <table><thead><tr><th>Qué hacer</th><th>Producto</th><th>SKU</th><th>Código ML</th><th>Hoy en Mercado Libre</th><th>Dejar en</th><th>OK</th></tr></thead><tbody>${filas}</tbody></table>
+        <div class="tot"><b>Total del envío:</b> ${sum(itemsOriginalesEdicion)} u. en Mercado Libre hoy → <b>${sum(itemsEnEdicion)} u.</b> al terminar.</div>
+        <ol><li>Entrá al envío ${num} en Mercado Libre, a "Editá los productos de tu envío".</li><li>Hacé los cambios de la tabla y guardá en Mercado Libre antes del límite que ahí figura.</li><li>Bajá el PDF nuevo (mismo número de envío) y arrastralo a EnvioBot: lo compara y queda igual a Mercado Libre.</li></ol>
+        <script>window.onload=function(){window.print();};</scr` + `ipt></body></html>`);
+    w.document.close();
+}
+window.imprimirCambiosML = imprimirCambiosML;
 
 function copiarCambiosML() {
     const cambios = calcularCambiosML(itemsOriginalesEdicion, itemsEnEdicion);
@@ -6078,8 +6127,8 @@ async function guardarEdicionEnvio() {
         if (data.ok) {
             showToast("Envío actualizado correctamente.", "success");
             const faltaEnML = calcularCambiosML(itemsOriginalesEdicion, itemsEnEdicion).length > 0;
-            if (faltaEnML) entrarEnPasoMercadoLibre();   // queda abierta con los pasos de Mercado Libre
-            else cerrarModalEditarEnvio(true);
+            if (faltaEnML) { guardarBaseML(shipmentEnEdicionId, itemsOriginalesEdicion); entrarEnPasoMercadoLibre(); }   // queda abierta con los pasos de Mercado Libre
+            else { borrarBaseML(shipmentEnEdicionId); cerrarModalEditarEnvio(true); }
             // Actualizar tabla principal de stock para reflejar nuevo stock en preparación / tránsito
             if (typeof cargarDatos === 'function') cargarDatos();
         } else {
