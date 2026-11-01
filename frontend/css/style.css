@@ -1741,11 +1741,13 @@ table.stock-table tr:hover td {
 .pc-fill-warn { background: var(--warn); }
 .pc-fill-danger { background: var(--danger); }
 .pc-fill-info { background: var(--info); }
-/* Sacar unidades de una colecta va en azul: el amarillo/naranja queda solo para sumar o armar. */
-.pc-fill-sacar { background: var(--info); }
-.pc-btn-sacar { margin-left: 8px; padding: 3px 10px; border-radius: 6px; border: 1.5px solid var(--info); background: transparent; color: var(--info); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
-.pc-btn-sacar:hover { background: var(--info); color: var(--bg); }
-.btn-sacar { background: var(--info); border-color: var(--info); color: var(--bg); }
+/* Sacar unidades de una colecta con exceso es una alerta (plata inmovilizada): va en rojo, distinto del amarillo de sumar o armar. */
+.pc-fill-sacar { background: var(--danger); }
+.pc-sacar-txt { color: var(--danger); font-weight: 700; }
+.pc-sacar-seccion { border-left: 4px solid var(--danger); padding-left: 10px; }
+.pc-btn-sacar { margin-left: 8px; padding: 3px 10px; border-radius: 6px; border: 1.5px solid var(--danger); background: transparent; color: var(--danger); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.pc-btn-sacar:hover { background: var(--danger); color: var(--bg); }
+.btn-sacar { background: var(--danger); border-color: var(--danger); color: var(--bg); }
 .volver-fila { margin-bottom: 10px; }
 .pc-fila-nota { font-size: 12px; color: var(--text2); }
 .pc-info { color: var(--info); font-weight: 600; }
@@ -2141,7 +2143,7 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .avisos-emergentes { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px 0; }
 .avisos-emergentes:empty { display: none; }
 .aviso-emergente { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 8px; padding: 9px 12px; }
-.aviso-emergente.ae-exceso { border-left-color: var(--info); }
+.aviso-emergente.ae-exceso { border-left-color: var(--danger); }
 .aviso-emergente.ae-automatica { border-left-color: var(--accent); }
 .aviso-emergente .ae-texto { flex: 1; min-width: 240px; }
 .aviso-emergente .ae-titulo { font-weight: 700; font-size: 13.5px; }

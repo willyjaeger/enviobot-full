@@ -780,7 +780,7 @@ function filaConBarra(it, opciones) {
 
 // Secciones del panel que se pueden plegar: la información no se quita, solo se esconde.
 // Cada una recuerda cómo la dejaste (el panel se redibuja cada minuto y no debe reabrirse solo).
-const SECCIONES_CERRADAS_POR_DEFECTO = ['Artículos con stock suficiente'];
+const SECCIONES_CERRADAS_POR_DEFECTO = ['Artículos con stock suficiente', 'Productos de la colecta automática'];
 function seccionesGuardadas() {
     try { return JSON.parse(localStorage.getItem('envioBotFullSecciones') || '{}') || {}; } catch (e) { return {}; }
 }
@@ -793,13 +793,13 @@ function recordarSeccion(el) {
         localStorage.setItem('envioBotFullSecciones', JSON.stringify(g));
     } catch (e) { /* sin almacenamiento: no pasa nada */ }
 }
-function seccionPanel(titulo, contenidoHtml, cantidad) {
+function seccionPanel(titulo, contenidoHtml, cantidad, clase) {
     const g = seccionesGuardadas();
     // Las cerradas por defecto no se recuerdan entre visitas: siempre arrancan cerradas (el panel se redibuja, pero en la sesión respeta lo que abras).
     const porDefecto = SECCIONES_CERRADAS_POR_DEFECTO.indexOf(titulo) !== -1;
     const abierta = porDefecto ? !!seccionesAbiertasSesion[titulo] : (titulo in g ? g[titulo] : true);
     const cuenta = cantidad ? `<span class="tab-panel-cont">${Number(cantidad)}</span>` : '';
-    return `<details class="plegable pc-plegable" data-sec="${escapeHtml(titulo)}" ${abierta ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary class="pc-block-title">${titulo}${cuenta}</summary><div class="pc-lista">${contenidoHtml}</div></details>`;
+    return `<details class="plegable pc-plegable${clase ? ' ' + clase : ''}" data-sec="${escapeHtml(titulo)}" ${abierta ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary class="pc-block-title">${titulo}${cuenta}</summary><div class="pc-lista">${contenidoHtml}</div></details>`;
 }
 
 // Detalle al pasar el mouse por la barra de estado: qué productos son y cuántas unidades mandar.
@@ -2596,7 +2596,7 @@ function tarjetaColectaAutomatica() {
             <div class="pc-banner-sub">Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button></div>
-        <details class="pc-detalle" open><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
+        <details class="pc-detalle" data-sec="Productos de la colecta automática" ${seccionesAbiertasSesion['Productos de la colecta automática'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
             <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;
 }
@@ -2625,26 +2625,24 @@ function resumenEquilibrio(items) {
              plazo: plazos.length ? plazos[Math.floor(plazos.length / 2)] : 0 };
 }
 
+// Lo que se le dice al usuario cuando un objetivo no alcanza (al cambiarlo y en los avisos).
+function textoObjetivoCorto(b) {
+    return 'Con ' + b.objetivo + (b.objetivo === 1 ? ' día' : ' días') + ' de objetivo no da: una colecta tarda unos ' + b.plazo + ' días en llegar desde que la armás y entran cada ' + b.equilibrio +
+        ' días, así que te quedás sin stock unos ' + b.diasSinStock + ' de cada ' + b.equilibrio + ' días (' + b.pct + ' % de las ventas). Para no quebrar necesitás ' + b.equilibrio + ' días o más.';
+}
+
+// Solo aparece si hay productos que no dan; si todo está en equilibrio no ocupa lugar.
 function tarjetaEquilibrio() {
     let r;
     try { r = resumenEquilibrio(itemsData); } catch (e) { return ''; }
-    if (!r.n) return '';
-    const eq = r.equilibrio;
-    const filas = r.bajos.map(b => `<tr><td>${nombreItemPanel(b.it)}</td><td class="pc-num">${escapeHtml(b.objetivo)} d</td><td>Sin stock unos ${escapeHtml(b.diasSinStock)} de cada ${eq} días (${escapeHtml(b.pct)} % de las ventas)</td></tr>`).join('');
-    const aviso = r.bajos.length
-        ? `<div class="pc-banner-sub"><b>${pluralizar(r.bajos.length, 'producto tiene', 'productos tienen')} un objetivo por debajo del equilibrio:</b> van a quebrar aunque armes todas las colectas a tiempo. Subí su objetivo a ${eq} días o más.</div>`
-        : '<div class="pc-banner-sub">Todos tus objetivos están en equilibrio o por encima.</div>';
-    const cadencias = [eq, 15, 30].map(c => `<tr><td>Colecta cada ${c} días</td><td class="pc-num"><b>${c} días</b> de objetivo como mínimo</td></tr>`).join('');
-    return `<div class="pc-banner${r.bajos.length ? ' pc-banner-aviso' : ''}" id="equilibrioTarjeta">
+    if (!r.n || !r.bajos.length) return '';
+    const filas = r.bajos.map(b => `<tr><td>${nombreItemPanel(b.it)}</td><td class="pc-num">${escapeHtml(b.objetivo)} d</td><td>Sin stock unos ${escapeHtml(b.diasSinStock)} de cada ${b.equilibrio} días (${escapeHtml(b.pct)} % de las ventas)</td></tr>`).join('');
+    return `<div class="pc-banner pc-banner-aviso" id="equilibrioTarjeta">
         <div class="pc-banner-text">
-            <div class="pc-banner-titulo">Días de stock de equilibrio: ${eq}</div>
-            <div class="pc-banner-sub">Con colectas semanales, cada producto necesita al menos ${eq} días de stock objetivo para no quebrar entre una colecta y la siguiente. ${r.minObjetivo === r.maxObjetivo ? 'Tu objetivo es de ' + escapeHtml(r.minObjetivo) + ' días' : 'Tus objetivos van de ' + escapeHtml(r.minObjetivo) + ' a ' + escapeHtml(r.maxObjetivo) + ' días'}: podés armar colecta como máximo cada ${escapeHtml(r.minObjetivo)} días. Cada colecta tiene que estar armada unos ${escapeHtml(r.plazo)} días antes de que el producto la necesite (preparar + flete + acreditación de Mercado Libre).</div>
-            ${aviso}
+            <div class="pc-banner-titulo">${pluralizar(r.bajos.length, 'producto tiene', 'productos tienen')} un objetivo que no da (equilibrio: ${r.equilibrio} días)</div>
+            <div class="pc-banner-sub">Una colecta tarda unos ${escapeHtml(r.plazo)} días en llegar y entran cada ${r.equilibrio}: con menos de ${r.equilibrio} días de objetivo van a quebrar aunque armes todo a tiempo. Subí el objetivo a ${r.equilibrio} días o más.</div>
         </div>
-        <details class="pc-detalle"><summary>${r.bajos.length ? 'Ver los productos que van a quebrar y la guía por frecuencia' : 'Ver la guía por frecuencia de colecta'}</summary>
-            ${filas ? `<table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Objetivo</th><th>Qué pasa</th></tr></thead><tbody>${filas}</tbody></table>` : ''}
-            <table class="pc-table"><thead><tr><th>Si querés</th><th class="pc-num">Necesitás</th></tr></thead><tbody>${cadencias}</tbody></table>
-        </details>
+        <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Objetivo</th><th>Qué pasa</th></tr></thead><tbody>${filas}</tbody></table>
     </div>`;
 }
 
@@ -2670,7 +2668,7 @@ function avisosDelPanel() {
             lista.push({
                 id: 'equilibrio:' + q.bajos.map(b => b.it.id + '-' + b.objetivo).join(','), tipo: 'equilibrio',
                 titulo: 'Objetivo de stock por debajo del equilibrio (' + q.equilibrio + ' días)',
-                detalle: pluralizar(q.bajos.length, 'producto tiene', 'productos tienen') + ' menos de ' + q.equilibrio + ' días de objetivo (por ejemplo ' + (q.bajos[0].it.title || q.bajos[0].it.sku) + ': ' + q.bajos[0].objetivo + ' d). Con colectas semanales van a quedarse sin stock unos ' + q.bajos[0].diasSinStock + ' de cada ' + q.equilibrio + ' días. Subí el objetivo a ' + q.equilibrio + ' o más.',
+                detalle: (q.bajos.length > 1 ? pluralizar(q.bajos.length, 'producto tiene', 'productos tienen') + ' un objetivo que no da. Por ejemplo ' + (q.bajos[0].it.title || q.bajos[0].it.sku) + ': ' : (q.bajos[0].it.title || q.bajos[0].it.sku) + ': ') + textoObjetivoCorto(q.bajos[0]),
                 accion: null
             });
         }
@@ -2778,11 +2776,11 @@ function renderizarPanelColecta() {
         deMasEnColecta.map(it => filaConBarra(it, {
             icono: iconoSvg('alerta', 15).replace('margin-right: 4px;', 'margin-right: 6px;'),
             derecha: `Sacá ${escapeHtml(it.exceso_colecta.sacar)} u. de la colecta${colectaConItem(it) ? ` <button type="button" class="pc-btn-sacar" onclick="event.stopPropagation(); sacarDeColecta(${Number(it.id)})">Sacar</button>` : ''}`,
-            claseDerecha: 'pc-info',
+            claseDerecha: 'pc-sacar-txt',
             dias: it.cobertura_post_colecta,
             claseBarra: 'pc-fill-sacar',
             nota: `Con ${escapeHtml(it.exceso_colecta.en_colecta)} u. cubrís ${Math.round(it.cobertura_post_colecta || 0)} días y tu objetivo es ${escapeHtml(it.target_stock_days)}. Con ${escapeHtml(it.exceso_colecta.recomendado)} u. alcanza. ${colectaConItem(it) ? 'Todavía se puede cambiar.' : 'Esa colecta ya no se puede cambiar desde acá.'}`
-        })).join(''), deMasEnColecta.length);
+        })).join(''), deMasEnColecta.length, 'pc-sacar-seccion');
 
     // Ya en la colecta, pero conviene ajustar
     const cortos = g.enColecta.filter(it => it.aviso_ajuste_units);
@@ -3609,6 +3607,8 @@ function cambiarStockDeseado(id, nuevoValor) {
 
     it.target_stock_days = val;
     recalcularTodo();
+    const eq = equilibrioDeStock(it);
+    if (eq.corto) showToast(textoObjetivoCorto(eq), 'error', 12000);
 
     if (selectedItem && selectedItem.id === id) {
         seleccionarProducto(it);
@@ -4822,7 +4822,7 @@ async function cargarAvisos(soloContador = false) {
 
         const cont = document.getElementById('avisosContainer');
         if (!cont) return;
-const paraCorregir = delPanel.length ? `<div style="font-size: 13px; font-weight: 700; margin: 0 0 8px 0;">Para corregir ahora</div>` + delPanel.map(a => `<div class="aviso-cartel" style="border: 1px solid var(--border); border-left: 4px solid ${a.tipo === 'exceso' ? 'var(--info)' : 'var(--accent)'}; border-radius: 8px; margin-bottom: 10px; padding: 10px 12px; background: var(--surf2);">
+const paraCorregir = delPanel.length ? `<div style="font-size: 13px; font-weight: 700; margin: 0 0 8px 0;">Para corregir ahora</div>` + delPanel.map(a => `<div class="aviso-cartel" style="border: 1px solid var(--border); border-left: 4px solid ${a.tipo === 'exceso' ? 'var(--danger)' : 'var(--accent)'}; border-radius: 8px; margin-bottom: 10px; padding: 10px 12px; background: var(--surf2);">
             <strong>${escapeHtml(a.titulo)}</strong> <span style="font-size: 11px; color: var(--text2);">leído</span>
             <div style="font-size: 13px; margin-top: 4px;">${escapeHtml(a.detalle)}</div>
             ${a.accion ? `<div style="margin-top: 8px;"><button type="button" class="btn btn-sm${a.tipo === 'exceso' ? ' btn-sacar' : ''}" onclick="cerrarAvisos(); ${a.tipo === 'exceso' ? 'sacarDeColecta(' + Number(a.itemId) + ')' : 'abrirModalColecta()'}">${escapeHtml(a.accion)}</button></div>` : ''}
