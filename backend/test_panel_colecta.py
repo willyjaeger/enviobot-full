@@ -346,7 +346,7 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         self.assertIn('Colecta automática (borrador): 1 producto, 220 unidades', html)
         self.assertIn('Armar esta colecta', html)
         self.assertIn('Cubre 30 días de objetivo', html)
-        tarjeta = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('Qué hacer hoy')]
+        tarjeta = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('id="colectaSiguienteTarjeta"')]
         self.assertNotIn('Almendras', tarjeta)  # lo que tiene tiempo no entra en la colecta de hoy
         self.assertIn('Todavía no existe en Mercado Libre', html)
         self.assertNotIn('Colecta automática (borrador)', self._correr([bien])['html'])  # sin nada que mandar no hay borrador
@@ -360,6 +360,21 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         self.assertNotIn('Colecta cada 15 días', html)    # sin guía por frecuencia: no explicaba nada
         ok = self._correr([bien])['html']
         self.assertNotIn('equilibrioTarjeta', ok)          # en equilibrio no ocupa lugar
+
+    def test_la_colecta_siguiente_dice_cuando_retirar_y_que_lleva(self):
+        urgente = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2, target_stock_days=10)
+        bien = _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)
+        html = self._correr([urgente, tiempo, bien])['html']
+        self.assertIn('id="colectaSiguienteTarjeta"', html)
+        sig = html[html.index('id="colectaSiguienteTarjeta"'):]
+        self.assertIn('Colecta siguiente (borrador): 1 producto', sig)
+        self.assertIn('Retiro recomendado:', sig)
+        self.assertIn('La fecha la manda Almendras', sig)
+        hoy = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('id="colectaSiguienteTarjeta"')]
+        self.assertNotIn('Almendras', hoy)        # lo que tiene tiempo no va en la de hoy
+        self.assertIn('Dátil', hoy)
+        self.assertNotIn('Bien', sig)             # lo que alcanza de sobra no entra
 
     def test_la_tarjeta_del_indice_dice_que_hacer_hoy_y_lo_que_tiene_tiempo(self):
         urgente = _item(id=5, title='Dátil', sku='12072', vpd=10, current_stock=30, lead_time_days=3, transit_delay_days=2, buffer_days=2)

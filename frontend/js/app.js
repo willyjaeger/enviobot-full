@@ -780,7 +780,7 @@ function filaConBarra(it, opciones) {
 
 // Secciones del panel que se pueden plegar: la información no se quita, solo se esconde.
 // Cada una recuerda cómo la dejaste (el panel se redibuja cada minuto y no debe reabrirse solo).
-const SECCIONES_CERRADAS_POR_DEFECTO = ['Artículos con stock suficiente', 'Productos de la colecta automática'];
+const SECCIONES_CERRADAS_POR_DEFECTO = ['Artículos con stock suficiente', 'Productos de la colecta automática', 'Productos de la colecta siguiente'];
 function seccionesGuardadas() {
     try { return JSON.parse(localStorage.getItem('envioBotFullSecciones') || '{}') || {}; } catch (e) { return {}; }
 }
@@ -2613,7 +2613,7 @@ function primerDiaNuevaColecta() {
 }
 
 // La colecta automática a la vista: qué mandar, cuánto y por qué. "Armar" abre el armado con ESTA misma lista.
-function tarjetaColectaAutomatica() {
+function tarjetaColectaHoy() {
     let v;
     try { v = colectaAutomaticaVirtual(); } catch (e) { return ''; }
     if (!v.productos) return '';
@@ -2667,6 +2667,74 @@ function tarjetaColectaAutomatica() {
         <details class="pc-detalle" data-sec="Productos de la colecta automática" ${seccionesAbiertasSesion['Productos de la colecta automática'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
             <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;
+}
+
+// La colecta siguiente: después de la de hoy (la abierta o la que armes ahora), cuándo conviene retirar la próxima y qué lleva para que NINGÚN producto
+// se quede sin stock hasta la colecta que sigue (a los días de objetivo). Se retira lo más tarde posible: la manda el primer producto que quiebra
+// y que la colecta de hoy no resuelve, pero nunca antes de DIAS_MIN_ENTRE_COLECTAS después de la de hoy. Cada producto lleva las unidades que lo
+// dejan con sus días de objetivo cuando esta colecta entra a Full, contando lo que ya viaja en las colectas cargadas.
+function colectaSiguienteVirtual() {
+    const hoy = new Date(), dem = demoraAcreditacionDias(), colAb = colectaAbiertaVigente();
+    const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    const colectas = colectasEfectivas();
+    const r = calcularIndiceQuiebres(itemsData, colectas, hoy, dem, DIAS_INDICE_QUIEBRES, colAb);
+    const deHoy = {};
+    r.evitables.concat(r.inevitables).forEach(f => { deHoy[f.it.id] = true; });
+    const retiroHoy = colAb && colAb.fecha_retiro ? Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(colAb.fecha_retiro)))
+                                                  : Math.max(0, primerDiaNuevaColecta() - ((Number((itemsData[0] || {}).transit_delay_days) || 0) + dem));
+    const piso = retiroHoy + DIAS_MIN_ENTRE_COLECTAS;
+    const cand = [];
+    (itemsData || []).forEach(it => {
+        if (it.pausado || deHoy[it.id]) return;
+        const proy = proyeccionProducto(it, colectas, hoy, dem);
+        if (!proy || !(proy.vpd > 0)) return;
+        let q = null;
+        for (let t = 0; t < proy.puntos.length; t++) { if (proy.puntos[t].stock < proy.vpd - 0.0001) { q = t; break; } }
+        cand.push({ it: it, proy: proy, quiebre: q, viaje: (Number(it.transit_delay_days) || 0) + dem });
+    });
+    // Los que ya se quedan sin stock antes de que entre la colecta de hoy no los salva la siguiente: no mandan la fecha.
+    const conQuiebre = cand.filter(c => c.quiebre !== null && c.quiebre >= primerDiaPosibleDeIngreso(c.it, hoy, dem, colAb));
+    if (!conQuiebre.length) return null;
+    const primero = conQuiebre.reduce((a, b) => ((b.quiebre - b.viaje) < (a.quiebre - a.viaje) ? b : a));
+    const retiro = Math.max(piso, primero.quiebre - primero.viaje);
+    const filas = [];
+    cand.forEach(c => {
+        const llega = retiro + c.viaje;
+        const stock = c.proy.puntos[Math.min(llega, c.proy.puntos.length - 1)].stock;
+        const obj = Number(c.it.target_stock_days) || 0;
+        const unidades = Math.max(0, Math.round(obj * c.proy.vpd - stock));
+        if (unidades > 0) filas.push({ it: c.it, unidades: unidades, quiebre: c.quiebre });
+    });
+    if (!filas.length) return null;
+    filas.sort((a, b) => (a.quiebre === null ? 999 : a.quiebre) - (b.quiebre === null ? 999 : b.quiebre));
+    const objs = filas.map(f => Number(f.it.target_stock_days) || 0).sort((a, b) => a - b);
+    return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), hoy: hoy, retiro: retiro,
+             entra: retiro + primero.viaje, primero: primero, tarde: Math.max(0, retiro + primero.viaje - primero.quiebre),
+             objetivo: objs[Math.floor(objs.length / 2)] || 15 };
+}
+
+function tarjetaColectaSiguiente() {
+    let v;
+    try { v = colectaSiguienteVirtual(); } catch (e) { return ''; }
+    if (!v) return '';
+    const nf = n => Math.round(n).toLocaleString('es-AR');
+    const f = d => fechaDeProyeccion(d, v.hoy);
+    const nom = v.primero.it.title || v.primero.it.sku;
+    const filas = v.filas.map(x => `<tr><td>${nombreItemPanel(x.it)}</td><td class="pc-num"><b>${nf(x.unidades)} u.</b></td><td>${x.quiebre !== null ? 'Sin stock el ' + escapeHtml(f(x.quiebre)) + ' si no se manda. ' : ''}Cubre ${escapeHtml(x.it.target_stock_days)} días de objetivo</td></tr>`).join('');
+    const tarde = v.tarde > 0 ? ` Ojo: ${nom} igual queda ${v.tarde} ${v.tarde === 1 ? 'día' : 'días'} sin stock antes de que entre.` : '';
+    return `<div class="pc-banner" id="colectaSiguienteTarjeta"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
+        <div class="pc-banner-text">
+            <div class="pc-banner-titulo">Colecta siguiente (borrador): ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
+            <div class="pc-banner-sub"><b>Retiro recomendado: ${escapeHtml(f(v.retiro))}, entra a Full el ${escapeHtml(f(v.entra))}. La fecha la manda ${escapeHtml(nom)}, el primero que se queda sin stock (${escapeHtml(f(v.primero.quiebre))}).${escapeHtml(tarde)}</b></div>
+            <div class="pc-banner-sub">Con esta colecta todos los productos llegan hasta la que sigue, que apuntaría a los ${escapeHtml(v.objetivo)} días: alrededor del ${escapeHtml(f(v.retiro + v.objetivo))}. Si la anterior cambia (otras unidades, otra fecha) este cálculo se actualiza solo.</div>
+        </div>
+        <details class="pc-detalle" data-sec="Productos de la colecta siguiente" ${seccionesAbiertasSesion['Productos de la colecta siguiente'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
+            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
+    </div>`;
+}
+
+function tarjetaColectaAutomatica() {
+    return tarjetaColectaHoy() + tarjetaColectaSiguiente();
 }
 
 // ── Días de stock de equilibrio ─────────────────────────────────────────────────────────────
