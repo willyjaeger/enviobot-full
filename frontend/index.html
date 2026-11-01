@@ -258,6 +258,9 @@
                 </div>
             </div>
 
+            <!-- Avisos emergentes: ocupan el lugar donde estaba el cartel de eventos, sin tapar la pantalla -->
+            <div id="avisosEmergentes" class="avisos-emergentes" aria-live="polite"></div>
+
             <!-- Barra de Métricas Superiores (Dashboard Estilo EnvioBot Pedidos) -->
             <div class="status-bar" hidden>
                 <div class="stat stat-clickable" id="statCardTotal" onclick="irAEstado('all')" title="Ver todas las publicaciones en la tabla">
@@ -796,7 +799,6 @@
         </div>
     </div>
 
-    <div id="avisosEmergentes" class="avisos-emergentes" aria-live="polite"></div>
     <div class="modal-overlay" id="modalAvisos" style="display: none; z-index: 1450;">
         <div class="modal-card modal-card-large" style="max-width: 720px; width: 96%; max-height: 90vh; display: flex; flex-direction: column;">
             <div class="modal-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px;">

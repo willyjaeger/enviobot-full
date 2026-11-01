@@ -2524,8 +2524,29 @@ async function sacarDeColecta(itemId) {
 function colectaAutomaticaVirtual() {
     const hoy = new Date();
     const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), hoy, demoraAcreditacionDias(), DIAS_INDICE_QUIEBRES, colectaAbiertaVigente());
-    const filas = r.evitables.concat(r.inevitables, r.hay_tiempo).map(f => ({ it: f.it, unidades: Math.max(1, Math.ceil(f.evitable || 0)), conTiempo: f.fechaLimite !== undefined }));
-    return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.filter(f => !f.conTiempo).length };
+    const filas = r.evitables.concat(r.inevitables, r.hay_tiempo).map(f => ({ it: f.it, unidades: Math.max(1, Math.ceil(f.evitable || 0), Math.round(f.it.sugerido_al_ingreso || 0)), conTiempo: f.fechaLimite !== undefined, limite: f.fechaLimite }));
+    return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.filter(f => !f.conTiempo).length, hoy: hoy };
+}
+
+// La colecta automática a la vista: qué mandar, cuánto y por qué. "Armar" abre el armado con ESTA misma lista.
+function tarjetaColectaAutomatica() {
+    let v;
+    try { v = colectaAutomaticaVirtual(); } catch (e) { return ''; }
+    if (!v.productos) return '';
+    const nf = n => Math.round(n).toLocaleString('es-AR');
+    const filas = v.filas.slice().sort((a, b) => (a.conTiempo - b.conTiempo) || ((a.limite || 0) - (b.limite || 0))).map(f => {
+        const porque = f.conTiempo ? 'Hay tiempo: armala antes del ' + fechaDeProyeccion(Math.max(0, f.limite), v.hoy) : 'Hacerlo hoy';
+        return `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>${escapeHtml(porque)}</td></tr>`;
+    }).join('');
+    return `<div class="pc-banner"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
+        <div class="pc-banner-text">
+            <div class="pc-banner-titulo">Colecta automática (borrador): ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
+            <div class="pc-banner-sub">Es lo que EnvioBot calcula que hay que mandar para no quebrar. Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button></div>
+        <details class="pc-detalle" open><summary>Ver los ${v.productos} productos</summary>
+            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Cuándo</th></tr></thead><tbody>${filas}</tbody></table></details>
+    </div>`;
 }
 
 // Avisos que se calculan con lo que se ve en pantalla. Cada uno tiene un id que cambia si cambia la situación.
@@ -2579,23 +2600,28 @@ function cerrarAvisoEmergente(boton) {
     if (tarjeta) tarjeta.remove();
 }
 
-// Muestra una vez cada aviso nuevo y lo da por leído; sigue visible en la ventana de Avisos mientras no se corrija.
+// Muestra una vez cada aviso nuevo (en el lugar que ocupaba el cartel de eventos) y lo da por leído; sigue visible en la
+// ventana de Avisos mientras no se corrija. Como mucho 3 a la vez; el resto se avisa con una línea.
 function mostrarAvisosEmergentes() {
     const cont = document.getElementById('avisosEmergentes');
     if (!cont) return;
     const vistos = avisosEmergentesVistos();
     const nuevos = avisosDelPanel().filter(a => vistos.indexOf(a.id) === -1);
     if (!nuevos.length) return;
-    cont.innerHTML += nuevos.slice(0, 4).map(a => {
+    const tarjetas = nuevos.slice(0, 3).map(a => {
         const boton = a.accion
             ? `<button type="button" class="btn btn-sm" onclick="${a.tipo === 'exceso' ? 'sacarDeColecta(' + Number(a.itemId) + ')' : 'cerrarAvisosEmergentes(); abrirModalColecta()'}">${escapeHtml(a.accion)}</button>`
             : '';
         return `<div class="aviso-emergente ae-${a.tipo}" role="alert">
-            <div class="ae-titulo">${escapeHtml(a.titulo)}</div>
-            <div class="ae-detalle">${escapeHtml(a.detalle)}</div>
+            <div class="ae-texto"><div class="ae-titulo">${escapeHtml(a.titulo)}</div><div class="ae-detalle">${escapeHtml(a.detalle)}</div></div>
             <div class="ae-acciones">${boton}<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarAvisoEmergente(this)">Entendido</button></div>
         </div>`;
-    }).join('');
+    });
+    if (nuevos.length > 3) {
+        tarjetas.push(`<div class="aviso-emergente"><div class="ae-texto"><div class="ae-detalle">Y ${nuevos.length - 3} avisos más en la ventana de Avisos.</div></div>
+            <div class="ae-acciones"><button type="button" class="btn btn-secondary btn-sm" onclick="cerrarAvisoEmergente(this); abrirAvisos()">Ver avisos</button></div></div>`);
+    }
+    cont.innerHTML += tarjetas.join('');
     marcarAvisosEmergentesVistos(nuevos.map(a => a.id));
 }
 
@@ -2679,6 +2705,7 @@ function renderizarPanelColecta() {
     const donaIndice = tarjetaIndiceQuiebres();
     cont.innerHTML = `<div class="pc-hero-par">${tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)}${donaIndice}</div>`
         + detalleIndiceQuiebres
+        + tarjetaColectaAutomatica()
         + htmlSacar
         + seccionPanel('Qué hacer hoy', htmlHacer, hacer.length)
         + htmlAjustar
@@ -3782,6 +3809,20 @@ async function abrirModalColecta(targetItemId = null, options = {}) {
             colectaBoxUnits.set(it.id, defaultUnitsBox);
         }
     });
+
+    // Sin evento comercial, lo que viene preseleccionado es la colecta automática: la misma lista y las mismas unidades
+    // que muestra el panel (antes se calculaba aparte y no coincidían).
+    if (!(options && options.multiplier)) {
+        try {
+            const auto = colectaAutomaticaVirtual();
+            colectaSelectedItems.clear();
+            colectaBoxUnits.clear();
+            auto.filas.forEach(f => {
+                colectaSelectedItems.set(f.it.id, f.unidades);
+                colectaBoxUnits.set(f.it.id, (f.it.units_per_box && f.it.units_per_box > 0) ? f.it.units_per_box : 0);
+            });
+        } catch (e) { /* si falla, queda la selección de siempre */ }
+    }
 
     // Asegurar que si vino un targetItemId específico esté seleccionado
     if (targetItemId) {

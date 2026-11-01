@@ -2130,12 +2130,14 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-meta-cero b { font-size: 16px; color: var(--text); }
 
 
-/* Avisos emergentes: aparecen una vez, quedan como leídos y siguen en la ventana de Avisos */
-.avisos-emergentes { position: fixed; top: 64px; right: 16px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; width: min(380px, calc(100vw - 32px)); pointer-events: none; }
-.aviso-emergente { pointer-events: auto; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 8px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); animation: avisoEntra 0.25s ease-out; }
+/* Avisos emergentes: en el flujo de la página (donde estaba el cartel de eventos), no flotan sobre la pantalla.
+   Aparecen una vez, quedan como leídos y siguen en la ventana de Avisos. */
+.avisos-emergentes { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px 0; }
+.avisos-emergentes:empty { display: none; }
+.aviso-emergente { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 8px; padding: 9px 12px; }
 .aviso-emergente.ae-exceso { border-left-color: var(--danger); }
 .aviso-emergente.ae-automatica { border-left-color: var(--accent); }
-.aviso-emergente .ae-titulo { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
-.aviso-emergente .ae-detalle { font-size: 13px; line-height: 1.4; color: var(--text2); }
-.aviso-emergente .ae-acciones { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-@keyframes avisoEntra { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.aviso-emergente .ae-texto { flex: 1; min-width: 240px; }
+.aviso-emergente .ae-titulo { font-weight: 700; font-size: 13.5px; }
+.aviso-emergente .ae-detalle { font-size: 12.5px; line-height: 1.4; color: var(--text2); margin-top: 2px; }
+.aviso-emergente .ae-acciones { display: flex; gap: 8px; flex-shrink: 0; }
