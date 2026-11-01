@@ -957,11 +957,20 @@ function calcularIndiceQuiebres(items, colectas, hoy, demora, horizonte, colAbie
     return salida;
 }
 
+// Unidades a mandar de un producto: las que lo dejan con sus días de stock objetivo al entrar la colecta (lo mismo que calcula el
+// servidor), no la venta perdida de las 4 semanas de la meta, que mandaba de más (ej. 455 u. de nueces para un objetivo de 15 días).
+function unidadesParaObjetivo(f) {
+    const sug = Math.round(Number(f.it.sugerido_al_ingreso) || 0);
+    if (sug > 0) return sug;
+    const tope = Math.ceil((Number(f.proy && f.proy.vpd) || 0) * (Number(f.it.target_stock_days) || 0));
+    return Math.max(1, tope > 0 ? Math.min(Math.ceil(f.evitable || 0), tope) : Math.ceil(f.evitable || 0));
+}
+
 function textoFilaQuiebre(fila, hoy, colAbierta) {
     const nf = n => Math.round(n).toLocaleString('es-AR');
     const cuando = fechaDeProyeccion(fila.primerQuiebre, hoy);
     const llegadas = fila.proy.llegadas.slice().sort((a, b) => a.dia - b.dia);
-    const unidades = Math.max(1, Math.ceil(fila.evitable));
+    const unidades = unidadesParaObjetivo(fila);
     let que;
     if (fila.tipo === 'llega_tarde') {
         const l = llegadas[0];
@@ -998,7 +1007,7 @@ function mostrarDetalleIndice(ev, clave) {
     const max = 15;
     const filas = t.lista.slice(0, max).map(f => {
         let dato = '';
-        if (clave === 'sumar' || clave === 'rojo') dato = `<b>${escapeHtml(Math.max(1, Math.ceil(f.evitable)))} u.</b> <span class="pc-tip-sub">(sin stock el ${escapeHtml(fechaDeProyeccion(f.primerQuiebre, hoy))})</span>`;
+        if (clave === 'sumar' || clave === 'rojo') dato = `<b>${escapeHtml(unidadesParaObjetivo(f))} u.</b> <span class="pc-tip-sub">(sin stock el ${escapeHtml(fechaDeProyeccion(f.primerQuiebre, hoy))})</span>`;
         else if (f.fechaLimite !== undefined) dato = `<span class="pc-tip-sub">armala antes del</span> <b>${escapeHtml(fechaDeProyeccion(Math.max(0, f.fechaLimite), hoy))}</b>`;
         else if (f.quiebraIgual) dato = '<span class="pc-tip-sub">ya está en colecta; igual queda unos días sin stock antes de que entre</span>';
         else dato = `<b>${escapeHtml(Math.round(f.it.covered_days_left || f.it.days_left || 0))} días</b>`;
@@ -2588,7 +2597,7 @@ function colectaAutomaticaVirtual() {
     const hoy = new Date();
     const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), hoy, demoraAcreditacionDias(), DIAS_INDICE_QUIEBRES, colectaAbiertaVigente());
     // Solo lo que no aguanta hasta la próxima colecta con tus días de stock objetivo; lo que todavía tiene tiempo no va.
-    const filas = r.evitables.concat(r.inevitables).map(f => ({ it: f.it, unidades: Math.max(1, Math.ceil(f.evitable || 0), Math.round(f.it.sugerido_al_ingreso || 0)), conTiempo: false, quiebre: f.primerQuiebre }));
+    const filas = r.evitables.concat(r.inevitables).map(f => ({ it: f.it, unidades: unidadesParaObjetivo(f), conTiempo: false, quiebre: f.primerQuiebre }));
     return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.length, hoy: hoy };
 }
 
