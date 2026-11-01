@@ -334,8 +334,9 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         self.assertIn('Para resolver hoy: 1', html)
         self.assertIn('Hoy tenés que armar una colecta con 1 producto', html)
         self.assertIn('van a estar unos días sin stock antes de que entre mercadería', html)
-        self.assertIn('Qué hacer:', html)
-        self.assertIn('abrirGraficoDeProducto(5)', html)
+        self.assertNotIn('Ver el detalle producto por producto', html)   # el detalle está en la dona y en la colecta automática
+        self.assertIn('Sin stock el', html)
+        self.assertIn('irADetalleIndice', html)
         self.assertIn('pc-hero-par', html)           # las dos donas en la misma tarjeta
         solo_bien = self._correr([bien])['html']
         self.assertIn('Meta cumplida', solo_bien)

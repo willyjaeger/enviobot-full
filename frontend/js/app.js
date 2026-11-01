@@ -960,7 +960,7 @@ function mostrarDetalleIndice(ev, clave) {
     const hoy = grupoIndicePanel.hoy;
     ev.currentTarget.classList.add('pc-seg-activo');
     if (ev.currentTarget.parentElement) ev.currentTarget.parentElement.classList.add('pc-segmentos-activa');
-    const max = 10;
+    const max = 15;
     const filas = t.lista.slice(0, max).map(f => {
         let dato = '';
         if (clave === 'sumar' || clave === 'rojo') dato = `<b>${escapeHtml(Math.max(1, Math.ceil(f.evitable)))} u.</b> <span class="pc-tip-sub">(sin stock el ${escapeHtml(fechaDeProyeccion(f.primerQuiebre, hoy))})</span>`;
@@ -971,7 +971,7 @@ function mostrarDetalleIndice(ev, clave) {
     const resto = t.lista.length > max ? `<div class="pc-tip-mas">Y ${t.lista.length - max} más</div>` : '';
     let tip = document.getElementById('pc-tip');
     if (!tip) { tip = document.createElement('div'); tip.id = 'pc-tip'; document.body.appendChild(tip); }
-    tip.innerHTML = `<div class="pc-tip-titulo">${escapeHtml(t.n + ' ' + t.texto)}</div>${filas}${resto}<div class="pc-tip-mas">Tocá para ver el detalle</div>`;
+    tip.innerHTML = `<div class="pc-tip-titulo">${escapeHtml(t.n + ' ' + t.texto)}</div>${filas}${resto}<div class="pc-tip-mas">Tocá para verlos</div>`;
     tip.style.display = 'block';
     moverDetalleSegmento(ev);
 }
@@ -980,10 +980,9 @@ function mostrarDetalleIndice(ev, clave) {
 function irADetalleIndice(clave) {
     ocultarDetalleSegmento();
     if (clave === 'ok') { irAEstado('ok'); return; }
-    const det = document.getElementById('detalleIndice');
-    if (!det) return;
-    det.open = true;
-    det.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (clave === 'tiempo') { mostrarPestana('productos'); return; }
+    const t = document.getElementById('colectaAutomaticaTarjeta');
+    if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 let ultimoIndiceQuiebres = null;
 
@@ -1019,18 +1018,7 @@ function tarjetaIndiceQuiebres() {
         return a;
     }).join('');
     const dona = `<svg class="pc-dona" width="128" height="128" viewBox="0 0 120 120" role="img" aria-label="${escapeHtml(trozos.map(t => t.n + ' ' + t.texto).join(', '))}">${arcos}<text x="60" y="60" text-anchor="middle" class="pc-dona-num">${accion}</text><text x="60" y="78" text-anchor="middle" class="pc-dona-txt">para hoy</text></svg>`;
-    const grupo = (lista, titulo) => lista.length ? `<div class="pc-imp-cabecera">${escapeHtml(titulo)} (${lista.length})</div>` + lista.map(function (f) {
-        const t = textoFilaQuiebre(f, hoy, colAbierta);
-        return `<div class="pc-fila pc-fila-clic" onclick="abrirGraficoDeProducto(${Number(f.it.id)})" title="Tocá para ver el gráfico">
-            <div class="pc-fila-top"><span class="pc-fila-nombre">${escapeHtml(f.it.title)}${f.it.variation_name ? ` (${escapeHtml(f.it.variation_name)})` : ''}</span></div>
-            <div class="pc-fila-ident">${identificacionItem(f.it)}</div>
-            <div class="pc-fila-nota">${escapeHtml(t.que)}</div>
-            <div class="pc-fila-nota"><b>Qué hacer:</b> ${escapeHtml(t.hacer)}</div></div>`;
-    }).join('') : '';
-    const paraHoy = r.evitables.concat(r.inevitables).sort((a, b) => b.perdida - a.perdida);
-    const tituloHoy = colAbierta ? `Para sumar a la colecta ${numeroColecta(colAbierta)} (hasta el ${textoLimiteEdicion(colAbierta.limite_edicion)})` : 'Para armar una colecta';
-    detalleIndiceQuiebres = (accion || nTiempo) ? `<details class="pc-detalle pc-indice-detalle" id="detalleIndice"><summary>Ver el detalle producto por producto</summary>
-        ${grupo(paraHoy, tituloHoy)}${grupo(r.hay_tiempo, 'Con tiempo: se quedarían sin stock más adelante, todavía no hace falta')}</details>` : '';
+    detalleIndiceQuiebres = '';   // el detalle por producto está en el detalle de la dona (mouse) y en la colecta automática
     let titulo, sub;
     const sinStockEn = d => fechaDeProyeccion(d, hoy);
     if (accion > 0) {
@@ -2565,7 +2553,7 @@ function colectaAutomaticaVirtual() {
     const hoy = new Date();
     const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), hoy, demoraAcreditacionDias(), DIAS_INDICE_QUIEBRES, colectaAbiertaVigente());
     // Solo lo que no aguanta hasta la próxima colecta con tus días de stock objetivo; lo que todavía tiene tiempo no va.
-    const filas = r.evitables.concat(r.inevitables).map(f => ({ it: f.it, unidades: Math.max(1, Math.ceil(f.evitable || 0), Math.round(f.it.sugerido_al_ingreso || 0)), conTiempo: false }));
+    const filas = r.evitables.concat(r.inevitables).map(f => ({ it: f.it, unidades: Math.max(1, Math.ceil(f.evitable || 0), Math.round(f.it.sugerido_al_ingreso || 0)), conTiempo: false, quiebre: f.primerQuiebre }));
     return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.length, hoy: hoy };
 }
 
@@ -2575,7 +2563,7 @@ function tarjetaColectaAutomatica() {
     try { v = colectaAutomaticaVirtual(); } catch (e) { return ''; }
     if (!v.productos) return '';
     const nf = n => Math.round(n).toLocaleString('es-AR');
-    const filas = v.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>Cubre ${escapeHtml(f.it.target_stock_days)} días de objetivo</td></tr>`).join('');
+    const filas = v.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>${f.quiebre !== null && f.quiebre !== undefined ? 'Sin stock el ' + escapeHtml(fechaDeProyeccion(f.quiebre, v.hoy)) + '. ' : ''}Cubre ${escapeHtml(f.it.target_stock_days)} días de objetivo</td></tr>`).join('');
     return `<div class="pc-banner" id="colectaAutomaticaTarjeta"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">Colecta automática (borrador): ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
@@ -2583,7 +2571,7 @@ function tarjetaColectaAutomatica() {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button></div>
         <details class="pc-detalle" open><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
-            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué esas unidades</th></tr></thead><tbody>${filas}</tbody></table></details>
+            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;
 }
 
