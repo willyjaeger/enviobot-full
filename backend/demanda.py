@@ -117,6 +117,11 @@ def estimar(serie, hoy, sin_stock=(), dias=60, k=K_SERVICIO):
     else:
         tendencia = "sin_datos"
 
+    # Si la venta viene bajando no se suma margen: planificar por encima del promedio cuando se vende cada vez menos
+    # manda de más (stock inmovilizado). Con tendencia a la baja se planifica con el promedio.
+    if tendencia == "baja":
+        protegido = base
+
     n = len(validos)
     confianza = "alta" if n >= 28 else "media" if n >= 14 else "baja"
     return {

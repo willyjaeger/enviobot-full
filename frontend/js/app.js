@@ -1967,7 +1967,8 @@ function htmlDatosProducto(it, proy, colectas, hoy, demora) {
     }).join('') || '<li>No tiene ninguna colecta en camino.</li>';
     const riesgo = textoRiesgoStock(proy, hoy);
     return '<div class="pc-datos">' +
-        '<div class="pc-dato"><span>Vendés por día</span><b>' + escapeHtml(dec(proy.vpd)) + ' u.</b></div>' +
+        '<div class="pc-dato"><span>Vendés por día</span><b>' + escapeHtml(dec(Number(it.vpd_base) > 0 ? Number(it.vpd_base) : proy.vpd)) + ' u.</b>' +
+        (Number(it.vpd_base) > 0 && Math.abs(Number(it.vpd_base) - proy.vpd) >= 0.1 ? '<small>promedio de 28 días; el gráfico usa ' + escapeHtml(dec(proy.vpd)) + ' u. con margen por lo que varía la venta</small>' : '') + '</div>' +
         '<div class="pc-dato"><span>Hoy en Full</span><b>' + escapeHtml(dec(hoyStock)) + ' u.</b><small>alcanzan para ' + escapeHtml(Math.round(hoyStock / proy.vpd)) + ' días</small></div>' +
         '<div class="pc-dato"><span>Tu objetivo</span><b>' + escapeHtml(Math.round(Number(it.target_stock_days) || 0)) + ' días</b><small>de stock que querés tener</small></div>' +
         '<div class="pc-dato"><span>Nivel de reposición</span><b>' + escapeHtml(Math.round(proy.umbral)) + ' u.</b><small>' + escapeHtml(it.lead_time_days) + ' de preparación + ' + escapeHtml(it.transit_delay_days) + ' de flete + ' + escapeHtml(it.buffer_days) + ' de colchón = ' + escapeHtml(Math.round(proy.avance)) + ' días de venta</small></div>' +
