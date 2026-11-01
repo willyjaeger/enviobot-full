@@ -2606,14 +2606,42 @@ function tarjetaColectaAutomatica() {
     if (!v.productos) return '';
     const nf = n => Math.round(n).toLocaleString('es-AR');
     const filas = v.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>${f.quiebre !== null && f.quiebre !== undefined ? 'Sin stock el ' + escapeHtml(fechaDeProyeccion(f.quiebre, v.hoy)) + '. ' : ''}Cubre ${escapeHtml(f.it.target_stock_days)} días de objetivo</td></tr>`).join('');
-    // Retiro óptimo: lo más rápido que pueden entrar. Si hay una colecta abierta, sumarlos a esa gana a armar una nueva.
+    // Retiro recomendado: la colecta es una sola, así que la fecha la manda el PRIMER producto que se queda sin stock. Tiene que
+    // entrar a Full a más tardar ese día; retirarla antes de lo necesario inmoviliza stock de más. Si ya no llega a tiempo, lo más rápido posible.
     const colAb = colectaAbiertaVigente();
+    const dem = demoraAcreditacionDias();
+    const conQuiebre = v.filas.filter(f => f.quiebre !== null && f.quiebre !== undefined);
+    const primero = conQuiebre.length ? conQuiebre.reduce((a, b) => (b.quiebre < a.quiebre ? b : a)) : null;
+    const nomPrimero = primero ? (primero.it.title || primero.it.sku) : '';
+    const fechaPrimero = primero ? fechaDeProyeccion(primero.quiebre, v.hoy) : '';
+    const dias = n => n + (n === 1 ? ' día' : ' días');
     let recomendacion, botonColectaAutomatica;
     if (colAb) {
-        recomendacion = `Retiro recomendado: la colecta ${numeroColecta(colAb)}, que retira el ${formatearFechaCorta(colAb.fecha_retiro)} y entra a Full el ${formatearFechaCorta(colAb.fecha_ingreso)}. Se puede editar hasta el ${textoLimiteEdicion(colAb.limite_edicion)}. Una colecta nueva entraría recién el ${fechaDeProyeccion(primerDiaNuevaColecta(), v.hoy)}.`;
+        const hoy0 = new Date(v.hoy.getFullYear(), v.hoy.getMonth(), v.hoy.getDate());
+        const diaAbierta = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(colAb.fecha_ingreso))) + dem;
+        const base = `Retiro recomendado: la colecta ${numeroColecta(colAb)}, que retira el ${formatearFechaCorta(colAb.fecha_retiro)} y entra a Full el ${formatearFechaCorta(colAb.fecha_ingreso)}; se puede editar hasta el ${textoLimiteEdicion(colAb.limite_edicion)}.`;
+        let porque = '';
+        if (primero) {
+            porque = diaAbierta <= primero.quiebre
+                ? ` Llega a tiempo: el primero en quedarse sin stock es ${nomPrimero} (${fechaPrimero}).`
+                : ` Es la más rápida, pero ${nomPrimero} se queda sin stock el ${fechaPrimero} y la colecta entra ${dias(diaAbierta - primero.quiebre)} después. Una colecta nueva entraría el ${fechaDeProyeccion(primerDiaNuevaColecta(), v.hoy)}.`;
+        }
+        recomendacion = base + porque;
         botonColectaAutomatica = `<button type="button" class="btn btn-sm" onclick="sumarAutomaticaAColectaAbierta()">Sumar a la colecta ${escapeHtml(numeroColecta(colAb))}</button>`;
     } else {
-        recomendacion = `No hay colecta abierta. Si la armás hoy, el primer retiro posible es el ${fechaDeProyeccion(primerDiaNuevaColecta() - ((Number(v.filas[0] && v.filas[0].it.transit_delay_days) || 0) + demoraAcreditacionDias()), v.hoy)} y entra a Full el ${fechaDeProyeccion(primerDiaNuevaColecta(), v.hoy)}.`;
+        const it0 = (primero || v.filas[0] || {}).it || {};
+        const viaje = (Number(it0.transit_delay_days) || 0) + dem;                 // retiro -> entra a Full
+        const masRapido = primerDiaPosibleDeIngreso(it0, v.hoy, dem, null) - viaje;  // primer retiro posible (días desde hoy)
+        let texto;
+        if (primero && primero.quiebre - viaje >= masRapido) {
+            const retiro = primero.quiebre - viaje;
+            texto = `No hay colecta abierta. Para que ${nomPrimero} (el primero en quedarse sin stock, ${fechaPrimero}) no quiebre, retirala como máximo el ${fechaDeProyeccion(retiro, v.hoy)}; entra a Full el ${fechaDeProyeccion(primero.quiebre, v.hoy)}. Antes de esa fecha inmovilizás stock de más.`;
+        } else if (primero) {
+            texto = `No hay colecta abierta. ${nomPrimero} se queda sin stock el ${fechaPrimero} y lo más rápido que puede entrar mercadería es el ${fechaDeProyeccion(masRapido + viaje, v.hoy)} (${dias(masRapido + viaje - primero.quiebre)} después). Retiro lo antes posible: ${fechaDeProyeccion(masRapido, v.hoy)}.`;
+        } else {
+            texto = `No hay colecta abierta. El primer retiro posible es el ${fechaDeProyeccion(masRapido, v.hoy)} y entra a Full el ${fechaDeProyeccion(masRapido + viaje, v.hoy)}.`;
+        }
+        recomendacion = texto;
         botonColectaAutomatica = '<button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button>';
     }
     return `<div class="pc-banner" id="colectaAutomaticaTarjeta"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
