@@ -132,3 +132,42 @@ def emparejar_productos(productos_pdf, filas_full):
         else:
             sin_match.append(p)
     return encontrados, sin_match
+
+
+def _clave_producto(d):
+    """Mismo producto entre lo que ya está cargado y lo que dice el PDF: por inventory_id y, si no hay, por SKU."""
+    inv = str(d.get("inventory_id") or "").strip()
+    if inv:
+        return "inv:" + inv + ":" + str(d.get("variation_id") or "")
+    return "sku:" + normalizar_sku(d.get("sku"))
+
+
+def comparar_con_existente(existentes, encontrados):
+    """Qué cambió Mercado Libre respecto de la colecta que ya tenemos cargada con ese número.
+
+    existentes: filas de inbound_shipment_items (id, sku, inventory_id, variation_id, title, units_to_send).
+    encontrados: lo que devuelve emparejar_productos (cada uno con "fila" y "unidades").
+    Devuelve {agregados, quitados, cambiados, iguales, hay_cambios}. Manda Mercado Libre: el PDF es la verdad.
+    """
+    previos = {}
+    for e in existentes:
+        previos[_clave_producto(e)] = e
+    vistos = set()
+    agregados, cambiados, iguales = [], [], 0
+    for p in encontrados:
+        f = p["fila"]
+        k = _clave_producto(f)
+        vistos.add(k)
+        ahora = int(p["unidades"])
+        previo = previos.get(k)
+        if previo is None:
+            agregados.append({"titulo": f.get("title") or p.get("titulo"), "sku": f.get("sku") or p.get("sku"), "unidades": ahora})
+        elif int(previo.get("units_to_send") or 0) != ahora:
+            cambiados.append({"id": previo["id"], "titulo": previo.get("title"), "sku": previo.get("sku"),
+                              "antes": int(previo.get("units_to_send") or 0), "ahora": ahora})
+        else:
+            iguales += 1
+    quitados = [{"id": e["id"], "titulo": e.get("title"), "sku": e.get("sku"), "unidades": int(e.get("units_to_send") or 0)}
+                for k, e in previos.items() if k not in vistos]
+    return {"agregados": agregados, "quitados": quitados, "cambiados": cambiados, "iguales": iguales,
+            "hay_cambios": bool(agregados or quitados or cambiados)}

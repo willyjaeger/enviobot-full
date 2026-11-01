@@ -84,3 +84,27 @@ class TestEmparejar(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestCompararConExistente(unittest.TestCase):
+    def _enc(self, sku, inv, unidades, titulo='P'):
+        return {"fila": {"sku": sku, "inventory_id": inv, "variation_id": "", "title": titulo}, "unidades": unidades, "titulo": titulo, "sku": sku}
+
+    def test_detecta_cambios_agregados_y_quitados(self):
+        existentes = [
+            {"id": 1, "sku": "A", "inventory_id": "IA", "variation_id": "", "title": "Uno", "units_to_send": 10},
+            {"id": 2, "sku": "B", "inventory_id": "IB", "variation_id": "", "title": "Dos", "units_to_send": 5},
+            {"id": 3, "sku": "C", "inventory_id": "IC", "variation_id": "", "title": "Tres", "units_to_send": 7},
+        ]
+        nuevos = [self._enc("A", "IA", 12), self._enc("B", "IB", 5), self._enc("D", "ID", 3, "Cuatro")]
+        r = m.comparar_con_existente(existentes, nuevos)
+        self.assertTrue(r["hay_cambios"])
+        self.assertEqual([(c["id"], c["antes"], c["ahora"]) for c in r["cambiados"]], [(1, 10, 12)])
+        self.assertEqual([a["sku"] for a in r["agregados"]], ["D"])
+        self.assertEqual([q["id"] for q in r["quitados"]], [3])
+        self.assertEqual(r["iguales"], 1)
+
+    def test_sin_cambios(self):
+        existentes = [{"id": 1, "sku": "A", "inventory_id": "IA", "variation_id": "", "title": "Uno", "units_to_send": 10}]
+        r = m.comparar_con_existente(existentes, [self._enc("A", "IA", 10)])
+        self.assertFalse(r["hay_cambios"])

@@ -3767,6 +3767,13 @@ def import_inbound_pdf():
             cur.execute("SELECT id, status, pickup_date FROM inbound_shipments WHERE user_id=%s AND shipment_code=%s",
                         (account_id, codigo))
             existente = cur.fetchone()
+            items_existentes = []
+            if existente:
+                cur.execute("""
+                    SELECT id, sku, inventory_id, variation_id, title, units_to_send
+                    FROM inbound_shipment_items WHERE shipment_id=%s ORDER BY id ASC
+                """, (existente["id"],))
+                items_existentes = cur.fetchall() or []
             cur.execute("""
                 SELECT id, item_id, variation_id, variation_name, inventory_id, sku, title, current_stock_full
                 FROM full_items WHERE user_id=%s AND is_monitored=1 ORDER BY id ASC
@@ -3783,19 +3790,62 @@ def import_inbound_pdf():
             "sin_match": [{"titulo": p["titulo"], "sku": p["sku"], "unidades": p["unidades"]} for p in sin_match],
             "ya_existe": bool(existente),
         }
+        if existente:
+            # Manda Mercado Libre: si el PDF trae otras cantidades u otros productos, la colecta cargada se pone igual.
+            resumen["cambios"] = _pdf_ml.comparar_con_existente(items_existentes, encontrados)
+            resumen["estado_actual"] = existente["status"]
+            resumen["retiro_actual"] = str(existente["pickup_date"]) if existente.get("pickup_date") else None
 
         pickup_str = (request.form.get("pickup_date") or "").strip()
         if not pickup_str:
             return jsonify({"ok": True, "preview": True, "envio": resumen})
 
-        if existente:
-            return jsonify({"ok": False, "error": f"La colecta {codigo} ya está cargada.", "envio": resumen}), 409
         try:
             pickup_date = datetime.strptime(pickup_str, "%Y-%m-%d").date()
         except ValueError:
             return jsonify({"ok": False, "error": "La fecha de retiro no es válida."}), 400
         if not encontrados:
             return jsonify({"ok": False, "error": "Ningún producto del PDF coincide con tus publicaciones.", "envio": resumen}), 400
+
+        if existente:
+            if existente["status"] in ("delivered", "cancelled"):
+                estado_txt = "ingresada en Full" if existente["status"] == "delivered" else "cancelada"
+                return jsonify({"ok": False, "error": f"La colecta {codigo} ya figura como {estado_txt}: no se modifica.",
+                                "envio": resumen}), 409
+            cambios = resumen["cambios"]
+            transit_days = 3
+            estimated_arrival = pickup_date + timedelta(days=transit_days)
+            total_units = sum(p["unidades"] for p in encontrados)
+            sid = existente["id"]
+            nuevos_skus = {a["sku"] for a in cambios["agregados"]}
+            with conn.cursor() as cur:
+                for c in cambios["cambiados"]:
+                    cur.execute("UPDATE inbound_shipment_items SET units_to_send=%s WHERE id=%s AND shipment_id=%s",
+                                (c["ahora"], c["id"], sid))
+                for q in cambios["quitados"]:
+                    cur.execute("DELETE FROM inbound_shipment_items WHERE id=%s AND shipment_id=%s", (q["id"], sid))
+                for p in encontrados:
+                    f = p["fila"]
+                    if (f["sku"] or p["sku"]) not in nuevos_skus:
+                        continue
+                    cur.execute("""
+                        INSERT INTO inbound_shipment_items (
+                            shipment_id, item_id, inventory_id, variation_id, variation_name,
+                            sku, title, current_full_stock, vpd, suggested_units,
+                            units_to_send, units_per_box, box_count
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0, 0, %s, 0, 0)
+                    """, (sid, f["item_id"], f["inventory_id"], f["variation_id"], f["variation_name"],
+                          f["sku"], f["title"] or p["titulo"], int(f["current_stock_full"] or 0), p["unidades"]))
+                cur.execute("""
+                    UPDATE inbound_shipments SET total_items=%s, total_units=%s, pickup_date=%s,
+                           estimated_arrival_date=%s, updated_at=NOW() WHERE id=%s AND user_id=%s
+                """, (len(encontrados), total_units, pickup_date, estimated_arrival, sid, account_id))
+            return jsonify({"ok": True, "preview": False, "actualizada": True,
+                            "message": f"Colecta {codigo} actualizada con lo que dice Mercado Libre.",
+                            "shipment": {"id": sid, "shipment_code": codigo, "status": existente["status"],
+                                         "total_items": len(encontrados), "total_units": total_units,
+                                         "pickup_date": str(pickup_date), "estimated_arrival_date": str(estimated_arrival)},
+                            "envio": resumen}), 200
 
         transit_days = 3
         estimated_arrival = pickup_date + timedelta(days=transit_days)

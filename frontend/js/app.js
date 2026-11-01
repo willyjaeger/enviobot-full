@@ -4845,9 +4845,17 @@ function htmlVistaPreviaPdf(envio) {
         ? '<div class="pc-vacio" style="margin-top:10px;">No encontré en EnvioBot ' + faltan.length +
           (faltan.length === 1 ? ' producto' : ' productos') + ', así que no se cargan: ' + faltan.join(', ') + '.</div>'
         : '';
-    const existe = envio.ya_existe
-        ? '<div class="pc-vacio" style="margin-top:10px;">Esta colecta ya está cargada en EnvioBot.</div>'
-        : '';
+    let existe = '';
+    if (envio.ya_existe) {
+        const c = envio.cambios || {};
+        const li = [];
+        (c.cambiados || []).forEach(function (x) { li.push('<li>' + escapeHtml(x.titulo) + ': ' + escapeHtml(x.antes) + ' → <b>' + escapeHtml(x.ahora) + ' u.</b></li>'); });
+        (c.agregados || []).forEach(function (x) { li.push('<li>Se agrega ' + escapeHtml(x.titulo) + ': <b>' + escapeHtml(x.unidades) + ' u.</b></li>'); });
+        (c.quitados || []).forEach(function (x) { li.push('<li>Se saca ' + escapeHtml(x.titulo) + ' (' + escapeHtml(x.unidades) + ' u.)</li>'); });
+        existe = '<div class="pc-vacio" style="margin-top:10px;">Esta colecta ya está cargada en EnvioBot. ' + (li.length
+            ? 'Mercado Libre la tiene distinta; al confirmar queda igual que el PDF (manda Mercado Libre):<ul style="text-align:left;margin:6px 0 0 18px;">' + li.join('') + '</ul>'
+            : 'Tiene lo mismo que el PDF: no hay nada que cambiar.') + '</div>';
+    }
     return '<div class="pc-hero-titulo">Envío #' + escapeHtml(envio.numero_ml) + '</div>' +
         '<div class="pc-hero-sub">' + (envio.productos || []).length + ' productos, ' + escapeHtml(envio.total_unidades) + ' unidades</div>' +
         resumenCmp +
@@ -4885,7 +4893,13 @@ async function procesarPdfColecta(archivo) {
         importPdfArchivo = archivo;
         document.getElementById('importPdfVista').innerHTML = htmlVistaPreviaPdf(r.data.envio);
         const btn = document.getElementById('btnConfirmarImportPdf');
-        if (btn) btn.disabled = !!r.data.envio.ya_existe || !(r.data.envio.productos || []).length;
+        const env = r.data.envio;
+        if (btn) {
+            btn.disabled = !(env.productos || []).length || (!!env.ya_existe && !(env.cambios && env.cambios.hay_cambios));
+            btn.textContent = env.ya_existe ? 'Actualizar esta colecta' : 'Cargar esta colecta';
+        }
+        const campoFecha = document.getElementById('importPdfFecha');
+        if (campoFecha && env.ya_existe && env.retiro_actual) campoFecha.value = env.retiro_actual;
         const e2 = document.getElementById('importPdfErrorPaso2');
         if (e2) e2.textContent = '';
         importPdfMostrar(2);
@@ -4908,7 +4922,7 @@ async function confirmarImportPdf() {
             if (err) err.textContent = r.data.error || 'No pude cargar la colecta.';
             return;
         }
-        showToast('Colecta ' + r.data.shipment.shipment_code + ' cargada: ' + r.data.shipment.total_units + ' unidades.', 'success');
+        showToast('Colecta ' + r.data.shipment.shipment_code + (r.data.actualizada ? ' actualizada con lo de Mercado Libre: ' : ' cargada: ') + r.data.shipment.total_units + ' unidades.', 'success');
         cerrarImportarColectaPdf();
         cargarDatos();
     } catch (e) {
