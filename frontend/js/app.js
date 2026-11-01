@@ -2648,11 +2648,11 @@ function tarjetaColectaHoy() {
         let texto;
         if (primero && primero.quiebre - viaje >= masRapido) {
             const retiro = primero.quiebre - viaje;
-            texto = `No hay colecta abierta. Para que ${nomPrimero} (el primero en quedarse sin stock, ${fechaPrimero}) no quiebre, retirala como máximo el ${fechaDeProyeccion(retiro, v.hoy)}; entra a Full el ${fechaDeProyeccion(primero.quiebre, v.hoy)}. Antes de esa fecha inmovilizás stock de más.`;
+            texto = `No hay colecta abierta. Para que ${nomPrimero} (el primero en quedarse sin stock, ${fechaPrimero}) no quiebre, retirala como máximo el ${fechaDeProyeccion(retiro, v.hoy)}; queda en venta el ${fechaDeProyeccion(primero.quiebre, v.hoy)} (con ${dem} ${dem === 1 ? 'día' : 'días'} de acreditación). Antes de esa fecha inmovilizás stock de más.`;
         } else if (primero) {
             texto = `No hay colecta abierta. ${nomPrimero} se queda sin stock el ${fechaPrimero} y lo más rápido que puede entrar mercadería es el ${fechaDeProyeccion(masRapido + viaje, v.hoy)} (${dias(masRapido + viaje - primero.quiebre)} después). Retiro lo antes posible: ${fechaDeProyeccion(masRapido, v.hoy)}.`;
         } else {
-            texto = `No hay colecta abierta. El primer retiro posible es el ${fechaDeProyeccion(masRapido, v.hoy)} y entra a Full el ${fechaDeProyeccion(masRapido + viaje, v.hoy)}.`;
+            texto = `No hay colecta abierta. El primer retiro posible es el ${fechaDeProyeccion(masRapido, v.hoy)} y queda en venta el ${fechaDeProyeccion(masRapido + viaje, v.hoy)}.`;
         }
         recomendacion = texto;
         botonColectaAutomatica = '<button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button>';
@@ -2709,7 +2709,7 @@ function colectaSiguienteVirtual() {
     filas.sort((a, b) => (a.quiebre === null ? 999 : a.quiebre) - (b.quiebre === null ? 999 : b.quiebre));
     const objs = filas.map(f => Number(f.it.target_stock_days) || 0).sort((a, b) => a - b);
     return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), hoy: hoy, retiro: retiro,
-             entra: retiro + primero.viaje, primero: primero, tarde: Math.max(0, retiro + primero.viaje - primero.quiebre),
+             entra: retiro + primero.viaje, ingreso: retiro + primero.viaje - dem, primero: primero, tarde: Math.max(0, retiro + primero.viaje - primero.quiebre),
              objetivo: objs[Math.floor(objs.length / 2)] || 15 };
 }
 
@@ -2725,7 +2725,7 @@ function tarjetaColectaSiguiente() {
     return `<div class="pc-banner" id="colectaSiguienteTarjeta"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">Colecta siguiente (borrador): ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
-            <div class="pc-banner-sub"><b>Retiro recomendado: ${escapeHtml(f(v.retiro))}, entra a Full el ${escapeHtml(f(v.entra))}. La fecha la manda ${escapeHtml(nom)}, el primero que se queda sin stock (${escapeHtml(f(v.primero.quiebre))}).${escapeHtml(tarde)}</b></div>
+            <div class="pc-banner-sub"><b>Retiro recomendado: ${escapeHtml(f(v.retiro))}. Entra a Full el ${escapeHtml(f(v.ingreso))} y queda en venta el ${escapeHtml(f(v.entra))} (${escapeHtml(demoraAcreditacionDias())} ${demoraAcreditacionDias() === 1 ? 'día' : 'días'} de acreditación: es un supuesto de la app, no un dato de Mercado Libre). La fecha la manda ${escapeHtml(nom)}, el primero que se queda sin stock (${escapeHtml(f(v.primero.quiebre))}).${escapeHtml(tarde)}</b></div>
             <div class="pc-banner-sub">Con esta colecta todos los productos llegan hasta la que sigue, que apuntaría a los ${escapeHtml(v.objetivo)} días: alrededor del ${escapeHtml(f(v.retiro + v.objetivo))}. Si la anterior cambia (otras unidades, otra fecha) este cálculo se actualiza solo.</div>
         </div>
         <details class="pc-detalle" data-sec="Productos de la colecta siguiente" ${seccionesAbiertasSesion['Productos de la colecta siguiente'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
