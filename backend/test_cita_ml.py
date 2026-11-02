@@ -179,6 +179,16 @@ class TestCitaEnElPanel(unittest.TestCase):
         self.assertIn('escapeHtml(origen)', cuerpo)
         self.assertIn('escapeHtml(msg)', cuerpo)
 
+    def test_si_no_entra_en_pantalla_los_botones_siguen_a_la_vista(self):
+        # Con la caja de la cita y la lista de cambios la ventana se pasaba de alto y recortaba Guardar y Cancelar.
+        html = _leer('index.html')
+        self.assertIn('id="editarEnvioPie"', html)
+        pie = html[html.index('id="editarEnvioPie"'):]
+        self.assertIn('btnGuardarEdicionEnvio', pie[:1500])      # el pie es el que tiene los botones
+        css = _leer(os.path.join('css', 'style.css'))
+        self.assertRegex(css, r'#modalEditarEnvio \.modal-card \{[^}]*overflow-y: auto')
+        self.assertRegex(css, r'#editarEnvioPie \{[^}]*position: sticky[^}]*bottom: 0')
+
     def test_la_caja_existe_y_usa_colores_de_variables(self):
         self.assertIn('id="editarEnvioCita"', _leer('index.html'))
         css = _leer(os.path.join('css', 'style.css'))

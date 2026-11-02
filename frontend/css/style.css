@@ -2166,3 +2166,7 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .cita-ml-campos { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
 .cita-ml-campos input { width: 80px; padding: 4px 6px; }
 .guardado-pendiente-ml #editarEnvioCita { display: none !important; }
+
+/* Editar envío: si el contenido no entra en la pantalla, la ventana se desplaza y los botones quedan siempre a la vista */
+#modalEditarEnvio .modal-card { overflow-y: auto; }
+#editarEnvioPie { position: sticky; bottom: 0; z-index: 5; background: var(--surface); padding-bottom: 4px; }
