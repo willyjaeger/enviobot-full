@@ -1343,6 +1343,7 @@ function calendarioColectas(colectas, hoy) {
 }
 
 // ── Proponer otras fechas en el calendario: cuánto cambia lo que hace falta mandar ─────
+let colectaRetiroVirtual = null;   // retiro recomendado de la colecta virtual que se está armando (AAAA-MM-DD)
 let colectaArrastrada = null;   // { id, tipo }
 let cambiosPendientes = {};     // id -> { retiro?, ingreso? } (fechas propuestas, todavía sin confirmar)
 
@@ -2785,8 +2786,11 @@ function colectaSiguienteVirtual(retiroISO) {
         if (it.pausado) return;
         const proy = proyeccionProducto(it, colectasConHoy, hoy, dem);
         if (!proy || !(proy.vpd > 0)) return;
+        // Primer día sin stock que ESTA colecta puede evitar: si lo que ya está cargado todavía no entró, el hueco de antes (hoy, mañana...)
+        // no lo arregla ninguna colecta nueva, así que se mira desde que entra lo cargado.
         let q = null;
-        for (let t = 0; t < proy.puntos.length; t++) { if (proy.puntos[t].stock < proy.vpd - 0.0001) { q = t; break; } }
+        const desde = proy.primeraLlegada !== null ? proy.primeraLlegada : 0;
+        for (let t = desde; t < proy.puntos.length; t++) { if (proy.puntos[t].stock < proy.vpd - 0.0001) { q = t; break; } }
         cand.push({ it: it, proy: proy, quiebre: q, viaje: (Number(it.transit_delay_days) || 0) + dem });
     });
     // Los que ya se quedan sin stock antes de que entre la colecta de hoy no los salva la siguiente: no mandan la fecha.
@@ -2837,7 +2841,7 @@ function tarjetaColectaSiguiente(sola) {
             ${aviso}
             <div class="pc-banner-sub">Con esta colecta todos los productos llegan hasta la que sigue, que apuntaría a los ${escapeHtml(v.objetivo)} días: alrededor del ${escapeHtml(f(v.retiro + v.objetivo))}. Cálculo de cada producto: stock de hoy, menos lo que vende hasta que entra (sin bajar de cero), más lo que traen las colectas ya cargadas${sola ? '' : ' y la de hoy'}; se pide lo que falta para llegar a sus días de objetivo. Si algo cambia (otras unidades, otra fecha) se actualiza solo.</div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('siguiente')" title="Baja el Excel para cuando armes esta colecta; no guarda nada">Descargar planilla Excel</button></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-sm" onclick="abrirModalColecta(null, { virtual: 'siguiente' })" title="Abre el armado con ESTA misma lista y esta fecha de retiro">Armar esta colecta</button><button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('siguiente')" title="Baja el Excel para cuando armes esta colecta; no guarda nada">Descargar planilla Excel</button></div>
         <details class="pc-detalle" data-sec="Productos de la colecta siguiente" ${seccionesAbiertasSesion['Productos de la colecta siguiente'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
             <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
     </div>`;
@@ -4191,9 +4195,16 @@ async function abrirModalColecta(targetItemId = null, options = {}) {
     // que muestra el panel (antes se calculaba aparte y no coincidían).
     if (!(options && options.multiplier)) {
         try {
-            const auto = colectaAutomaticaVirtual();
+            // La misma lista que se ve en pantalla: la de hoy si tiene productos; si no (o si se pidió la siguiente), la colecta siguiente.
+            let auto = colectaAutomaticaVirtual();
+            let esSiguiente = false;
+            if ((options && options.virtual === 'siguiente') || !auto.productos) {
+                const sig = colectaSiguienteVirtual();
+                if (sig && sig.productos) { auto = sig; esSiguiente = true; }
+            }
             colectaSelectedItems.clear();
             colectaBoxUnits.clear();
+            if (esSiguiente && auto.retiroISO) colectaRetiroVirtual = auto.retiroISO;   // el retiro recomendado de esa tarjeta
             auto.filas.forEach(f => {
                 colectaSelectedItems.set(f.it.id, f.unidades);
                 colectaBoxUnits.set(f.it.id, (f.it.units_per_box && f.it.units_per_box > 0) ? f.it.units_per_box : 0);
@@ -4231,7 +4242,10 @@ async function abrirModalColecta(targetItemId = null, options = {}) {
     if (arrivalEl) arrivalEl.textContent = `Disponible Full: ${arrivalDate.getDate()}/${arrivalDate.getMonth() + 1}`;
 
     const fechaRetiroInput = document.getElementById('colectaFechaRetiroInput');
-    if (fechaRetiroInput && !fechaRetiroInput.value) {
+    if (fechaRetiroInput && colectaRetiroVirtual) {
+        fechaRetiroInput.value = colectaRetiroVirtual;
+        colectaRetiroVirtual = null;
+    } else if (fechaRetiroInput && !fechaRetiroInput.value) {
         fechaRetiroInput.value = pickupDate.toISOString().split('T')[0];
     }
 

@@ -279,8 +279,10 @@
             if (it.pausado) return;
             const proy = proyeccionProducto(it, colectasConHoy, hoy, dem);
             if (!proy || !(proy.vpd > 0)) return;
+            // Primer día sin stock que esta colecta puede evitar: desde que entra lo que ya está cargado (antes, ninguna colecta nueva llega).
             let q = null;
-            for (let t = 0; t < proy.puntos.length; t++) { if (proy.puntos[t].stock < proy.vpd - 0.0001) { q = t; break; } }
+            const desde = proy.primeraLlegada !== null ? proy.primeraLlegada : 0;
+            for (let t = desde; t < proy.puntos.length; t++) { if (proy.puntos[t].stock < proy.vpd - 0.0001) { q = t; break; } }
             cand.push({ it: it, proy: proy, quiebre: q, viaje: (Number(it.transit_delay_days) || 0) + dem });
         });
         const conQuiebre = cand.filter(c => c.quiebre !== null && c.quiebre >= primerDiaPosibleDeIngreso(c.it, hoy, dem, colAb));
