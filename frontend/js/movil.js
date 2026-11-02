@@ -96,7 +96,9 @@
             objetivo: raw.target_coverage_days || 30, quiebre: raw.stockout_date || null,
             sugerido: raw.sugerido_al_ingreso || 0, sobrestock: !!raw.sobrestock, prep_status: raw.prep_status || null,
             // Nombres de app.js, para que la regla de "hay que mandar hoy" sea la misma cuenta.
-            current_stock: raw.current_stock_full || 0, sugerido_al_ingreso: raw.sugerido_al_ingreso || 0,
+            current_stock: raw.current_stock_full || 0,
+            // null = el servidor no lo mandó; 0 = la colecta cargada ya cubre el objetivo (no se vuelve a pedir).
+            sugerido_al_ingreso: (raw.sugerido_al_ingreso === undefined || raw.sugerido_al_ingreso === null) ? null : raw.sugerido_al_ingreso,
             lead_time_days: raw.effective_lead_time !== undefined ? raw.effective_lead_time : 5,
             transit_delay_days: raw.effective_transit !== undefined ? raw.effective_transit : 2,
             buffer_days: raw.effective_buffer !== undefined ? raw.effective_buffer : 2,
@@ -170,6 +172,8 @@
         }
         return dia;
     }
+    // Lo que falta lo dice el servidor (sugerido_al_ingreso, ya descuenta lo que viaja en colectas). Si dice 0, no se pide más.
+    function colectaYaCubreObjetivo(it) { const sug = it && it.sugerido_al_ingreso; return typeof sug === 'number' && sug <= 0; }
     function calcularIndiceQuiebres(items, colectas, hoy, demora, horizonte, colAb) {
         const salida = { ok: [], hay_tiempo: [], evitables: [], inevitables: [], demanda: 0, perdida: 0, perdidaInevitable: 0, perdidaEvitable: 0 };
         (items || []).forEach(it => {
@@ -183,7 +187,7 @@
                 const falta = Math.max(0, proy.vpd - proy.puntos[t].stock);
                 if (falta > 0.0001) { perdida += falta; if (t < limite) inevitable += falta; if (primerQuiebre === null) primerQuiebre = t; }
             }
-            const evitable = perdida - inevitable;
+            const evitable = colectaYaCubreObjetivo(it) ? 0 : perdida - inevitable;
             const demanda = proy.vpd * (horizonte + 1);
             const fila = { it: it, proy: proy, perdida: perdida, inevitable: inevitable, evitable: evitable, demanda: demanda, primerQuiebre: primerQuiebre, limite: limite, entraSiguiente: entraSiguiente };
             salida.demanda += demanda;
@@ -851,7 +855,7 @@
         btn.textContent = 'Sincronizar con Mercado Libre'; btn.disabled = false;
     }
 
-    async function cargar(manual) {
+    async function cargar(manual, silencioso) {
         const b = $('btnRefrescar');
         b.classList.add('girando');
         if (!manual) { estado.cargando = true; render(); }
@@ -880,7 +884,7 @@
         }
         estado.cargando = false;
         b.classList.remove('girando');
-        if (manual) aviso(estado.error ? 'No se pudo actualizar' : 'Datos actualizados');
+        if (manual && !silencioso) aviso(estado.error ? 'No se pudo actualizar' : 'Datos actualizados');
         render();
     }
 
@@ -891,6 +895,17 @@
             if (resta > 0) el.textContent = segundosA(resta);
         });
     }, 30000);
+
+    // Se actualiza solo: al volver a la app (quedaba con lo del momento en que se abrió) y cada 3 minutos con la pantalla a la vista.
+    const REFRESCO_MS = 3 * 60 * 1000;
+    function refrescarSiHaceFalta() {
+        if (document.hidden || estado.cargando || Date.now() - estado.cargadoEn < 60000) return;
+        cargar(true, true);
+    }
+    document.addEventListener('visibilitychange', refrescarSiHaceFalta);
+    window.addEventListener('focus', refrescarSiHaceFalta);
+    window.addEventListener('pageshow', refrescarSiHaceFalta);
+    setInterval(() => { if (!document.hidden && !estado.cargando) cargar(true, true); }, REFRESCO_MS);
 
     if (!token()) { irALogin(); return; }
     render();
