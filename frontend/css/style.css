@@ -2162,7 +2162,13 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .cita-ml-msg { color: var(--text2); }
 .cita-ml-sub { font-size: 12px; color: var(--text2); margin-top: 2px; line-height: 1.45; }
 .cita-ml-corregir { margin-top: 6px; font-size: 12px; color: var(--text2); }
-.cita-ml-corregir summary { cursor: pointer; }
+/* Que se vea como algo que se toca: botón azul con flecha, no una línea de texto gris */
+.cita-ml-corregir summary { cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; font-size: 12.5px; font-weight: 700; color: #fff; background: var(--info); list-style: none; }
+.cita-ml-corregir summary::-webkit-details-marker { display: none; }
+.cita-ml-corregir summary::before { content: '¸E'; font-size: 13px; }
+.cita-ml-corregir summary:hover { filter: brightness(1.1); }
+.cita-ml-corregir[open] summary { margin-bottom: 4px; }
+.cita-ml-campos { padding: 10px; border: 1.5px solid var(--info); border-radius: 8px; background: color-mix(in srgb, var(--info) 8%, transparent); }
 .cita-ml-campos { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
 .cita-ml-campos input { width: 80px; padding: 4px 6px; }
 .guardado-pendiente-ml #editarEnvioCita { display: none !important; }
