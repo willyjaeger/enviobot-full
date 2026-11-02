@@ -405,7 +405,7 @@ function adaptarItemDesdeBackend(raw) {
         dias_hasta_ingreso: raw.dias_hasta_ingreso !== undefined ? raw.dias_hasta_ingreso : null,
         stock_al_ingreso: raw.stock_al_ingreso !== undefined ? raw.stock_al_ingreso : null,
         cobertura_post_colecta: raw.cobertura_post_colecta !== undefined ? raw.cobertura_post_colecta : null,
-        sugerido_al_ingreso: raw.sugerido_al_ingreso || 0,
+        sugerido_al_ingreso: (raw.sugerido_al_ingreso === undefined || raw.sugerido_al_ingreso === null) ? null : raw.sugerido_al_ingreso,
         aviso_ajuste_units: raw.aviso_ajuste_units || null,
         exceso_colecta: raw.exceso_colecta || null,
         fecha_ingreso: raw.fecha_ingreso || null,
@@ -447,37 +447,38 @@ function textoLimiteEdicion(limiteIso) {
     return `${partes.weekday} ${partes.day}/${partes.month} a las ${partes.hour}:${partes.minute}`;
 }
 
-// Misma regla que proyeccion.aviso_ajuste: se sugiere solo si lo cargado cubre menos del 80 % del objetivo.
+// Banda de tolerancia para comparar lo que se mandó contra lo sugerido (compararConPropuesta); misma que proyeccion.TOLERANCIA_AVISO.
 const TOLERANCIA_AVISO_AJUSTE = 0.8;
 
-// Unidades que conviene mandar de un producto de la colecta que se está editando, o null si lo
-// cargado está bien. Se calcula con los datos de hoy del panel (objetivo del depósito, stock al
-// ingreso), no con un número guardado al crear la colecta.
-function sugeridoEdicion(it) {
-    const vivo = (itemsData || []).find(x =>
+// Producto vivo del panel que corresponde a una fila de la colecta que se edita (por código ML, SKU o publicación).
+function itemVivoEdicion(it) {
+    return (itemsData || []).find(x =>
         (it.inventory_id && x.inventory_id === it.inventory_id) ||
         (it.sku && x.sku === it.sku) ||
-        (it.item_id && x.item_id === it.item_id));
-    if (!vivo || !(vivo.vpd > 0) || vivo.stock_al_ingreso === null || vivo.stock_al_ingreso === undefined) return null;
-    const objetivo = vivo.target_stock_days || 30;
-    const unidades = it.units_to_send || 0;
-    if ((vivo.stock_al_ingreso + unidades) / vivo.vpd >= objetivo * TOLERANCIA_AVISO_AJUSTE) return null;
-    const ideal = Math.max(0, Math.round(objetivo * vivo.vpd - vivo.stock_al_ingreso));
-    return ideal > unidades ? ideal : null;
+        (it.item_id && x.item_id === it.item_id)) || null;
 }
 
-// Lo contrario de sugeridoEdicion: unidades que sobran respecto de los días objetivo (devuelve cuántas dejar, 0 = sacarlo)
+// Misma regla y mismos números que el Resumen (los del servidor, no una cuenta propia de esta ventana).
+// Sugerido: a lo que esta colecta tenía guardado se le suma lo que el servidor dice que falta (`sugerido_al_ingreso`, que ya descuenta
+// lo que viaja en colectas). Devuelve el total que conviene dejar, o null si lo cargado ya está bien o no hay dato.
+function sugeridoEdicion(it) {
+    const vivo = itemVivoEdicion(it);
+    if (!vivo || typeof vivo.sugerido_al_ingreso !== 'number' || !(vivo.sugerido_al_ingreso > 0)) return null;
+    const guardado = (typeof itemsOriginalesEdicion !== 'undefined' ? itemsOriginalesEdicion : [])
+        .filter(o => (it.inventory_id && o.inventory_id === it.inventory_id) || (it.sku && o.sku === it.sku) || (it.item_id && o.item_id === it.item_id))
+        .reduce((a, o) => a + (parseInt(o.units_to_send, 10) || 0), 0);
+    const ideal = guardado + Math.round(vivo.sugerido_al_ingreso);
+    return ideal > (it.units_to_send || 0) ? ideal : null;
+}
+
+// Lo contrario: sobra cuando el servidor marca exceso en la colecta (`exceso_colecta`, el mismo aviso "Con exceso de stock" del Resumen).
+// Devuelve cuántas unidades dejar (0 = sacarlo), o null si no hay exceso o ya se bajó a lo recomendado.
 function sugeridoQuitarEdicion(it) {
-    const vivo = (itemsData || []).find(x =>
-        (it.inventory_id && x.inventory_id === it.inventory_id) ||
-        (it.sku && x.sku === it.sku) ||
-        (it.item_id && x.item_id === it.item_id));
-    if (!vivo || !(vivo.vpd > 0) || vivo.stock_al_ingreso === null || vivo.stock_al_ingreso === undefined) return null;
-    const objetivo = vivo.target_stock_days || 30;
-    const unidades = it.units_to_send || 0;
-    if ((vivo.stock_al_ingreso + unidades) / vivo.vpd <= objetivo * 1.25) return null;
-    const ideal = Math.max(0, Math.round(objetivo * vivo.vpd - vivo.stock_al_ingreso));
-    return ideal < unidades ? ideal : null;
+    const vivo = itemVivoEdicion(it);
+    const exc = vivo && vivo.exceso_colecta;
+    if (!exc || !(Number(exc.recomendado) >= 0)) return null;
+    const recomendado = Math.round(Number(exc.recomendado));
+    return (it.units_to_send || 0) > recomendado ? recomendado : null;
 }
 
 const ESTADOS_GALPON = [['to_buy', 'A comprar'], ['packing', 'Envasando'], ['boxed', 'Listo en caja']];
@@ -912,6 +913,14 @@ function primerDiaPosibleDeIngreso(it, hoy, demora, colAbierta) {
     return dia;
 }
 
+// Una sola regla para "cuánto falta": la del servidor (proyeccion.sugerido_al_ingreso), que cuenta lo que ya viaja en las colectas
+// y apunta a los días de stock objetivo desde que entra la mercadería. Si dice 0, lo cargado cubre este producto; lo que se venda más
+// adelante le toca a la colecta siguiente, no se suma a esta. (Si el servidor no manda el dato, queda el cálculo de siempre.)
+function colectaYaCubreObjetivo(it) {
+    const sug = it && it.sugerido_al_ingreso;
+    return typeof sug === 'number' && sug <= 0;
+}
+
 function calcularIndiceQuiebres(items, colectas, hoy, demora, horizonte, colAbierta) {
     horizonte = horizonte || DIAS_INDICE_QUIEBRES;
     const salida = { ok: [], hay_tiempo: [], evitables: [], inevitables: [], demanda: 0, perdida: 0, perdidaInevitable: 0, perdidaEvitable: 0 };
@@ -932,7 +941,7 @@ function calcularIndiceQuiebres(items, colectas, hoy, demora, horizonte, colAbie
                 if (primerQuiebre === null) primerQuiebre = t;
             }
         }
-        const evitable = perdida - inevitable;
+        const evitable = colectaYaCubreObjetivo(it) ? 0 : perdida - inevitable;   // lo que cubre la colecta cargada no se vuelve a pedir
         const demanda = proy.vpd * (horizonte + 1);
         const fila = { it: it, proy: proy, perdida: perdida, inevitable: inevitable, evitable: evitable, demanda: demanda,
                        primerQuiebre: primerQuiebre, limite: limite, entraSiguiente: entraSiguiente };
@@ -5812,8 +5821,7 @@ function renderizarItemsEdicion() {
     }
 
     tbody.innerHTML = itemsEnEdicion.map((it, idx) => {
-        const skuHtml = it.sku ? `<span style="font-family: monospace; font-size: 11px; color: var(--accent);">${it.sku}</span>` : `<span style="font-size: 11px; color: var(--text2);">-</span>`;
-        const varHtml = it.variation_name ? `<span style="font-size: 11px; color: var(--text2); display: block;">${it.variation_name}</span>` : '';
+        const vivo = itemVivoEdicion(it);   // los números de hoy del panel; lo guardado al importar el PDF no trae ventas
 
         let sugHintHtml = '';
         const sugerido = edicionCerrada ? null : sugeridoEdicion(it);
@@ -5849,8 +5857,8 @@ function renderizarItemsEdicion() {
                         ${it.variation_name ? `<span class="eenv-var">${escapeHtml(it.variation_name)}</span>` : ''}
                     </div>
                 </td>
-                <td class="eenv-num">${Number(it.current_full_stock) || 0}</td>
-                <td class="eenv-num eenv-suave">${escapeHtml(it.vpd)}</td>
+                <td class="eenv-num">${Number(vivo ? vivo.current_stock : it.current_full_stock) || 0}</td>
+                <td class="eenv-num eenv-suave">${escapeHtml(vivo ? (vivo.vpd_base !== undefined && vivo.vpd_base !== null ? vivo.vpd_base : vivo.vpd) : it.vpd)}</td>
                 <td class="eenv-unidades">
                     <div class="eenv-unidades-linea">
                         <input type="number" min="1" max="99999" value="${Number(it.units_to_send) || 1}" ${edicionCerrada ? 'disabled' : ''}

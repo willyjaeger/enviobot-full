@@ -45,7 +45,7 @@ process.stdout.write(JSON.stringify({ html: colectas.innerHTML + cont.innerHTML,
 def _item(**kw):
     base = dict(title='Almendras', sku='ALM-1', variation_name=None, current_stock=10, total_incoming=0,
                 in_preparation_stock=0, status='ok', target_stock_days=30, stock_al_ingreso=0,
-                sugerido_al_ingreso=0, cobertura_post_colecta=None, aviso_ajuste_units=None, fecha_ingreso=None,
+                sugerido_al_ingreso=None, cobertura_post_colecta=None, aviso_ajuste_units=None, fecha_ingreso=None,
                 days_left=30, covered_days_left=30, sobrestock=False)
     base.update(kw)
     return base
@@ -1110,21 +1110,21 @@ process.stdout.write(creado ? creado.innerHTML : '');
 HARNESS_SUGERIDO = r"""
 const vm = require('vm');
 const src = process.argv[2], caso = JSON.parse(process.argv[3]);
-const ctx = { itemsData: caso.items, Math, String, console };
+const ctx = { itemsData: caso.items, itemsOriginalesEdicion: caso.originales || [], Math, String, parseInt, Number, console };
 vm.createContext(ctx);
-vm.runInContext(src + '\nthis.__f = sugeridoEdicion;', ctx);
-process.stdout.write(JSON.stringify(caso.consultas.map(c => ctx.__f(c))));
+vm.runInContext(src + '\nthis.__s = sugeridoEdicion; this.__q = sugeridoQuitarEdicion;', ctx);
+process.stdout.write(JSON.stringify(caso.consultas.map(c => [ctx.__s(c), ctx.__q(c)])));
 """
 
 
 @unittest.skipUnless(NODE, 'Node no está instalado')
 class TestSugeridoEnEdicion(unittest.TestCase):
-    """El Sugerido de Editar envío aparece solo si la colecta quedó corta contra el objetivo."""
+    """Editar envío usa los MISMOS números que el Resumen: lo que falta (`sugerido_al_ingreso`) y el exceso (`exceso_colecta`) del servidor."""
 
     @classmethod
     def setUpClass(cls):
         js = _leer(os.path.join('js', 'app.js'))
-        cls.src = _corte(js, 'const TOLERANCIA_AVISO_AJUSTE', 'const ESTADOS_GALPON')
+        cls.src = _corte(js, 'function itemVivoEdicion', 'const ESTADOS_GALPON')
         cls.tmp = tempfile.NamedTemporaryFile('w', suffix='.js', delete=False, encoding='utf-8')
         cls.tmp.write(HARNESS_SUGERIDO)
         cls.tmp.close()
@@ -1133,51 +1133,71 @@ class TestSugeridoEnEdicion(unittest.TestCase):
     def tearDownClass(cls):
         os.unlink(cls.tmp.name)
 
-    def _sug(self, vivos, consultas):
-        r = subprocess.run([NODE, self.tmp.name, self.src, json.dumps({'items': vivos, 'consultas': consultas})],
+    def _sug(self, vivos, consultas, originales=None):
+        r = subprocess.run([NODE, self.tmp.name, self.src, json.dumps({'items': vivos, 'consultas': consultas, 'originales': originales or []})],
                            capture_output=True, text=True, encoding='utf-8', timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
 
     def _vivo(self, **kw):
-        base = dict(sku='A', item_id='MLA1', inventory_id=None, vpd=10, stock_al_ingreso=0, target_stock_days=15)
+        base = dict(sku='A', item_id='MLA1', inventory_id=None, sugerido_al_ingreso=0, exceso_colecta=None)
         base.update(kw)
         return base
 
-    def test_colecta_corta_sugiere_para_llegar_al_objetivo(self):
-        # 100 u. a 10/día cubren 10 días de 15 (menos del 80 %): conviene 150.
-        self.assertEqual(self._sug([self._vivo()], [{'sku': 'A', 'units_to_send': 100}]), [150])
+    def test_sugiere_lo_guardado_mas_lo_que_el_servidor_dice_que_falta(self):
+        # La colecta tenía 100 y el servidor (que ya descuenta lo que viaja) pide 50 más: el total que conviene es 150.
+        orig = [{'sku': 'A', 'units_to_send': 100}]
+        self.assertEqual(self._sug([self._vivo(sugerido_al_ingreso=50)], [{'sku': 'A', 'units_to_send': 100}], orig), [[150, None]])
 
-    def test_colecta_suficiente_no_sugiere(self):
-        # 130 u. cubren 13 días: dentro de la tolerancia (12 o más).
-        self.assertEqual(self._sug([self._vivo()], [{'sku': 'A', 'units_to_send': 130}]), [None])
-        self.assertEqual(self._sug([self._vivo()], [{'sku': 'A', 'units_to_send': 400}]), [None])
+    def test_si_ya_se_subio_a_lo_sugerido_no_vuelve_a_sugerir(self):
+        orig = [{'sku': 'A', 'units_to_send': 100}]
+        self.assertEqual(self._sug([self._vivo(sugerido_al_ingreso=50)], [{'sku': 'A', 'units_to_send': 150}], orig), [[None, None]])
 
-    def test_descuenta_lo_que_queda_en_full_al_ingreso(self):
-        # Quedan 40 al ingreso: 100 u. cubren 14 días, bien.
-        self.assertEqual(self._sug([self._vivo(stock_al_ingreso=40)], [{'sku': 'A', 'units_to_send': 100}]), [None])
+    def test_si_el_servidor_no_pide_nada_no_se_inventa_una_sugerencia(self):
+        # Antes esta ventana tenía su propia cuenta (80 % del objetivo) y pedía cosas que el Resumen no pedía.
+        self.assertEqual(self._sug([self._vivo(sugerido_al_ingreso=0)], [{'sku': 'A', 'units_to_send': 1}], [{'sku': 'A', 'units_to_send': 1}]), [[None, None]])
+        self.assertEqual(self._sug([self._vivo(sugerido_al_ingreso=None)], [{'sku': 'A', 'units_to_send': 1}]), [[None, None]])
 
-    def test_sin_datos_vivos_o_sin_ventas_no_sugiere(self):
-        self.assertEqual(self._sug([self._vivo()], [{'sku': 'OTRO', 'units_to_send': 1}]), [None])
-        self.assertEqual(self._sug([self._vivo(vpd=0)], [{'sku': 'A', 'units_to_send': 1}]), [None])
-        self.assertEqual(self._sug([self._vivo(stock_al_ingreso=None)], [{'sku': 'A', 'units_to_send': 1}]), [None])
+    def test_un_producto_nuevo_en_la_colecta_sugiere_lo_que_dice_el_servidor(self):
+        self.assertEqual(self._sug([self._vivo(sugerido_al_ingreso=40)], [{'sku': 'A', 'units_to_send': 10}]), [[40, None]])
+
+    def test_quitar_sale_del_exceso_que_marca_el_servidor(self):
+        exc = {'en_colecta': 150, 'recomendado': 37, 'sacar': 113}
+        self.assertEqual(self._sug([self._vivo(exceso_colecta=exc)], [{'sku': 'A', 'units_to_send': 150}]), [[None, 37]])
+        # ya bajó a lo recomendado (o menos): no insiste
+        self.assertEqual(self._sug([self._vivo(exceso_colecta=exc)], [{'sku': 'A', 'units_to_send': 37}]), [[None, None]])
+        # recomendado 0 = sacarlo del envío
+        self.assertEqual(self._sug([self._vivo(exceso_colecta={'recomendado': 0})], [{'sku': 'A', 'units_to_send': 45}]), [[None, 0]])
+
+    def test_sin_exceso_del_servidor_no_hay_sugerencia_de_quitar(self):
+        # Antes salía "sugerido sacarlo" con un umbral propio del 25 % que el Resumen no usaba.
+        self.assertEqual(self._sug([self._vivo(exceso_colecta=None)], [{'sku': 'A', 'units_to_send': 500}]), [[None, None]])
+
+    def test_sin_datos_vivos_no_sugiere(self):
+        self.assertEqual(self._sug([self._vivo()], [{'sku': 'OTRO', 'units_to_send': 1}]), [[None, None]])
 
     def test_busca_por_inventory_id_y_por_publicacion(self):
-        vivo = self._vivo(sku='', inventory_id='INV9', item_id='MLA9')
-        self.assertEqual(self._sug([vivo], [{'inventory_id': 'INV9', 'units_to_send': 50}]), [150])
-        self.assertEqual(self._sug([vivo], [{'item_id': 'MLA9', 'units_to_send': 50}]), [150])
+        vivo = self._vivo(sku='', inventory_id='INV9', item_id='MLA9', sugerido_al_ingreso=30)
+        self.assertEqual(self._sug([vivo], [{'inventory_id': 'INV9', 'units_to_send': 5}]), [[30, None]])
+        self.assertEqual(self._sug([vivo], [{'item_id': 'MLA9', 'units_to_send': 5}]), [[30, None]])
 
-    def test_la_tolerancia_es_la_misma_que_en_el_backend(self):
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        import proyeccion
-        self.assertEqual(proyeccion.TOLERANCIA_AVISO, 0.8)
-        self.assertIn('const TOLERANCIA_AVISO_AJUSTE = 0.8;', self.src)
-
-    def test_la_pantalla_de_edicion_ya_no_usa_el_sugerido_guardado(self):
+    def test_la_ventana_ya_no_tiene_cuentas_propias(self):
         js = _leer(os.path.join('js', 'app.js'))
+        cuerpo = js[js.index('function itemVivoEdicion'):js.index('const ESTADOS_GALPON')]
+        self.assertNotIn('TOLERANCIA', cuerpo)
+        self.assertNotIn('1.25', cuerpo)
+        self.assertNotIn('|| 30', cuerpo)
         fn = js[js.index('function renderizarItemsEdicion'):js.index('window.renderizarItemsEdicion')]
         self.assertIn('sugeridoEdicion(it)', fn)
         self.assertNotIn('it.suggested_units', fn)
+
+    def test_las_columnas_muestran_los_numeros_de_hoy_y_no_los_guardados_al_importar_el_pdf(self):
+        # El PDF guarda vpd 0 y el stock de ese momento: la ventana mostraba "Vende/día 0" en todos los productos.
+        js = _leer(os.path.join('js', 'app.js'))
+        fn = js[js.index('function renderizarItemsEdicion'):js.index('window.renderizarItemsEdicion')]
+        self.assertIn('const vivo = itemVivoEdicion(it)', fn)
+        self.assertIn('vivo.current_stock', fn)
+        self.assertIn('vivo.vpd_base', fn)
 
 
 class TestEditarEnvioSinBultos(unittest.TestCase):
