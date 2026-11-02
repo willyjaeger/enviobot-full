@@ -638,7 +638,7 @@
         const f = d => fechaProy(d, v.hoy);
         const nom = v.primero.it.title || v.primero.it.sku;
         const dem = demoraAcreditacion();
-        const filas = v.filas.map(x => `<div class="lin"><span class="n">${esc(tituloItem(x.it))}<small>${x.quiebre !== null ? 'Sin stock el ' + f(x.quiebre) + ' si no se manda. ' : ''}Cubre ${x.it.target_stock_days} días</small></span><span class="v">${NF.format(x.unidades)} u.</span></div>`).join('');
+        const filas = v.filas.map(x => `<div class="lin"><span class="n">${esc(tituloItem(x.it))}<small>${x.quiebre === null ? '' : (x.quiebre < v.entra ? 'Se queda sin stock el ' + f(x.quiebre) + ', antes de que entre esta colecta (' + f(v.entra) + '). ' : 'Si no se manda, se queda sin stock el ' + f(x.quiebre) + '. ')}Cubre ${x.it.target_stock_days} días</small></span><span class="v">${NF.format(x.unidades)} u.</span></div>`).join('');
         return `<section class="card"><h2>Colecta siguiente (borrador)</h2>
             <div class="tit-auto">${pluralizar(v.productos, 'producto', 'productos')}, ${NF.format(v.unidades)} unidades</div>
             <p class="chico"><b>Retiro recomendado: ${f(v.retiro)}. Entra a Full el ${f(v.ingreso)} y queda en venta el ${f(v.entra)} (${dem} ${dem === 1 ? 'día' : 'días'} de acreditación: es un supuesto de la app, no un dato de Mercado Libre). La fecha la manda ${esc(nom)}, el primero que se queda sin stock (${f(v.primero.quiebre)}).${v.tarde > 0 ? ` Ojo: igual queda ${dias_(v.tarde)} sin stock antes de que entre.` : ''}</b></p>

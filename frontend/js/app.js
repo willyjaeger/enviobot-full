@@ -2829,7 +2829,7 @@ function tarjetaColectaSiguiente(sola) {
     const nf = n => Math.round(n).toLocaleString('es-AR');
     const f = d => fechaDeProyeccion(d, v.hoy);
     const nom = v.primero.it.title || v.primero.it.sku;
-    const filas = v.filas.map(x => `<tr><td>${nombreItemPanel(x.it)}</td><td class="pc-num"><b>${nf(x.unidades)} u.</b></td><td>${x.quiebre !== null ? 'Sin stock el ' + escapeHtml(f(x.quiebre)) + ' si no se manda. ' : ''}Cubre ${escapeHtml(x.it.target_stock_days)} días de objetivo</td></tr>`).join('');
+    const filas = v.filas.map(x => `<tr><td>${nombreItemPanel(x.it)}</td><td class="pc-num"><b>${nf(x.unidades)} u.</b></td><td>${x.quiebre === null ? '' : (x.quiebre < v.entra ? 'Se queda sin stock el ' + escapeHtml(f(x.quiebre)) + ', antes de que entre esta colecta (' + escapeHtml(f(v.entra)) + '). ' : 'Si no se manda, se queda sin stock el ' + escapeHtml(f(x.quiebre)) + '. ')}Cubre ${escapeHtml(x.it.target_stock_days)} días de objetivo</td></tr>`).join('');
     const aviso = v.movida
         ? `<div class="pc-banner-sub pc-cmp-aviso">Movida a mano: la fecha recomendada era el ${escapeHtml(f(v.recomendado))}. ${v.quebran.length ? escapeHtml(pluralizar(v.quebran.length, 'producto se queda', 'productos se quedan')) + ' sin stock antes de que entre: ' + escapeHtml(v.quebran.slice(0, 5).map(c => c.it.title).join(', ')) + (v.quebran.length > 5 ? ' y ' + (v.quebran.length - 5) + ' más' : '') + '.' : 'Con esa fecha ningún producto se queda sin stock.'} <button type="button" class="btn btn-secondary btn-sm" onclick="restablecerRetiroAutomatica()">Volver a la fecha recomendada</button></div>`
         : '';
