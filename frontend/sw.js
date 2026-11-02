@@ -3,7 +3,7 @@
 // Gestiona notificaciones nativas de escritorio y eventos en segundo plano
 // ==============================================================================
 
-const CACHE_NAME = 'enviobot-full-v65';
+const CACHE_NAME = 'enviobot-full-v66';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -37,8 +37,12 @@ self.addEventListener('activate', (event) => {
 
 // Manejo de peticiones de red (requerido por Chromium para instalación automática de PWA)
 self.addEventListener('fetch', (event) => {
+  // 'no-cache' obliga a revalidar con el servidor: sin esto el navegador del teléfono puede reusar un movil.js o index.html viejo
+  // (el servidor no manda Cache-Control) y mostrar números de una versión anterior.
+  let pedido = event.request;
+  try { if (pedido.method === 'GET') pedido = new Request(event.request, { cache: 'no-cache' }); } catch (e) { pedido = event.request; }
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(pedido).catch(() => caches.match(event.request))
   );
 });
 

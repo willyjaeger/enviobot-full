@@ -666,6 +666,11 @@
         return cabecera + tarjetaAutomatica() + tarjetaSiguiente() + galpon + cardSuf;
     }
 
+    function versionApp() {
+        const s = document.querySelector('script[src*="movil.js"]');
+        const m = s && /v=([0-9_]+)/.exec(s.getAttribute('src'));
+        return m ? m[1] : '?';
+    }
     function vistaMas() {
         const u = estado.user || {};
         const nuevos = avisosNuevos();
@@ -675,7 +680,7 @@
             <button class="btn sec" data-avisos="1">Avisos${nuevos ? ' (' + nuevos + ' nuevos)' : ''}</button>
             <a class="btn sec" href="index.html?escritorio=1">Ver panel completo</a>
             <button class="btn sec peligro" id="btnSalir">Cerrar sesión</button></section>
-            <div class="sin-datos">Los datos se actualizan solos cada 4 horas.</div>`;
+            <div class="sin-datos">Los datos se actualizan solos cada 4 horas.<br>Versión ${esc(versionApp())}</div>`;
     }
 
     // ── Detalle de producto ─────────────────────────────────────────────────────
