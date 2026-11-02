@@ -6133,7 +6133,7 @@ function renderizarCitaML() {
     caja.className = 'cita-ml cita-' + e.estado;
     caja.innerHTML = `<div class="cita-ml-linea"><strong>Tu cita permite entre ${Number(cita.min)} y ${Number(cita.max)} u.</strong> <span class="cita-ml-msg">${escapeHtml(msg)}</span></div>
         <div class="cita-ml-sub">${escapeHtml(origen)}</div>
-        <details class="cita-ml-corregir"${abierto ? ' open' : ''}><summary>Corregir el rango con lo que dice Mercado Libre</summary>
+        <details class="cita-ml-corregir"${abierto ? ' open' : ''}><summary>Corregir el rango de cantidades</summary>
             <div class="cita-ml-campos">
                 <label>Mínimo <input type="number" min="0" id="citaMinEdicion" value="${Number(cita.min)}"></label>
                 <label>Máximo <input type="number" min="0" id="citaMaxEdicion" value="${Number(cita.max)}"></label>
