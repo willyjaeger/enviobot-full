@@ -189,6 +189,21 @@ class TestCitaEnElPanel(unittest.TestCase):
         self.assertRegex(css, r'#modalEditarEnvio \.modal-card \{[^}]*overflow-y: auto')
         self.assertRegex(css, r'#editarEnvioPie \{[^}]*position: sticky[^}]*bottom: 0')
 
+    def test_cada_producto_de_editar_envio_va_en_una_sola_linea(self):
+        # Pedido repetido de Guillermo: SKU y nombre, stock, vende/día, unidades con su sugerencia y quitar, todo en un renglón.
+        js = self._js()
+        fila = js[js.index('function renderizarItemsEdicion'):js.index('window.renderizarItemsEdicion')]
+        for clase in ('eenv-art-linea', 'eenv-tit', 'eenv-unidades-linea', 'eenv-input', 'eenv-sug-texto'):
+            self.assertIn(clase, fila)
+        self.assertNotIn('margin-top: 3px', fila)          # la sugerencia ya no baja debajo del campo
+        self.assertIn('escapeHtml(it.title)', fila)         # el nombre sale escapado
+        css = _leer(os.path.join('css', 'style.css'))
+        self.assertRegex(css, r'#modalEditarEnvio \.inventory-table \{[^}]*table-layout: fixed')
+        self.assertRegex(css, r'\.eenv-tit \{[^}]*text-overflow: ellipsis')
+        self.assertRegex(css, r'\.eenv-sug-texto \{[^}]*min-width')   # el Ajustar queda alineado en todas las filas
+        bloque = css[css.index('/* Editar envío: cada producto en una sola línea'):]
+        self.assertIsNone(re.search(r'#[0-9a-fA-F]{3,8}\b', bloque))
+
     def test_la_caja_existe_y_usa_colores_de_variables(self):
         self.assertIn('id="editarEnvioCita"', _leer('index.html'))
         css = _leer(os.path.join('css', 'style.css'))

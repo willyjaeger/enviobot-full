@@ -5821,8 +5821,8 @@ function renderizarItemsEdicion() {
         if (sobra !== null) {
             const quitar = it.units_to_send - sobra;
             sugHintHtml = `
-                <div style="font-size: 10.5px; color: var(--warn); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap;">
-                    <span title="Con lo que ya hay y lo que se vende hasta que entre la colecta, estas unidades pasan tus días de stock objetivo">${sobra > 0 ? 'Sugerido quitar' : 'Sugerido sacarlo'}: <strong>${sobra > 0 ? quitar : it.units_to_send}</strong></span>
+                <div class="eenv-sug eenv-sug-quitar">
+                    <span class="eenv-sug-texto" title="Con lo que ya hay y lo que se vende hasta que entre la colecta, estas unidades pasan tus días de stock objetivo">${sobra > 0 ? 'Sugerido quitar' : 'Sugerido sacarlo'}: <strong>${sobra > 0 ? quitar : it.units_to_send}</strong></span>
                     <button type="button" class="btn btn-secondary btn-xs" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px;" onclick="${sobra > 0 ? `onAjustarSugeridoEdicion(${idx}, ${sobra})` : `quitarItemDeEdicion(${idx})`}" title="${sobra > 0 ? 'Dejar ' + sobra + ' unidades' : 'Sacar el producto del envío'}">
                         ${sobra > 0 ? 'Ajustar' : 'Sacar'}
                     </button>
@@ -5831,8 +5831,8 @@ function renderizarItemsEdicion() {
         }
         if (sugerido) {
             sugHintHtml = `
-                <div style="font-size: 10.5px; color: var(--accent); margin-top: 3px; display: flex; align-items: center; justify-content: center; gap: 4px;">
-                    <span style="white-space: nowrap;" title="Para cubrir tu stock objetivo con lo que se vende hasta que entre la colecta">Sugerido: <strong>${sugerido}</strong></span>
+                <div class="eenv-sug">
+                    <span class="eenv-sug-texto" title="Para cubrir tu stock objetivo con lo que se vende hasta que entre la colecta">Sugerido: <strong>${sugerido}</strong></span>
                     <button type="button" class="btn btn-secondary btn-xs" style="font-size: 9.5px; padding: 1px 4px; border-radius: 3px;" onclick="onAjustarSugeridoEdicion(${idx}, ${sugerido})" title="Ajustar cantidad a unidades sugeridas">
                         Ajustar
                     </button>
@@ -5841,23 +5841,24 @@ function renderizarItemsEdicion() {
         }
 
         return `
-            <tr style="border-bottom: 1px solid var(--border);">
-                <td style="padding: 8px 10px;">
-                    <div style="font-weight: 600; color: var(--text);">${it.title}</div>
-                    <div style="display: flex; gap: 8px; align-items: center; margin-top: 2px;">
-                        ${skuHtml}
-                        ${varHtml}
+            <tr class="eenv-fila">
+                <td class="eenv-art">
+                    <div class="eenv-art-linea">
+                        ${it.sku ? `<span class="eenv-sku">${escapeHtml(it.sku)}</span>` : ''}
+                        <span class="eenv-tit" title="${escapeHtml(it.title)}">${escapeHtml(it.title)}</span>
+                        ${it.variation_name ? `<span class="eenv-var">${escapeHtml(it.variation_name)}</span>` : ''}
                     </div>
                 </td>
-                <td style="padding: 8px 10px; text-align: center; color: var(--text);">${it.current_full_stock}</td>
-                <td style="padding: 8px 10px; text-align: center; color: var(--text2); white-space: nowrap;">${it.vpd}</td>
-                <td style="padding: 8px 10px; text-align: center;">
-                    <input type="number" min="1" max="99999" value="${it.units_to_send}" ${edicionCerrada ? 'disabled' : ''}
-                           oninput="onCambiarUnidadesEdicion(${idx}, this.value)" 
-                           style="width: 80px; text-align: center; padding: 4px 6px; font-size: 13px; font-weight: 700; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text);">
-                    ${sugHintHtml}
+                <td class="eenv-num">${Number(it.current_full_stock) || 0}</td>
+                <td class="eenv-num eenv-suave">${escapeHtml(it.vpd)}</td>
+                <td class="eenv-unidades">
+                    <div class="eenv-unidades-linea">
+                        <input type="number" min="1" max="99999" value="${Number(it.units_to_send) || 1}" ${edicionCerrada ? 'disabled' : ''}
+                               oninput="onCambiarUnidadesEdicion(${idx}, this.value)" class="eenv-input">
+                        ${sugHintHtml}
+                    </div>
                 </td>
-                <td style="padding: 8px 10px; text-align: center;">
+                <td class="eenv-num">
                     <button type="button" class="btn btn-secondary btn-sm" onclick="quitarItemDeEdicion(${idx})" title="Quitar del envío" style="padding: 2px 7px;" ${edicionCerrada ? 'disabled' : ''}>
                         ✕
                     </button>

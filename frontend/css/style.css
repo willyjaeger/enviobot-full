@@ -2170,3 +2170,19 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 /* Editar envío: si el contenido no entra en la pantalla, la ventana se desplaza y los botones quedan siempre a la vista */
 #modalEditarEnvio .modal-card { overflow-y: auto; }
 #editarEnvioPie { position: sticky; bottom: 0; z-index: 5; background: var(--surface); padding-bottom: 4px; }
+
+/* Editar envío: cada producto en una sola línea (SKU y nombre, stock, vende por día, unidades con su sugerencia, quitar) */
+#modalEditarEnvio .inventory-table { table-layout: fixed; }
+.eenv-fila { border-bottom: 1px solid var(--border); }
+.eenv-fila td { padding: 5px 8px; vertical-align: middle; }
+.eenv-art-linea { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+.eenv-sku { font-family: monospace; font-size: 11px; color: var(--accent-text, var(--accent)); flex: 0 0 auto; }
+.eenv-tit { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.eenv-var { font-size: 11px; color: var(--text2); flex: 0 0 auto; }
+.eenv-num { text-align: center; color: var(--text); white-space: nowrap; }
+.eenv-suave { color: var(--text2); }
+.eenv-unidades-linea { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.eenv-input { width: 72px; text-align: center; padding: 3px 6px; font-size: 13px; font-weight: 700; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); flex: 0 0 auto; }
+.eenv-sug { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--accent-text, var(--accent)); white-space: nowrap; }
+.eenv-sug-quitar { color: var(--warn); }
+.eenv-sug-texto { display: inline-block; min-width: 128px; text-align: right; }
