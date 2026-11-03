@@ -2072,6 +2072,47 @@ function cerrarDetalleProducto(idProducto) {
     const m = document.getElementById(cual);
     if (m) m.remove();
     ventanasGrafico = ventanasGrafico.filter(x => x !== cual);
+    actualizarBarraVentanas();
+}
+
+function cerrarTodasLasVentanas() {
+    ventanasGrafico.slice().forEach(id => { const m = document.getElementById(id); if (m) m.remove(); });
+    ventanasGrafico = [];
+    actualizarBarraVentanas();
+}
+
+// Con dos o más ventanas abiertas aparece una barra para repartirlas por toda la pantalla (una al lado de la otra) o cerrarlas.
+function actualizarBarraVentanas() {
+    let barra = document.getElementById('pc-barra-ventanas');
+    if (ventanasGrafico.length < 2) { if (barra) barra.remove(); return; }
+    if (!barra) {
+        barra = document.createElement('div');
+        barra.id = 'pc-barra-ventanas';
+        barra.className = 'pc-barra-ventanas';
+        document.body.appendChild(barra);
+    }
+    barra.innerHTML = '<span>' + ventanasGrafico.length + ' gráficos abiertos</span>' +
+        '<button type="button" class="btn btn-primary btn-sm" onclick="acomodarVentanas()" title="Reparte todas las ventanas por la pantalla para verlas juntas">Acomodar en pantalla</button>' +
+        '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarTodasLasVentanas()">Cerrar todas</button>';
+}
+
+function acomodarVentanas() {
+    const n = ventanasGrafico.length;
+    if (!n) return;
+    const W = window.innerWidth, H = window.innerHeight, sep = 8, arriba = 48;
+    const cols = Math.max(1, Math.min(n, Math.ceil(Math.sqrt(n * W / Math.max(1, H - arriba)))));
+    const filas = Math.ceil(n / cols);
+    const ancho = Math.floor((W - sep * (cols + 1)) / cols);
+    const alto = Math.floor((H - arriba - sep * (filas + 1) + sep) / filas);
+    ventanasGrafico.forEach((id, k) => {
+        const m = document.getElementById(id);
+        if (!m || !m.style) return;
+        m.style.left = (sep + (k % cols) * (ancho + sep)) + 'px';
+        m.style.top = (arriba + Math.floor(k / cols) * (alto + sep)) + 'px';
+        m.style.width = ancho + 'px';
+        m.style.height = alto + 'px';
+        m.style.maxHeight = 'none';
+    });
 }
 
 function traerVentanaAlFrente(idProducto) {
@@ -2143,6 +2184,7 @@ function mostrarGraficoProducto(it, c) {
     modal.innerHTML = '<div role="dialog" aria-label="Gráfico de ' + escapeHtml(it.title) + '">' + cabecera + cuerpo + '</div>';
     document.body.appendChild(modal);
     ventanasGrafico.push(idVentana);
+    actualizarBarraVentanas();
 }
 
 if (typeof document !== 'undefined' && document.addEventListener) {

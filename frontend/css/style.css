@@ -1848,6 +1848,7 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .pc-modal-fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); z-index: 1500; display: flex; align-items: center; justify-content: center; padding: 16px; }
 .pc-modal-caja { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: min(960px, 100%); max-height: 94vh; overflow: auto; padding: 16px 18px; }
 .pc-ventana { position: fixed; background: var(--surface); border: 1px solid var(--border-hover, var(--border)); border-radius: 12px; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45); max-width: calc(100vw - 16px); max-height: 85vh; min-width: 300px; overflow: auto; resize: both; padding: 0 18px 16px; }
+.pc-barra-ventanas { position: fixed; top: 8px; right: 16px; z-index: 5000; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--surface); border: 1px solid var(--border-hover, var(--border)); border-radius: 10px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); font-size: 12.5px; color: var(--text); }
 .pc-ventana-cab { position: sticky; top: 0; z-index: 3; background: var(--surface); padding-top: 14px; cursor: move; touch-action: none; user-select: none; }
 .pc-modal-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
 .pc-graf-grande .pc-g-txt { font-size: 12px; }
