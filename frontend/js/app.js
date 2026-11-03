@@ -2061,9 +2061,49 @@ function htmlDatosProducto(it, proy, colectas, hoy, demora) {
         'La franja gris es lo que tarda Mercado Libre en dejar en venta lo que recibe. Pasá el mouse por el gráfico para ver cada día.</div>';
 }
 
-function cerrarDetalleProducto() {
-    const m = document.getElementById('pc-modal-producto');
+// Los gráficos de producto son ventanas flotantes: se arrastran del título, se agrandan desde la esquina y puede haber
+// varias abiertas para comparar productos. Cada una se cierra con su botón; Escape cierra la de arriba.
+let ventanasGrafico = [];      // ids de las abiertas, la última es la que está arriba
+let zVentanaGrafico = 1400;
+
+function cerrarDetalleProducto(idProducto) {
+    const cual = idProducto === undefined ? ventanasGrafico[ventanasGrafico.length - 1] : 'pc-ventana-' + Number(idProducto);
+    if (cual === undefined) return;
+    const m = document.getElementById(cual);
     if (m) m.remove();
+    ventanasGrafico = ventanasGrafico.filter(x => x !== cual);
+}
+
+function traerVentanaAlFrente(idProducto) {
+    const id = typeof idProducto === 'number' ? 'pc-ventana-' + idProducto : idProducto;
+    const m = document.getElementById(id);
+    if (!m || !m.style) return;
+    zVentanaGrafico += 1;
+    m.style.zIndex = zVentanaGrafico;
+    ventanasGrafico = ventanasGrafico.filter(x => x !== id).concat(id);
+}
+
+function iniciarArrastreVentana(ev, idProducto) {
+    const id = 'pc-ventana-' + Number(idProducto);
+    if (ev.target && ev.target.closest && ev.target.closest('button')) return;
+    const m = document.getElementById(id);
+    if (!m) return;
+    traerVentanaAlFrente(idProducto);
+    const caja = m.getBoundingClientRect();
+    const dx = ev.clientX - caja.left, dy = ev.clientY - caja.top;
+    ev.preventDefault();
+    const mover = e => {
+        const x = Math.min(Math.max(0, e.clientX - dx), window.innerWidth - 80);
+        const y = Math.min(Math.max(0, e.clientY - dy), window.innerHeight - 40);
+        m.style.left = x + 'px';
+        m.style.top = y + 'px';
+    };
+    const soltar = () => {
+        document.removeEventListener('pointermove', mover);
+        document.removeEventListener('pointerup', soltar);
+    };
+    document.addEventListener('pointermove', mover);
+    document.addEventListener('pointerup', soltar);
 }
 
 function abrirDetalleProducto(colectaId, sku) {
@@ -2080,22 +2120,29 @@ function mostrarGraficoProducto(it, c) {
     const hoy = new Date();
     const demora = demoraAcreditacionDias();
     const colectas = colectasEfectivas();
-    cerrarDetalleProducto();
     if (!it) return;
+    const idVentana = 'pc-ventana-' + Number(it.id);
+    if (document.getElementById(idVentana)) { traerVentanaAlFrente(idVentana); return; }   // ya está abierta: se trae al frente
     const proy = proyeccionProducto(it, colectas, hoy, demora);
     const modal = document.createElement('div');
-    modal.id = 'pc-modal-producto';
-    modal.className = 'pc-modal-fondo';
-    modal.setAttribute('onclick', 'cerrarDetalleProducto()');
-    const cabecera = '<div class="pc-modal-cab"><div><div class="pc-hero-titulo">' + escapeHtml(it.title) + '</div>' +
+    modal.id = idVentana;
+    modal.className = 'pc-ventana';
+    const n = ventanasGrafico.length;
+    const ancho = Math.min(760, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 16);
+    const izq = Math.max(8, Math.min(((typeof window !== 'undefined' ? window.innerWidth : 1000) - ancho) / 2 + n * 28, (typeof window !== 'undefined' ? window.innerWidth : 1000) - ancho - 8));
+    zVentanaGrafico += 1;
+    modal.setAttribute('style', 'left:' + Math.round(izq) + 'px;top:' + (70 + (n % 8) * 28) + 'px;width:' + ancho + 'px;z-index:' + zVentanaGrafico + ';');
+    modal.setAttribute('onmousedown', 'traerVentanaAlFrente(' + Number(it.id) + ')');
+    const cabecera = '<div class="pc-modal-cab pc-ventana-cab" onpointerdown="iniciarArrastreVentana(event, ' + Number(it.id) + ')" title="Arrastrá para mover la ventana"><div><div class="pc-hero-titulo">' + escapeHtml(it.title) + '</div>' +
         '<div class="pc-hero-sub">' + (it.pausado ? 'Pausada en Mercado Libre. ' : (it.pausa_por_quiebre ? 'Pausada por Mercado Libre al quedarse sin stock. ' : '')) + (proy ? 'Cómo se va agotando en las próximas 6 semanas' : 'Sin ventas registradas: no puedo proyectar') + '</div></div>' +
-        '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarDetalleProducto()">Cerrar</button></div>';
+        '<button type="button" class="btn btn-secondary btn-sm" onclick="cerrarDetalleProducto(' + Number(it.id) + ')">Cerrar</button></div>';
     const cuerpo = proy
-        ? svgProducto(it, proy, c ? claseColorColecta(c) : 'pc-c0', hoy, DIAS_PROYECCION, true, 'detalle-' + (c ? Number(c.id) : 'p' + Number(it.id))) +
+        ? svgProducto(it, proy, c ? claseColorColecta(c) : 'pc-c0', hoy, DIAS_PROYECCION, true, 'detalle-' + (c ? Number(c.id) : 'p') + '-' + Number(it.id)) +
           htmlDatosProducto(it, proy, colectas, hoy, demora)
         : '<div class="pc-vacio">Este producto no vendió en los últimos 30 días, así que no hay curva para dibujar. Hoy tiene ' + escapeHtml(it.current_stock) + ' u. en Full.</div>';
-    modal.innerHTML = '<div class="pc-modal-caja" role="dialog" aria-modal="true" onclick="event.stopPropagation()">' + cabecera + cuerpo + '</div>';
+    modal.innerHTML = '<div role="dialog" aria-label="Gráfico de ' + escapeHtml(it.title) + '">' + cabecera + cuerpo + '</div>';
     document.body.appendChild(modal);
+    ventanasGrafico.push(idVentana);
 }
 
 if (typeof document !== 'undefined' && document.addEventListener) {
