@@ -1987,6 +1987,8 @@ body:not(.sb-abierto) .sb-item:hover::after { content: attr(data-label); positio
 /* Encabezado más liviano: marca a la izquierda, cuenta de Mercado Libre y usuario a la derecha. */
 /* Misma altura y relleno que la tarjeta de título de EnvioBot Pedidos. */
 header { padding: 16px 20px; margin-bottom: 10px; }
+/* La marca queda siempre a la vista arriba, también al bajar por la página. */
+body > .container > header { position: sticky; top: 0; z-index: 90; }
 .user-info { gap: 6px; }
 /* Bloques plegables: la información se esconde, no se quita. */
 .plegable > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; user-select: none; }
