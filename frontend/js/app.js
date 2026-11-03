@@ -567,7 +567,11 @@ function formatearFechaCorta(iso) {
 
 function nombreItemPanel(it) {
     const variacion = it.variation_name ? ` (${escapeHtml(it.variation_name)})` : '';
-    return `${escapeHtml(it.title)}${variacion}<span class="pc-sku">${it.sku ? escapeHtml(it.sku) : ''}</span>`;
+    const nombre = `${escapeHtml(it.title)}${variacion}`;
+    // tocar el nombre abre el gráfico de consumo del producto
+    const conGrafico = it.id !== undefined && it.id !== null
+        ? `<span class="pc-nombre-clic" onclick="abrirGraficoDeProducto(${Number(it.id)})" title="Tocá para ver el gráfico de consumo">${nombre}</span>` : nombre;
+    return `${conGrafico}<span class="pc-sku">${it.sku ? escapeHtml(it.sku) : ''}</span>`;
 }
 
 // ── Panel de inicio: estado general, colecta, qué hacer hoy ─────────────────────────────

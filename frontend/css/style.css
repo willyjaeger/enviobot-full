@@ -1911,6 +1911,8 @@ button.pc-chip-mini:hover { color: var(--text); text-decoration: underline; }
 .stock-table tbody tr { cursor: pointer; }
 
 .pc-fila-clic { cursor: pointer; }
+.pc-nombre-clic { cursor: pointer; }
+.pc-nombre-clic:hover { text-decoration: underline; }
 .pc-fila-clic:hover { background: var(--bg); }
 .pc-fila-ident { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text2); margin: 2px 0 6px; }
 .pc-fila-ident b { color: var(--text); }
