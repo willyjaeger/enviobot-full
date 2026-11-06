@@ -5049,10 +5049,17 @@ function htmlVistaPreviaPdf(envio) {
     const faltan = (envio.sin_match || []).map(function (p) {
         return escapeHtml(p.titulo) + ' (' + escapeHtml(p.unidades) + ' u.)';
     });
-    const aviso = faltan.length
+    const nuevosCat = (envio.agregados_al_catalogo || []).map(function (p) {
+        return escapeHtml(p.titulo) + (p.sku ? '' : ' (sin SKU: cargalo en Mercado Libre)') + (p.estado && p.estado !== 'active' ? ' [' + escapeHtml(p.estado) + ']' : '');
+    });
+    const avisoNuevos = nuevosCat.length
+        ? '<div class="pc-vacio" style="margin-top:10px;">Se suma a tu catálogo ' + (nuevosCat.length === 1 ? 'un producto que todavía no figura' : nuevosCat.length + ' productos que todavía no figuran') +
+          ' como Full en Mercado Libre: ' + nuevosCat.join(', ') + '. Cuando Mercado Libre lo marque como Full, EnvioBot lo sigue solo.</div>'
+        : '';
+    const aviso = avisoNuevos + (faltan.length
         ? '<div class="pc-vacio" style="margin-top:10px;">No encontré en EnvioBot ' + faltan.length +
           (faltan.length === 1 ? ' producto' : ' productos') + ', así que no se cargan: ' + faltan.join(', ') + '.</div>'
-        : '';
+        : '');
     let existe = '';
     if (envio.ya_existe) {
         const c = envio.cambios || {};

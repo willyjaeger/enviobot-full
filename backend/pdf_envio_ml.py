@@ -161,7 +161,8 @@ def comparar_con_existente(existentes, encontrados):
         ahora = int(p["unidades"])
         previo = previos.get(k)
         if previo is None:
-            agregados.append({"titulo": f.get("title") or p.get("titulo"), "sku": f.get("sku") or p.get("sku"), "unidades": ahora})
+            agregados.append({"titulo": f.get("title") or p.get("titulo"), "sku": f.get("sku") or p.get("sku"), "unidades": ahora,
+                              "codigo_ml": p.get("codigo_ml")})
         elif int(previo.get("units_to_send") or 0) != ahora:
             cambiados.append({"id": previo["id"], "titulo": previo.get("title"), "sku": previo.get("sku"),
                               "antes": int(previo.get("units_to_send") or 0), "ahora": ahora})

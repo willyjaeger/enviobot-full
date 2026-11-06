@@ -44,6 +44,7 @@ from inbound_service import render_remito_html
 import pdf_envio_ml as _pdf_ml
 import base_ml as _base_ml
 import cita_ml as _cita_ml
+import adoptar_ml as _adoptar_ml
 
 load_dotenv()
 
@@ -3783,6 +3784,19 @@ def import_inbound_pdf():
             filas = cur.fetchall()
         encontrados, sin_match = _pdf_ml.emparejar_productos(leido["productos"], filas)
 
+        # Productos que ML ya puso en la colecta pero todavía no son Full (el worker no los trae): se buscan por su Código ML.
+        # En la vista previa solo se lee de ML; el catálogo se completa al confirmar.
+        nuevos_catalogo = []
+        if sin_match:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, ml_access_token FROM ml_credentials WHERE user_id=%s AND ml_access_token IS NOT NULL", (account_id,))
+                creds = [{"id": c["id"], "token": c["ml_access_token"]} for c in (cur.fetchall() or [])]
+            if creds:
+                nuevos_catalogo, sin_match = _adoptar_ml.resolver(sin_match, creds, requests)
+                if nuevos_catalogo:
+                    orden = {p["codigo_ml"]: i for i, p in enumerate(leido["productos"])}
+                    encontrados = sorted(encontrados + nuevos_catalogo, key=lambda e: orden.get(e["codigo_ml"], 999))
+
         resumen = {
             "numero_ml": leido["numero_ml"],
             "codigo": codigo,
@@ -3790,6 +3804,8 @@ def import_inbound_pdf():
             "productos": [{"titulo": p["fila"]["title"] or p["titulo"], "sku": p["fila"]["sku"] or p["sku"],
                            "unidades": p["unidades"]} for p in encontrados],
             "sin_match": [{"titulo": p["titulo"], "sku": p["sku"], "unidades": p["unidades"]} for p in sin_match],
+            "agregados_al_catalogo": [{"titulo": p["fila"]["title"], "sku": p["fila"]["sku"], "unidades": p["unidades"],
+                                       "estado": p["fila"]["status"]} for p in nuevos_catalogo],
             "ya_existe": bool(existente),
         }
         if existente:
@@ -3808,6 +3824,9 @@ def import_inbound_pdf():
             return jsonify({"ok": False, "error": "La fecha de retiro no es válida."}), 400
         if not encontrados:
             return jsonify({"ok": False, "error": "Ningún producto del PDF coincide con tus publicaciones.", "envio": resumen}), 400
+        if nuevos_catalogo:
+            with conn.cursor() as cur:
+                _adoptar_ml.guardar(cur, account_id, nuevos_catalogo)
 
         if existente:
             if existente["status"] in ("delivered", "cancelled"):
@@ -3819,7 +3838,7 @@ def import_inbound_pdf():
             estimated_arrival = pickup_date + timedelta(days=transit_days)
             total_units = sum(p["unidades"] for p in encontrados)
             sid = existente["id"]
-            nuevos_skus = {a["sku"] for a in cambios["agregados"]}
+            nuevos_codigos = {a["codigo_ml"] for a in cambios["agregados"]}
             with conn.cursor() as cur:
                 for c in cambios["cambiados"]:
                     cur.execute("UPDATE inbound_shipment_items SET units_to_send=%s WHERE id=%s AND shipment_id=%s",
@@ -3828,7 +3847,7 @@ def import_inbound_pdf():
                     cur.execute("DELETE FROM inbound_shipment_items WHERE id=%s AND shipment_id=%s", (q["id"], sid))
                 for p in encontrados:
                     f = p["fila"]
-                    if (f["sku"] or p["sku"]) not in nuevos_skus:
+                    if p["codigo_ml"] not in nuevos_codigos:
                         continue
                     cur.execute("""
                         INSERT INTO inbound_shipment_items (

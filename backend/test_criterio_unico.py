@@ -27,8 +27,11 @@ const universal = () => new Proxy(function () {}, {
     get: (t, k) => (k === Symbol.toPrimitive ? () => '' : k === 'length' ? 0 : k === 'style' ? {} : k === 'classList' ? { add() {}, remove() {}, toggle() {}, contains() { return false; } } : universal()),
     apply: () => universal(), construct: () => universal(), set: () => true,
 });
+// El día de los datos reales (1/11/2026 a la noche): las fechas de la colecta ya pasaron hoy y la prueba no puede depender del reloj.
+const AHORA = new Date('2026-11-01T21:34:00-03:00').getTime();
+class FechaFija extends Date { constructor(...a) { if (a.length === 0) super(AHORA); else super(...a); } static now() { return AHORA; } }
 const ctx = {
-    console, Intl, Date, Math, JSON, Number, String, Array, Object, Map, Set, Promise, parseInt, parseFloat, isNaN, URLSearchParams,
+    console, Intl, Date: FechaFija, Math, JSON, Number, String, Array, Object, Map, Set, Promise, parseInt, parseFloat, isNaN, URLSearchParams,
     setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {},
     document: universal(), localStorage: { getItem: () => null, setItem() {}, removeItem() {} }, sessionStorage: { getItem: () => null, setItem() {} },
     navigator: { userAgent: 'node' }, location: { protocol: 'http:', href: 'http://x/', hash: '', search: '', pathname: '/' },
