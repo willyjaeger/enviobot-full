@@ -320,6 +320,29 @@ process.stdout.write(JSON.stringify({ ok: sku(r.ok), tiempo: sku(r.hay_tiempo), 
         self.assertIn('Retiro recomendado: la colecta #81021895', h)
         self.assertIn('Sumar a la colecta #81021895', h)
 
+    def test_nunca_hay_dos_colectas_automaticas_pegadas(self):
+        # Pedido de Guillermo (2026-11-11): una colecta el 21/11 y otra el 22/11 es absurdo. Lo que tendría que salir a menos de una
+        # semana de la primera viaja en la primera, y la siguiente se separa al menos 7 días.
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+const it = (id, sku, stock) => ({ id: id, title: sku, sku: sku, current_stock: stock, vpd: 10, lead_time_days: 3, transit_delay_days: 3, buffer_days: 2, target_stock_days: 15 });
+ctx.itemsData = [it(1, 'A', 90), it(2, 'B', 140), it(3, 'D', 200), it(4, 'C', 900)];
+ctx.colectasData = [];
+const hoy = ctx.colectaAutomaticaVirtual();
+const sig = ctx.colectaSiguienteVirtual();
+process.stdout.write(JSON.stringify({ hoy: hoy.filas.map(f => [f.it.sku, !!f.junto]), retiroHoy: hoy.retiro,
+    sig: sig ? sig.primero.it.sku : null, retiroSig: sig ? sig.retiro : null }));
+"""
+        r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertEqual(d['hoy'], [['A', False], ['B', True]])      # B tiene tiempo, pero tendría que salir 1 día después: va junto
+        self.assertEqual(d['sig'], 'D')                              # la que manda la fecha de la siguiente es D, no A ni B
+        self.assertGreaterEqual(d['retiroSig'] - d['retiroHoy'], 7)
+
     def test_el_texto_de_lo_que_ya_no_se_salva_dice_hasta_cuando(self):
         harness = r"""
 const vm = require('vm');
