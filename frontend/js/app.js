@@ -2786,12 +2786,15 @@ function colectaAutomaticaVirtual() {
         r.hay_tiempo.forEach(f => {
             if (colectaYaCubreObjetivo(f.it) || f.primerQuiebre === null) return;
             const necesita = f.primerQuiebre - viaje(f.it);
-            if (necesita > retiro + DIAS_SEPARACION_COLECTAS) return;
+            // Solo viaja en esta colecta lo que se quedaría sin stock antes de que entre la siguiente (retiro + 7 días); lo demás espera a la segunda.
+            if (necesita >= retiro + DIAS_SEPARACION_COLECTAS) return;
             const sug = Math.round(Number(f.it.sugerido_al_ingreso) || 0);
             const unidades = sug > 0 ? sug : Math.ceil((Number(f.proy && f.proy.vpd) || 0) * (Number(f.it.target_stock_days) || 0));
             if (unidades > 0) filas.push({ it: f.it, unidades: unidades, conTiempo: true, junto: true, quiebre: f.primerQuiebre, saleHasta: necesita });
         });
     }
+    // Ordenadas por el día en que se quedan sin stock: primero lo más urgente.
+    filas.sort((a, b) => (a.quiebre === null || a.quiebre === undefined ? 999 : a.quiebre) - (b.quiebre === null || b.quiebre === undefined ? 999 : b.quiebre));
     return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.filter(f => !f.junto).length, hoy: hoy, retiro: retiro };
 }
 
@@ -2815,7 +2818,7 @@ async function planillaDeTarjeta(cual) {
 // Toda la explicación va en un cartelito que se abre al pasar el mouse (o al tocar el signo ?).
 function tarjetaResumenColecta(o) {
     const dato = (rotulo, valor) => `<div class="pc-resumen-dato"><div class="pc-resumen-rotulo">${escapeHtml(rotulo)}</div><div class="pc-resumen-valor">${valor}</div></div>`;
-    return `<div class="pc-banner pc-colecta-resumen" id="${o.id}"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
+    return `<div class="pc-banner pc-colecta-resumen" id="${o.id}" data-ayuda-tarjeta="${escapeHtml(o.ayuda)}"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">${escapeHtml(o.titulo)} <span class="pc-info pc-ayuda pc-ayuda-larga" tabindex="0" role="button" aria-label="Cómo se calcula esta colecta" data-ayuda="${escapeHtml(o.ayuda)}">?</span></div>
             <div class="pc-resumen-datos">${dato('Fecha prevista de retiro', escapeHtml(o.retiro))}${dato('Productos', escapeHtml(o.productos))}${dato('Unidades', escapeHtml(o.unidades))}</div>
