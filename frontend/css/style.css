@@ -2217,3 +2217,13 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-colecta-resumen:has(.pc-info:hover)::after { opacity: 0; }
 
 .pc-resumen-fecha { font: inherit; font-size: 18px; font-weight: 700; color: var(--text); background: transparent; border: 0; border-bottom: 1px dashed var(--text2); padding: 0; width: 100%; max-width: 160px; cursor: pointer; color-scheme: light dark; }
+.pc-fecha-spin { display: inline-flex; align-items: center; gap: 2px; font-size: 20px; font-weight: 700; color: var(--text); }
+.pc-spin { display: inline-flex; align-items: center; gap: 1px; }
+.pc-spin-num { text-align: center; font-variant-numeric: tabular-nums; }
+.pc-spin-sep { color: var(--text2); font-weight: 400; margin: 0 1px; }
+.pc-spin-flechas { display: inline-flex; flex-direction: column; gap: 1px; }
+.pc-spin-flechas button { width: 16px; height: 12px; padding: 0; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); cursor: pointer; position: relative; }
+.pc-spin-flechas button:hover { border-color: var(--accent, var(--text2)); }
+.pc-spin-flechas button::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border-left: 4px solid transparent; border-right: 4px solid transparent; }
+.pc-spin-arriba::after { border-bottom: 5px solid var(--text); }
+.pc-spin-abajo::after { border-top: 5px solid var(--text); }

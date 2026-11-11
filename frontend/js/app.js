@@ -2799,7 +2799,7 @@ function colectaHoyBase() {
             retiro = recomendado;
             let fijo = retiroHoyElegido;
             if (fijo && fijo < claveDiaLocal(hoy0)) fijo = null;          // una fecha que ya pasó vuelve a la recomendada
-            if (fijo) retiro = Math.max(minimo, Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(fijo))));
+            if (fijo) retiro = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(fijo)));
         }
     }
     // Lo que tenga que salir a menos de una semana de esta colecta (DIAS_SEPARACION_COLECTAS) viaja junto: armar otra a los pocos días es absurdo.
@@ -2891,7 +2891,30 @@ function abrirAyudaTarjeta(ev, el) {
 // Fecha de retiro editable: cambiarla reajusta las dos colectas (la de hoy lleva lo que hace falta hasta que entre la siguiente).
 function campoRetiro(cual, iso, minISO, texto) {
     if (!iso) return escapeHtml(texto);
-    return `<input type="date" class="pc-resumen-fecha" value="${iso}" min="${minISO || ''}" onchange="cambiarRetiroColecta('${cual}', this.value)" title="Cambiá la fecha de retiro: los productos y las unidades de las dos colectas se reajustan solos" aria-label="Fecha prevista de retiro">`;
+    const partes = iso.split('-');
+    const num = (tipo, valor, ancho) => `<span class="pc-spin" title="${tipo === 'd' ? 'Día' : tipo === 'm' ? 'Mes' : 'Año'}"><span class="pc-spin-num" style="min-width:${ancho}ch">${valor}</span><span class="pc-spin-flechas"><button type="button" class="pc-spin-arriba" aria-label="Subir" onclick="moverRetiro('${cual}', '${tipo}', 1)"></button><button type="button" class="pc-spin-abajo" aria-label="Bajar" onclick="moverRetiro('${cual}', '${tipo}', -1)"></button></span></span>`;
+    return `<span class="pc-fecha-spin" title="Cambiá el día, el mes o el año con las flechas: los productos y las unidades de las dos colectas se reajustan solos" aria-label="Fecha prevista de retiro">${num('d', partes[2], 2)}<span class="pc-spin-sep">/</span>${num('m', partes[1], 2)}<span class="pc-spin-sep">/</span>${num('a', partes[0], 4)}</span>`;
+}
+
+// Mueve un número de la fecha (día, mes o año) y vuelve a calcular. Al pasar del último día del mes, cambia de mes (y al revés).
+function moverRetiro(cual, tipo, delta) {
+    let v = null;
+    try { v = cual === 'hoy' ? colectaHoyBase() : colectaSiguienteVirtual(); } catch (e) { v = null; }
+    if (!v || !v.retiroISO) return;
+    const p = v.retiroISO.split('-').map(Number);
+    let d;
+    if (tipo === 'd') d = new Date(p[0], p[1] - 1, p[2] + delta);
+    else if (tipo === 'm') {
+        d = new Date(p[0], p[1] - 1 + delta, 1);
+        d.setDate(Math.min(p[2], new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+    } else {
+        d = new Date(p[0] + delta, p[1] - 1, 1);
+        d.setDate(Math.min(p[2], new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+    }
+    let iso = claveDiaLocal(d);
+    const hoyISO = claveDiaLocal(new Date());
+    if (iso < hoyISO) iso = hoyISO;
+    cambiarRetiroColecta(cual, iso, true);
 }
 
 function restablecerRetiroHoy() {
@@ -2899,19 +2922,14 @@ function restablecerRetiroHoy() {
     renderizarPanelColecta();
 }
 
-function cambiarRetiroColecta(cual, valor) {
+function cambiarRetiroColecta(cual, valor, silencioso) {
     let v = null;
     try { v = cual === 'hoy' ? colectaHoyBase() : colectaSiguienteVirtual(); } catch (e) { v = null; }
     if (!v) return;
-    if (valor && v.minimoISO && valor < v.minimoISO) {
-        showToast('Esa fecha es demasiado pronto: el primer día posible es el ' + nombreDiaColecta(v.minimoISO) + '.', 'error', 7000);
-        renderizarPanelColecta();
-        return;
-    }
     const nueva = !valor || valor === v.recomendadoISO ? null : valor;
     if (cual === 'hoy') fijarRetiroHoy(nueva); else fijarRetiroAutomatica(nueva);
     renderizarPanelColecta();
-    showToast(nueva ? 'Retiro movido al ' + nombreDiaColecta(valor) + '. Los productos y las unidades de las dos colectas se reajustaron.' : 'Volvió a la fecha recomendada.', 'success', 6000);
+    if (!silencioso) showToast(nueva ? 'Retiro movido al ' + nombreDiaColecta(valor) + '. Los productos y las unidades de las dos colectas se reajustaron.' : 'Volvió a la fecha recomendada.', 'success', 6000);
 }
 
 // Tarjeta resumida de una colecta automática: título, tres datos (retiro previsto, productos, unidades), botones y el detalle plegado.
@@ -3048,7 +3066,7 @@ function contextoSiguiente(base, retiroISO) {
     const primero = conQuiebre.reduce((a, b) => ((b.quiebre - b.viaje) < (a.quiebre - a.viaje) ? b : a));
     const recomendado = Math.max(piso, primero.quiebre - primero.viaje);
     let fijo = retiroISO === undefined ? retiroAutomaticaElegido : retiroISO;
-    if (fijo && fijo < isoDesdeHoy(hoy, retiroHoy + 1)) fijo = null;      // una fecha que ya pasó, o no posterior a la de hoy, vuelve a la recomendada
+    if (fijo && fijo < claveDiaLocal(hoy0)) fijo = null;                  // una fecha que ya pasó vuelve a la recomendada
     const retiro = fijo ? Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(fijo))) : recomendado;
     return { hoy: hoy, hoy0: hoy0, dem: dem, colAb: colAb, colectas: colectas, retiroHoy: retiroHoy, ingresoHoy: ingresoHoy, piso: piso, primero: primero,
              conQuiebre: conQuiebre, recomendado: recomendado, retiro: retiro };
