@@ -298,7 +298,7 @@ process.stdout.write(JSON.stringify({ ok: sku(r.ok), tiempo: sku(r.hay_tiempo), 
         # Lentejón sin stock hoy: está en la automática; con unidades de sobra en la colecta abierta ya no hay nada que hacer
         sin = _item(id=5, title='Lentejon', sku='L', vpd=10, current_stock=0, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         r0 = self._correr([sin])['html']
-        self.assertIn('Colecta automática (borrador): 1 producto', r0)
+        self.assertIn('Colecta automática (borrador)', r0)
         import datetime
         d = lambda n: (datetime.date.today() + datetime.timedelta(days=n)).isoformat()
         abierta = {'id': 1, 'codigo': 'ML-1', 'estado': 'scheduled', 'fecha_retiro': d(2), 'fecha_ingreso': d(3),
@@ -316,7 +316,7 @@ process.stdout.write(JSON.stringify({ ok: sku(r.ok), tiempo: sku(r.hay_tiempo), 
                    'productos': [{'sku': 'X', 'unidades': 5}]}
         h = self._correr([sin], prox=self._prox(), colectas=[abierta])['html']
         self.assertIn('Agregar a la colecta #81021895 del', h)      # con una colecta abierta se agrega a ella, no es un borrador nuevo
-        self.assertNotIn('Colecta automática (borrador): 1 producto', h.split('colectaSiguienteTarjeta')[0])
+        self.assertNotIn('Colecta automática (borrador)', h.split('colectaSiguienteTarjeta')[0])
         self.assertIn('Retiro recomendado: la colecta #81021895', h)
         self.assertIn('Sumar a la colecta #81021895', h)
 
@@ -368,7 +368,13 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         tiempo = _item(id=7, title='Almendras', sku='A', vpd=10, current_stock=200, lead_time_days=3, transit_delay_days=2, buffer_days=2, target_stock_days=10)
         bien = _item(id=6, title='Bien', sku='B', vpd=1, current_stock=1000, lead_time_days=3, transit_delay_days=2, buffer_days=2)
         html = self._correr([urgente, tiempo, bien])['html']
-        self.assertIn('Colecta automática (borrador): 1 producto, 220 unidades', html)
+        self.assertIn('Colecta automática (borrador)', html)
+        tarj = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('id="colectaSiguienteTarjeta"')]
+        self.assertIn('Fecha prevista de retiro', tarj)       # resumen en cuadritos: retiro, productos y unidades
+        self.assertIn('<div class="pc-resumen-valor">1</div>', tarj)
+        self.assertIn('<div class="pc-resumen-valor">220</div>', tarj)
+        self.assertIn('Ver el detalle', tarj)
+        self.assertIn('class="pc-info pc-ayuda pc-ayuda-larga"', tarj)    # la explicación va en un cartelito
         self.assertIn('Armar esta colecta', html)
         self.assertIn('Cubre 30 días de objetivo', html)
         tarjeta = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('id="colectaSiguienteTarjeta"')]
@@ -393,7 +399,7 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         html = self._correr([urgente, tiempo, bien])['html']
         self.assertIn('id="colectaSiguienteTarjeta"', html)
         sig = html[html.index('id="colectaSiguienteTarjeta"'):]
-        self.assertIn('Colecta siguiente (borrador):', sig)
+        self.assertIn('Colecta siguiente (borrador)', sig)
         self.assertIn('Retiro recomendado:', sig)
         self.assertIn('La fecha la manda Almendras', sig)
         hoy = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('id="colectaSiguienteTarjeta"')]
@@ -407,7 +413,7 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         self.assertIn('id="colectaAutomaticaTarjeta"', html)
         self.assertNotIn('id="colectaSiguienteTarjeta"', html)
         tarjeta = html[html.index('id="colectaAutomaticaTarjeta"'):]
-        self.assertIn('Colecta automática (borrador): 1 producto', tarjeta)
+        self.assertIn('Colecta automática (borrador)', tarjeta)
         self.assertIn('Almendras', tarjeta)
         self.assertIn('sin bajar de cero', tarjeta)       # explica la cuenta
 

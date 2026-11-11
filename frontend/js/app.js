@@ -2049,12 +2049,12 @@ function htmlDatosProducto(it, proy, colectas, hoy, demora) {
             (demora ? ' (' + escapeHtml(demora) + (demora === 1 ? ' día' : ' días') + ' de demora de Mercado Libre)' : '') + '.</li>';
     }).join('') || '<li>No tiene ninguna colecta en camino.</li>';
     const riesgo = textoRiesgoStock(proy, hoy);
-    return '<div class="pc-datos">' +
-        '<div class="pc-dato"><span>Vendés por día</span><b>' + escapeHtml(dec(Number(it.vpd_base) > 0 ? Number(it.vpd_base) : proy.vpd)) + ' u.</b>' +
+    return '<div class="pc-resumen-datos">' +
+        '<div class="pc-resumen-dato"><span>Vendés por día</span><b>' + escapeHtml(dec(Number(it.vpd_base) > 0 ? Number(it.vpd_base) : proy.vpd)) + ' u.</b>' +
         (Number(it.vpd_base) > 0 && Math.abs(Number(it.vpd_base) - proy.vpd) >= 0.1 ? '<small>promedio de 28 días; el gráfico usa ' + escapeHtml(dec(proy.vpd)) + ' u. con margen por lo que varía la venta</small>' : '') + '</div>' +
-        '<div class="pc-dato"><span>Hoy en Full</span><b>' + escapeHtml(dec(hoyStock)) + ' u.</b><small>alcanzan para ' + escapeHtml(Math.round(hoyStock / proy.vpd)) + ' días</small></div>' +
-        '<div class="pc-dato"><span>Tu objetivo</span><b>' + escapeHtml(Math.round(Number(it.target_stock_days) || 0)) + ' días</b><small>de stock que querés tener</small></div>' +
-        '<div class="pc-dato"><span>Nivel de reposición</span><b>' + escapeHtml(Math.round(proy.umbral)) + ' u.</b><small>' + escapeHtml(it.lead_time_days) + ' de preparación + ' + escapeHtml(it.transit_delay_days) + ' de flete + ' + escapeHtml(it.buffer_days) + ' de colchón = ' + escapeHtml(Math.round(proy.avance)) + ' días de venta</small></div>' +
+        '<div class="pc-resumen-dato"><span>Hoy en Full</span><b>' + escapeHtml(dec(hoyStock)) + ' u.</b><small>alcanzan para ' + escapeHtml(Math.round(hoyStock / proy.vpd)) + ' días</small></div>' +
+        '<div class="pc-resumen-dato"><span>Tu objetivo</span><b>' + escapeHtml(Math.round(Number(it.target_stock_days) || 0)) + ' días</b><small>de stock que querés tener</small></div>' +
+        '<div class="pc-resumen-dato"><span>Nivel de reposición</span><b>' + escapeHtml(Math.round(proy.umbral)) + ' u.</b><small>' + escapeHtml(it.lead_time_days) + ' de preparación + ' + escapeHtml(it.transit_delay_days) + ' de flete + ' + escapeHtml(it.buffer_days) + ' de colchón = ' + escapeHtml(Math.round(proy.avance)) + ' días de venta</small></div>' +
         '</div>' +
         '<div class="pc-imp-cabecera">Qué le entra</div><ul class="pc-lista-datos">' + llegadas + '</ul>' +
         '<div class="pc-imp-cabecera">Qué hacer</div><div class="' + (proy.reponerDia !== null && proy.reponerDia <= 7 ? 'pc-cmp-aviso' : 'pc-fila-nota') + '">' + escapeHtml(textoReponer(proy, hoy)) + '</div>' +
@@ -2776,9 +2776,8 @@ function colectaAutomaticaVirtual() {
     } else {
         const conQ = filas.filter(f => f.quiebre !== null && f.quiebre !== undefined);
         if (conQ.length) {
-            const masTarde = Math.min.apply(null, conQ.map(f => f.quiebre - viaje(f.it)));
-            const primero = conQ.reduce((a, b) => ((b.quiebre - viaje(b.it)) < (a.quiebre - viaje(a.it)) ? b : a));
-            retiro = Math.max(masTarde, primerDiaPosibleDeIngreso(primero.it, hoy, dem, null) - viaje(primero.it));
+            const primero = conQ.reduce((a, b) => (b.quiebre < a.quiebre ? b : a));
+            retiro = Math.max(primero.quiebre - viaje(primero.it), primerDiaPosibleDeIngreso(primero.it, hoy, dem, null) - viaje(primero.it));
         }
     }
     // ...salvo que tenga que salir a menos de una semana de esta colecta (DIAS_SEPARACION_COLECTAS): armar otra a los pocos días es absurdo, así que viaja junto.
@@ -2810,6 +2809,22 @@ async function planillaDeTarjeta(cual) {
     if (!v || !v.filas.length) { showToast('No hay productos para armar la planilla.', 'error'); return; }
     const r = await descargarPlanillaML(v.filas.map(f => ({ it: f.it, unidades: f.unidades })), cual === 'siguiente' ? 'siguiente' : '');
     if (r.ok) showToast(`Se bajó ${r.nombre}: ${r.productos} productos, ${r.unidades} unidades. En Mercado Libre elegí Planificar desde Excel y adjuntala. No se guardó nada acá.`, 'success', 14000);
+}
+
+// Tarjeta resumida de una colecta automática: título, tres datos (retiro previsto, productos, unidades), botones y el detalle plegado.
+// Toda la explicación va en un cartelito que se abre al pasar el mouse (o al tocar el signo ?).
+function tarjetaResumenColecta(o) {
+    const dato = (rotulo, valor) => `<div class="pc-resumen-dato"><div class="pc-resumen-rotulo">${escapeHtml(rotulo)}</div><div class="pc-resumen-valor">${valor}</div></div>`;
+    return `<div class="pc-banner pc-colecta-resumen" id="${o.id}"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
+        <div class="pc-banner-text">
+            <div class="pc-banner-titulo">${escapeHtml(o.titulo)} <span class="pc-info pc-ayuda pc-ayuda-larga" tabindex="0" role="button" aria-label="Cómo se calcula esta colecta" data-ayuda="${escapeHtml(o.ayuda)}">?</span></div>
+            <div class="pc-resumen-datos">${dato('Fecha prevista de retiro', escapeHtml(o.retiro))}${dato('Productos', escapeHtml(o.productos))}${dato('Unidades', escapeHtml(o.unidades))}</div>
+            ${o.aviso || ''}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${o.botones}</div>
+        <details class="pc-detalle" data-sec="${escapeHtml(o.seccion)}" ${seccionesAbiertasSesion[o.seccion] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary class="pc-detalle-boton">Ver el detalle</summary>
+            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${o.filas}</tbody></table></details>
+    </div>`;
 }
 
 // La colecta automática a la vista: qué mandar, cuánto y por qué. "Armar" abre el armado con ESTA misma lista.
@@ -2857,16 +2872,15 @@ function tarjetaColectaHoy() {
         recomendacion = texto;
         botonColectaAutomatica = '<button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button>';
     }
-    return `<div class="pc-banner" id="colectaAutomaticaTarjeta"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
-        <div class="pc-banner-text">
-            <div class="pc-banner-titulo">${colAb ? 'Agregar a la colecta ' + escapeHtml(numeroColecta(colAb)) + ' del ' + escapeHtml(formatearFechaCorta(colAb.fecha_retiro)) : 'Colecta automática (borrador)'}: ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
-            <div class="pc-banner-sub"><b>${escapeHtml(recomendacion)}</b></div>
-            <div class="pc-banner-sub">Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). ${colAb ? 'La colecta ya está en Mercado Libre: sumalos acá y te dejo la hoja con lo que hay que cambiar allá (Mercado Libre no se modifica solo).' : 'Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.'}</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${botonColectaAutomatica}${colAb ? '' : `<button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('hoy')" title="Baja el Excel para subir a Mercado Libre; no guarda nada">Descargar planilla Excel</button>`}</div>
-        <details class="pc-detalle" data-sec="Productos de la colecta automática" ${seccionesAbiertasSesion['Productos de la colecta automática'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
-            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
-    </div>`;
+    const retiroTxt = colAb ? formatearFechaCorta(colAb.fecha_retiro) : (v.retiro !== null && v.retiro !== undefined ? fechaDeProyeccion(v.retiro, v.hoy) : '-');
+    const ayuda = recomendacion + '\n\n' + 'Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). ' +
+        (colAb ? 'La colecta ya está en Mercado Libre: sumalos acá y te dejo la hoja con lo que hay que cambiar allá (Mercado Libre no se modifica solo).' : 'Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.');
+    return tarjetaResumenColecta({
+        id: 'colectaAutomaticaTarjeta', seccion: 'Productos de la colecta automática', filas: filas, ayuda: ayuda,
+        titulo: colAb ? 'Agregar a la colecta ' + numeroColecta(colAb) + ' del ' + formatearFechaCorta(colAb.fecha_retiro) : 'Colecta automática (borrador)',
+        retiro: retiroTxt, productos: String(v.productos), unidades: nf(v.unidades),
+        botones: `${botonColectaAutomatica}${colAb ? '' : `<button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('hoy')" title="Baja el Excel para subir a Mercado Libre; no guarda nada">Descargar planilla Excel</button>`}`
+    });
 }
 
 // La colecta siguiente: después de la de hoy (la abierta o la que armes ahora), cuándo conviene retirar la próxima y qué lleva para que NINGÚN producto
@@ -2961,17 +2975,14 @@ function tarjetaColectaSiguiente(sola) {
         ? `<div class="pc-banner-sub pc-cmp-aviso">Movida a mano: la fecha recomendada era el ${escapeHtml(f(v.recomendado))}. ${v.quebran.length ? escapeHtml(pluralizar(v.quebran.length, 'producto se queda', 'productos se quedan')) + ' sin stock antes de que entre: ' + escapeHtml(v.quebran.slice(0, 5).map(c => c.it.title).join(', ')) + (v.quebran.length > 5 ? ' y ' + (v.quebran.length - 5) + ' más' : '') + '.' : 'Con esa fecha ningún producto se queda sin stock.'} <button type="button" class="btn btn-secondary btn-sm" onclick="restablecerRetiroAutomatica()">Volver a la fecha recomendada</button></div>`
         : '';
     const tarde = v.tarde > 0 ? ` Ojo: ${nom} igual queda ${v.tarde} ${v.tarde === 1 ? 'día' : 'días'} sin stock antes de que entre.` : '';
-    return `<div class="pc-banner" id="${sola ? 'colectaAutomaticaTarjeta' : 'colectaSiguienteTarjeta'}"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
-        <div class="pc-banner-text">
-            <div class="pc-banner-titulo">${sola ? 'Colecta automática' : 'Colecta siguiente'} (borrador): ${pluralizar(v.productos, 'producto', 'productos')}, ${nf(v.unidades)} unidades</div>
-            <div class="pc-banner-sub"><b>Retiro recomendado: ${escapeHtml(f(v.retiro))}. Entra a Full el ${escapeHtml(f(v.ingreso))} y queda en venta el ${escapeHtml(f(v.entra))} (${escapeHtml(demoraAcreditacionDias())} ${demoraAcreditacionDias() === 1 ? 'día' : 'días'} de acreditación: es un supuesto de la app, no un dato de Mercado Libre). La fecha la manda ${escapeHtml(nom)}, el primero que se queda sin stock (${escapeHtml(f(v.primero.quiebre))}).${escapeHtml(tarde)}</b></div>
-            ${aviso}
-            <div class="pc-banner-sub">Con esta colecta todos los productos llegan hasta la que sigue, que apuntaría a los ${escapeHtml(v.objetivo)} días: alrededor del ${escapeHtml(f(v.retiro + v.objetivo))}. Cálculo de cada producto: stock de hoy, menos lo que vende hasta que entra (sin bajar de cero), más lo que traen las colectas ya cargadas${sola ? '' : ' y la de hoy'}; se pide lo que falta para llegar a sus días de objetivo. Si algo cambia (otras unidades, otra fecha) se actualiza solo.</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn btn-sm" onclick="abrirModalColecta(null, { virtual: 'siguiente' })" title="Abre el armado con ESTA misma lista y esta fecha de retiro">Armar esta colecta</button><button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('siguiente')" title="Baja el Excel para cuando armes esta colecta; no guarda nada">Descargar planilla Excel</button></div>
-        <details class="pc-detalle" data-sec="Productos de la colecta siguiente" ${seccionesAbiertasSesion['Productos de la colecta siguiente'] ? 'open' : ''} ontoggle="recordarSeccion(this)"><summary>Ver ${v.productos === 1 ? 'el producto' : 'los ' + v.productos + ' productos'}</summary>
-            <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Unidades</th><th>Por qué</th></tr></thead><tbody>${filas}</tbody></table></details>
-    </div>`;
+    const ayuda = 'Retiro recomendado: ' + f(v.retiro) + '. Entra a Full el ' + f(v.ingreso) + ' y queda en venta el ' + f(v.entra) + ' (' + demoraAcreditacionDias() + ' ' + (demoraAcreditacionDias() === 1 ? 'día' : 'días') + ' de acreditación: es un supuesto de la app, no un dato de Mercado Libre). La fecha la manda ' + nom + ', el primero que se queda sin stock (' + f(v.primero.quiebre) + ').' + tarde +
+        '\n\nCon esta colecta todos los productos llegan hasta la que sigue, que apuntaría a los ' + v.objetivo + ' días: alrededor del ' + f(v.retiro + v.objetivo) + '. Cálculo de cada producto: stock de hoy, menos lo que vende hasta que entra (sin bajar de cero), más lo que traen las colectas ya cargadas' + (sola ? '' : ' y la de hoy') + '; se pide lo que falta para llegar a sus días de objetivo. Si algo cambia (otras unidades, otra fecha) se actualiza solo.';
+    return tarjetaResumenColecta({
+        id: sola ? 'colectaAutomaticaTarjeta' : 'colectaSiguienteTarjeta', seccion: 'Productos de la colecta siguiente', filas: filas, ayuda: ayuda, aviso: aviso,
+        titulo: (sola ? 'Colecta automática' : 'Colecta siguiente') + ' (borrador)',
+        retiro: f(v.retiro), productos: String(v.productos), unidades: nf(v.unidades),
+        botones: `<button type="button" class="btn btn-sm" onclick="abrirModalColecta(null, { virtual: 'siguiente' })" title="Abre el armado con ESTA misma lista y esta fecha de retiro">Armar esta colecta</button><button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('siguiente')" title="Baja el Excel para cuando armes esta colecta; no guarda nada">Descargar planilla Excel</button>`
+    });
 }
 
 function tarjetaColectaAutomatica() {
