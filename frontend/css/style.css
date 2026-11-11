@@ -2210,8 +2210,8 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .eenv-sug-quitar { color: var(--warn); }
 .eenv-sug-texto { display: inline-block; min-width: 128px; text-align: right; }
 
-/* Cartelito de la tarjeta de colecta: aparece al pasar el mouse por la tarjeta (no con el detalle abierto ni sobre el ?, que ya lo muestra) */
+/* Cartelito de la tarjeta de colecta: se abre con el botón derecho sobre la tarjeta (el ? sigue con el mouse) */
 .pc-colecta-resumen { position: relative; }
 .pc-colecta-resumen::after { content: attr(data-ayuda-tarjeta); position: absolute; left: 48px; top: 46px; width: min(520px, 85vw); padding: 8px 10px; border-radius: 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,0.25); font-size: 12px; line-height: 1.45; white-space: pre-line; z-index: 30; opacity: 0; pointer-events: none; transition: opacity .12s; }
-.pc-colecta-resumen:hover::after { opacity: 1; }
-.pc-colecta-resumen:has(.pc-info:hover)::after, .pc-colecta-resumen:has(details[open])::after { opacity: 0; }
+.pc-colecta-resumen.ayuda-abierta::after { opacity: 1; }
+.pc-colecta-resumen:has(.pc-info:hover)::after { opacity: 0; }

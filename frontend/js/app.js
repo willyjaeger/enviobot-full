@@ -2814,11 +2814,24 @@ async function planillaDeTarjeta(cual) {
     if (r.ok) showToast(`Se bajó ${r.nombre}: ${r.productos} productos, ${r.unidades} unidades. En Mercado Libre elegí Planificar desde Excel y adjuntala. No se guardó nada acá.`, 'success', 14000);
 }
 
+// Clic derecho sobre la tarjeta: abre el cartelito con la explicación. Se cierra con cualquier clic, con Escape o al volver a tocar la tarjeta con el botón derecho.
+function abrirAyudaTarjeta(ev, el) {
+    ev.preventDefault();
+    const abierta = el.classList.contains('ayuda-abierta');
+    document.querySelectorAll('.pc-colecta-resumen.ayuda-abierta').forEach(x => x.classList.remove('ayuda-abierta'));
+    if (abierta) return false;
+    el.classList.add('ayuda-abierta');
+    const cerrar = () => { el.classList.remove('ayuda-abierta'); document.removeEventListener('click', cerrar, true); document.removeEventListener('keydown', cerrarTecla, true); };
+    const cerrarTecla = e => { if (e.key === 'Escape') cerrar(); };
+    setTimeout(() => { document.addEventListener('click', cerrar, true); document.addEventListener('keydown', cerrarTecla, true); }, 0);
+    return false;
+}
+
 // Tarjeta resumida de una colecta automática: título, tres datos (retiro previsto, productos, unidades), botones y el detalle plegado.
 // Toda la explicación va en un cartelito que se abre al pasar el mouse (o al tocar el signo ?).
 function tarjetaResumenColecta(o) {
     const dato = (rotulo, valor) => `<div class="pc-resumen-dato"><div class="pc-resumen-rotulo">${escapeHtml(rotulo)}</div><div class="pc-resumen-valor">${valor}</div></div>`;
-    return `<div class="pc-banner pc-colecta-resumen" id="${o.id}" data-ayuda-tarjeta="${escapeHtml(o.ayuda)}"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
+    return `<div class="pc-banner pc-colecta-resumen" id="${o.id}" data-ayuda-tarjeta="${escapeHtml(o.ayuda)}" oncontextmenu="return abrirAyudaTarjeta(event, this)"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">${escapeHtml(o.titulo)} <span class="pc-info pc-ayuda pc-ayuda-larga" tabindex="0" role="button" aria-label="Cómo se calcula esta colecta" data-ayuda="${escapeHtml(o.ayuda)}">?</span></div>
             <div class="pc-resumen-datos">${dato('Fecha prevista de retiro', escapeHtml(o.retiro))}${dato('Productos', escapeHtml(o.productos))}${dato('Unidades', escapeHtml(o.unidades))}</div>
