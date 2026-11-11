@@ -2762,40 +2762,101 @@ async function sacarDeColecta(itemId) {
     showToast('Revisá las unidades y apretá Guardar para confirmar.', 'info');
 }
 
-function colectaAutomaticaVirtual() {
+// Fecha de retiro de la colecta de hoy que el usuario eligió a mano (AAAA-MM-DD). Vacía = la recomendada.
+let retiroHoyElegido = null;
+try { retiroHoyElegido = window.localStorage.getItem('enviobot_retiro_hoy') || null; } catch (e) { /* sin almacenamiento */ }
+function fijarRetiroHoy(iso) {
+    retiroHoyElegido = iso || null;
+    try {
+        if (iso) window.localStorage.setItem('enviobot_retiro_hoy', iso); else window.localStorage.removeItem('enviobot_retiro_hoy');
+    } catch (e) { /* sin almacenamiento */ }
+}
+
+function isoDesdeHoy(hoy, n) {
+    return claveDiaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + n));
+}
+
+// Primera pasada de la colecta de hoy: qué productos no llegan a la colecta siguiente y cuándo conviene retirarla. Las unidades son las de los
+// días objetivo; después colectaAutomaticaVirtual las achica a lo que hace falta hasta que entre la siguiente.
+function colectaHoyBase() {
     const hoy = new Date(), dem = demoraAcreditacionDias(), colAb = colectaAbiertaVigente();
     const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
     const r = calcularIndiceQuiebres(itemsData, colectasEfectivas(), hoy, dem, DIAS_INDICE_QUIEBRES, colAb);
-    // Solo lo que no aguanta hasta la próxima colecta con tus días de stock objetivo; lo que todavía tiene tiempo no va...
     const filas = r.evitables.concat(r.inevitables).map(f => ({ it: f.it, unidades: unidadesParaObjetivo(f), conTiempo: false, quiebre: f.primerQuiebre }));
     const viaje = it => (Number(it.transit_delay_days) || 0) + dem;
     // Día (desde hoy) en que sale esta colecta: la abierta, o la más tarde que todavía salva al primero que se queda sin stock (nunca antes de lo posible).
-    let retiro = null;
+    // Si el usuario eligió otra fecha se respeta (sin bajar del primer retiro posible).
+    let retiro = null, recomendado = null, minimo = null;
     if (colAb && colAb.fecha_retiro) {
         retiro = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(colAb.fecha_retiro)));
+        recomendado = retiro;
     } else {
         const conQ = filas.filter(f => f.quiebre !== null && f.quiebre !== undefined);
         if (conQ.length) {
             const primero = conQ.reduce((a, b) => (b.quiebre < a.quiebre ? b : a));
-            retiro = Math.max(primero.quiebre - viaje(primero.it), primerDiaPosibleDeIngreso(primero.it, hoy, dem, null) - viaje(primero.it));
+            minimo = Math.max(0, primerDiaPosibleDeIngreso(primero.it, hoy, dem, null) - viaje(primero.it));
+            recomendado = Math.max(minimo, primero.quiebre - viaje(primero.it));
+            retiro = recomendado;
+            let fijo = retiroHoyElegido;
+            if (fijo && fijo < claveDiaLocal(hoy0)) fijo = null;          // una fecha que ya pasó vuelve a la recomendada
+            if (fijo) retiro = Math.max(minimo, Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(fijo))));
         }
     }
-    // ...salvo que tenga que salir a menos de una semana de esta colecta (DIAS_SEPARACION_COLECTAS): armar otra a los pocos días es absurdo, así que viaja junto.
-    // Entra unos días antes de lo estrictamente necesario, pero se evita un segundo flete.
+    // Lo que tenga que salir a menos de una semana de esta colecta (DIAS_SEPARACION_COLECTAS) viaja junto: armar otra a los pocos días es absurdo.
     if (retiro !== null) {
         r.hay_tiempo.forEach(f => {
             if (colectaYaCubreObjetivo(f.it) || f.primerQuiebre === null) return;
             const necesita = f.primerQuiebre - viaje(f.it);
-            // Solo viaja en esta colecta lo que se quedaría sin stock antes de que entre la siguiente (retiro + 7 días); lo demás espera a la segunda.
             if (necesita >= retiro + DIAS_SEPARACION_COLECTAS) return;
             const sug = Math.round(Number(f.it.sugerido_al_ingreso) || 0);
             const unidades = sug > 0 ? sug : Math.ceil((Number(f.proy && f.proy.vpd) || 0) * (Number(f.it.target_stock_days) || 0));
             if (unidades > 0) filas.push({ it: f.it, unidades: unidades, conTiempo: true, junto: true, quiebre: f.primerQuiebre, saleHasta: necesita });
         });
     }
-    // Ordenadas por el día en que se quedan sin stock: primero lo más urgente.
+    const quebran = retiro === null ? [] : filas.filter(f => f.quiebre !== null && f.quiebre !== undefined && f.quiebre < retiro + viaje(f.it));
     filas.sort((a, b) => (a.quiebre === null || a.quiebre === undefined ? 999 : a.quiebre) - (b.quiebre === null || b.quiebre === undefined ? 999 : b.quiebre));
-    return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.filter(f => !f.junto).length, hoy: hoy, retiro: retiro };
+    return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.filter(f => !f.junto).length, hoy: hoy, retiro: retiro,
+             recomendado: recomendado, minimo: minimo, real: !!(colAb && colAb.fecha_retiro), quebran: quebran,
+             retiroISO: retiro === null ? null : isoDesdeHoy(hoy, retiro), recomendadoISO: recomendado === null ? null : isoDesdeHoy(hoy, recomendado),
+             minimoISO: minimo === null ? null : isoDesdeHoy(hoy, minimo), movida: retiro !== null && recomendado !== null && retiro !== recomendado };
+}
+
+// La colecta de hoy ya sabe cuándo sale la siguiente: lleva lo justo para que cada producto llegue sin quedarse sin stock hasta que entre la otra
+// (lo que falta para los días objetivo va en la siguiente). Si la siguiente se aleja, esta suma productos y unidades; si se acerca, se achica.
+function ajustarHoyPorSiguiente(base, ctx) {
+    const filas = [];
+    const enBase = {};
+    base.filas.forEach(f => { enBase[f.it.id] = f; });
+    (itemsData || []).forEach(it => {
+        if (it.pausado || colectaYaCubreObjetivo(it)) return;      // si el servidor dice que lo cargado ya lo cubre, no se pide nada
+        const proy = proyeccionProducto(it, ctx.colectas, base.hoy, ctx.dem);
+        if (!proy) return;
+        const viaje = (Number(it.transit_delay_days) || 0) + ctx.dem;
+        const n = proy.puntos.length - 1;
+        const a1 = Math.min(n, base.retiro + viaje), a2 = Math.min(n, ctx.retiro + viaje);
+        let q = null;
+        for (let t = 0; t <= n; t++) { if (proy.puntos[t].stock < proy.vpd - 0.0001) { q = t; break; } }
+        let stock = proy.puntos[a1].stock;          // al entrar esta colecta, con lo que ya viaja (sin bajar de cero)
+        let u = 0;
+        for (let t = a1; t < a2; t++) {
+            if (t > a1) stock = stock - proy.vpd + (proy.puntos[t].stock - proy.puntos[t].antes);
+            u = Math.max(u, proy.vpd - stock);
+        }
+        u = Math.ceil(u - 0.0001);
+        if (u <= 0) return;
+        const b = enBase[it.id];
+        filas.push({ it: it, unidades: u, conTiempo: false, junto: !(b && !b.junto), quiebre: q, cubreHasta: a2 });
+    });
+    filas.sort((a, b) => (a.quiebre === null ? 999 : a.quiebre) - (b.quiebre === null ? 999 : b.quiebre));
+    return Object.assign({}, base, { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), paraHoy: filas.filter(f => !f.junto).length,
+                                     retiro2: ctx.retiro, retiro2ISO: isoDesdeHoy(base.hoy, ctx.retiro) });
+}
+
+function colectaAutomaticaVirtual(retiro2ISO) {
+    const base = colectaHoyBase();
+    let ctx = null;
+    try { ctx = base.retiro === null ? null : contextoSiguiente(base, retiro2ISO); } catch (e) { ctx = null; }
+    return ctx ? ajustarHoyPorSiguiente(base, ctx) : base;
 }
 
 // Primer día (desde hoy) en que entraría mercadería de una colecta nueva armada hoy: preparar + flete + acreditación (la mediana de los productos).
@@ -2827,6 +2888,32 @@ function abrirAyudaTarjeta(ev, el) {
     return false;
 }
 
+// Fecha de retiro editable: cambiarla reajusta las dos colectas (la de hoy lleva lo que hace falta hasta que entre la siguiente).
+function campoRetiro(cual, iso, minISO, texto) {
+    if (!iso) return escapeHtml(texto);
+    return `<input type="date" class="pc-resumen-fecha" value="${iso}" min="${minISO || ''}" onchange="cambiarRetiroColecta('${cual}', this.value)" title="Cambiá la fecha de retiro: los productos y las unidades de las dos colectas se reajustan solos" aria-label="Fecha prevista de retiro">`;
+}
+
+function restablecerRetiroHoy() {
+    fijarRetiroHoy(null);
+    renderizarPanelColecta();
+}
+
+function cambiarRetiroColecta(cual, valor) {
+    let v = null;
+    try { v = cual === 'hoy' ? colectaHoyBase() : colectaSiguienteVirtual(); } catch (e) { v = null; }
+    if (!v) return;
+    if (valor && v.minimoISO && valor < v.minimoISO) {
+        showToast('Esa fecha es demasiado pronto: el primer día posible es el ' + nombreDiaColecta(v.minimoISO) + '.', 'error', 7000);
+        renderizarPanelColecta();
+        return;
+    }
+    const nueva = !valor || valor === v.recomendadoISO ? null : valor;
+    if (cual === 'hoy') fijarRetiroHoy(nueva); else fijarRetiroAutomatica(nueva);
+    renderizarPanelColecta();
+    showToast(nueva ? 'Retiro movido al ' + nombreDiaColecta(valor) + '. Los productos y las unidades de las dos colectas se reajustaron.' : 'Volvió a la fecha recomendada.', 'success', 6000);
+}
+
 // Tarjeta resumida de una colecta automática: título, tres datos (retiro previsto, productos, unidades), botones y el detalle plegado.
 // Toda la explicación va en un cartelito que se abre al pasar el mouse (o al tocar el signo ?).
 function tarjetaResumenColecta(o) {
@@ -2834,7 +2921,7 @@ function tarjetaResumenColecta(o) {
     return `<div class="pc-banner pc-colecta-resumen" id="${o.id}" data-ayuda-tarjeta="${escapeHtml(o.ayuda)}" oncontextmenu="return abrirAyudaTarjeta(event, this)"><span class="pc-banner-icon">${iconoSvg('paquete', 24).replace('margin-right: 4px;', '')}</span>
         <div class="pc-banner-text">
             <div class="pc-banner-titulo">${escapeHtml(o.titulo)} <span class="pc-info pc-ayuda pc-ayuda-larga" tabindex="0" role="button" aria-label="Cómo se calcula esta colecta" data-ayuda="${escapeHtml(o.ayuda)}">?</span></div>
-            <div class="pc-resumen-datos">${dato('Fecha prevista de retiro', escapeHtml(o.retiro))}${dato('Productos', escapeHtml(o.productos))}${dato('Unidades', escapeHtml(o.unidades))}</div>
+            <div class="pc-resumen-datos">${dato('Fecha prevista de retiro', o.retiroHtml || escapeHtml(o.retiro))}${dato('Productos', escapeHtml(o.productos))}${dato('Unidades', escapeHtml(o.unidades))}</div>
             ${o.aviso || ''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${o.botones}</div>
@@ -2849,7 +2936,12 @@ function tarjetaColectaHoy() {
     try { v = colectaAutomaticaVirtual(); } catch (e) { return ''; }
     if (!v.productos) return '';
     const nf = n => Math.round(n).toLocaleString('es-AR');
-    const filas = v.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>${f.junto ? 'Tiene tiempo (se queda sin stock el ' + escapeHtml(fechaDeProyeccion(f.quiebre, v.hoy)) + '), pero tendría que salir a menos de una semana de esta colecta: va acá para no armar otra a los pocos días. ' : (f.quiebre !== null && f.quiebre !== undefined ? 'Sin stock el ' + escapeHtml(fechaDeProyeccion(f.quiebre, v.hoy)) + '. ' : '')}Cubre ${escapeHtml(f.it.target_stock_days)} días de objetivo</td></tr>`).join('');
+    const filas = v.filas.map(f => {
+        const sinStock = f.quiebre !== null && f.quiebre !== undefined ? 'Sin stock el ' + escapeHtml(fechaDeProyeccion(f.quiebre, v.hoy)) + '. ' : '';
+        const tiempo = f.junto ? 'Tiene tiempo, pero no llega a esperar la colecta siguiente. ' : '';
+        const cubre = f.cubreHasta !== undefined ? 'Cubre hasta el ' + escapeHtml(fechaDeProyeccion(f.cubreHasta, v.hoy)) + ' (cuando entra la siguiente)' : 'Cubre ' + escapeHtml(f.it.target_stock_days) + ' días de objetivo';
+        return `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num"><b>${nf(f.unidades)} u.</b></td><td>${sinStock}${tiempo}${cubre}</td></tr>`;
+    }).join('');
     // Retiro recomendado: la colecta es una sola, así que la fecha la manda el PRIMER producto que se queda sin stock. Tiene que
     // entrar a Full a más tardar ese día; retirarla antes de lo necesario inmoviliza stock de más. Si ya no llega a tiempo, lo más rápido posible.
     const colAb = colectaAbiertaVigente();
@@ -2889,12 +2981,18 @@ function tarjetaColectaHoy() {
         botonColectaAutomatica = '<button type="button" class="btn btn-sm" onclick="abrirModalColecta()">Armar esta colecta</button>';
     }
     const retiroTxt = colAb ? formatearFechaCorta(colAb.fecha_retiro) : (v.retiro !== null && v.retiro !== undefined ? fechaDeProyeccion(v.retiro, v.hoy) : '-');
-    const ayuda = recomendacion + '\n\n' + 'Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). ' +
+    const fh = d => fechaDeProyeccion(d, v.hoy);
+    const avisoHoy = (!colAb && v.movida)
+        ? `<div class="pc-banner-sub pc-cmp-aviso">Movida a mano: la fecha recomendada era el ${escapeHtml(fh(v.recomendado))}. ${v.quebran.length ? escapeHtml(pluralizar(v.quebran.length, 'producto se queda', 'productos se quedan')) + ' sin stock antes de que entre: ' + escapeHtml(v.quebran.slice(0, 5).map(c => c.it.title).join(', ')) + (v.quebran.length > 5 ? ' y ' + (v.quebran.length - 5) + ' más' : '') + '.' : 'Con esa fecha ningún producto se queda sin stock.'} <button type="button" class="btn btn-secondary btn-sm" onclick="restablecerRetiroHoy()">Volver a la fecha recomendada</button></div>`
+        : '';
+    const ayuda = recomendacion + '\n\n' + (v.retiro2 !== undefined
+        ? 'Lleva solo lo necesario para que cada producto aguante hasta que entre la colecta siguiente (retiro el ' + fh(v.retiro2) + '); lo que falta para tus días de stock objetivo (Configuración) va en esa. Podés cambiar la fecha de retiro de cualquiera de las dos y los productos y las unidades de las dos se reajustan solos: si alejás la siguiente, esta suma lo que haga falta. '
+        : 'Solo entran los productos que no aguantan hasta la próxima colecta; cada uno va con las unidades para llegar a sus días de stock objetivo (Configuración). ') +
         (colAb ? 'La colecta ya está en Mercado Libre: sumalos acá y te dejo la hoja con lo que hay que cambiar allá (Mercado Libre no se modifica solo).' : 'Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.');
     return tarjetaResumenColecta({
         id: 'colectaAutomaticaTarjeta', seccion: 'Productos de la colecta automática', filas: filas, ayuda: ayuda,
         titulo: colAb ? 'Agregar a la colecta ' + numeroColecta(colAb) + ' del ' + formatearFechaCorta(colAb.fecha_retiro) : 'Colecta automática (borrador)',
-        retiro: retiroTxt, productos: String(v.productos), unidades: nf(v.unidades),
+        retiro: retiroTxt, retiroHtml: colAb ? '' : campoRetiro('hoy', v.retiroISO, v.minimoISO, retiroTxt), aviso: avisoHoy, productos: String(v.productos), unidades: nf(v.unidades),
         botones: `${botonColectaAutomatica}${colAb ? '' : `<button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('hoy')" title="Baja el Excel para subir a Mercado Libre; no guarda nada">Descargar planilla Excel</button>`}`
     });
 }
@@ -2917,64 +3015,81 @@ function restablecerRetiroAutomatica() {
     renderizarPanelColecta();
 }
 
-function colectaSiguienteVirtual(retiroISO) {
-    const hoy = new Date(), dem = demoraAcreditacionDias(), colAb = colectaAbiertaVigente();
+// Primera pasada de la colecta siguiente (sobre la lista de hoy con los días objetivo): cuándo conviene retirarla y qué producto manda la fecha.
+function contextoSiguiente(base, retiroISO) {
+    const hoy = base.hoy, dem = demoraAcreditacionDias(), colAb = colectaAbiertaVigente();
     const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
     const colectas = colectasEfectivas();
-    const r = calcularIndiceQuiebres(itemsData, colectas, hoy, dem, DIAS_INDICE_QUIEBRES, colAb);
-    // Lo que se mandaría hoy (los productos que no llegan a la colecta siguiente) cuenta como si ya estuviera cargado: la colecta siguiente se
-    // calcula sobre eso. Stock al entrar = stock de hoy - ventas de los días hasta que entra (sin bajar de cero) + lo que traen las colectas.
-    const hoyVirtual = colectaAutomaticaVirtual();                  // la misma lista que muestra la tarjeta de hoy (con lo que viaja junto)
-    const filasHoy = hoyVirtual.filas.map(f => ({ it: f.it, unidades: f.unidades }));
+    const filasHoy = base.filas.map(f => ({ it: f.it, unidades: f.unidades }));
     const transitoHoy = filasHoy.length ? (Number(filasHoy[0].it.transit_delay_days) || 0) : 0;
-    const ingresoHoy = colAb && colAb.fecha_ingreso ? colAb.fecha_ingreso
-        : claveDiaLocal(new Date(hoy0.getFullYear(), hoy0.getMonth(), hoy0.getDate() + (hoyVirtual.retiro !== null && hoyVirtual.retiro !== undefined
-            ? hoyVirtual.retiro + transitoHoy : Math.max(0, primerDiaNuevaColecta() - dem))));
+    const retiroHoy = base.retiro !== null && base.retiro !== undefined ? base.retiro
+        : (colAb && colAb.fecha_retiro ? Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(colAb.fecha_retiro)))
+                                       : Math.max(0, primerDiaNuevaColecta() - ((Number((itemsData[0] || {}).transit_delay_days) || 0) + dem)));
+    const ingresoHoy = colAb && colAb.fecha_ingreso ? colAb.fecha_ingreso : isoDesdeHoy(hoy, retiroHoy + transitoHoy);
     const colectasConHoy = filasHoy.length
         ? colectas.concat([{ id: -1, codigo: 'AUTOMATICA', estado: 'scheduled', fecha_ingreso: ingresoHoy, productos: filasHoy.map(f => ({ sku: f.it.sku, unidades: f.unidades })) }])
         : colectas;
-    // El piso se mide desde el retiro de la colecta de hoy tal como se recomienda (el de la tarjeta), no desde el primer retiro posible.
-    const retiroHoy = hoyVirtual.retiro !== null && hoyVirtual.retiro !== undefined ? hoyVirtual.retiro
-        : (colAb && colAb.fecha_retiro ? Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(colAb.fecha_retiro)))
-                                       : Math.max(0, primerDiaNuevaColecta() - ((Number((itemsData[0] || {}).transit_delay_days) || 0) + dem)));
     const piso = retiroHoy + DIAS_SEPARACION_COLECTAS;
-    const cand = [];
+    const conQuiebre = [];
     (itemsData || []).forEach(it => {
         if (it.pausado) return;
         const proy = proyeccionProducto(it, colectasConHoy, hoy, dem);
         if (!proy || !(proy.vpd > 0)) return;
-        // Primer día sin stock que ESTA colecta puede evitar: si lo que ya está cargado todavía no entró, el hueco de antes (hoy, mañana...)
-        // no lo arregla ninguna colecta nueva, así que se mira desde que entra lo cargado.
+        // Primer día sin stock que ESTA colecta puede evitar: si lo que ya está cargado todavía no entró, el hueco de antes no lo arregla
+        // ninguna colecta nueva, así que se mira desde que entra lo cargado.
         let q = null;
         const desde = proy.primeraLlegada !== null ? proy.primeraLlegada : 0;
         for (let t = desde; t < proy.puntos.length; t++) { if (proy.puntos[t].stock < proy.vpd - 0.0001) { q = t; break; } }
-        cand.push({ it: it, proy: proy, quiebre: q, viaje: (Number(it.transit_delay_days) || 0) + dem });
+        const viaje = (Number(it.transit_delay_days) || 0) + dem;
+        // Los que ya se quedan sin stock antes de que entre la colecta de hoy no los salva la siguiente: no mandan la fecha.
+        if (q !== null && q >= primerDiaPosibleDeIngreso(it, hoy, dem, colAb)) conQuiebre.push({ it: it, proy: proy, quiebre: q, viaje: viaje });
     });
-    // Los que ya se quedan sin stock antes de que entre la colecta de hoy no los salva la siguiente: no mandan la fecha.
-    const conQuiebre = cand.filter(c => c.quiebre !== null && c.quiebre >= primerDiaPosibleDeIngreso(c.it, hoy, dem, colAb));
     if (!conQuiebre.length) return null;
     const primero = conQuiebre.reduce((a, b) => ((b.quiebre - b.viaje) < (a.quiebre - a.viaje) ? b : a));
     const recomendado = Math.max(piso, primero.quiebre - primero.viaje);
     let fijo = retiroISO === undefined ? retiroAutomaticaElegido : retiroISO;
-    if (fijo && fijo < claveDiaLocal(hoy0)) fijo = null;          // una fecha que ya pasó vuelve a la recomendada
+    if (fijo && fijo < isoDesdeHoy(hoy, retiroHoy + 1)) fijo = null;      // una fecha que ya pasó, o no posterior a la de hoy, vuelve a la recomendada
     const retiro = fijo ? Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(fijo))) : recomendado;
+    return { hoy: hoy, hoy0: hoy0, dem: dem, colAb: colAb, colectas: colectas, retiroHoy: retiroHoy, ingresoHoy: ingresoHoy, piso: piso, primero: primero,
+             conQuiebre: conQuiebre, recomendado: recomendado, retiro: retiro };
+}
+
+function colectaSiguienteVirtual(retiroISO) {
+    const base = colectaHoyBase();
+    const ctx = contextoSiguiente(base, retiroISO);
+    if (!ctx) return null;
+    const hoy = ctx.hoy, dem = ctx.dem, retiro = ctx.retiro, primero = ctx.primero;
+    // La lista de hoy ya viene achicada a lo que hace falta hasta que entre ésta; la siguiente se calcula sobre eso: stock al entrar = stock de hoy -
+    // ventas hasta que entra (sin bajar de cero) + lo que traen las colectas. Se pide lo que falta para los días objetivo.
+    const hoyVirtual = colectaAutomaticaVirtual(retiroISO);
+    const colectasConHoy = hoyVirtual.filas.length
+        ? ctx.colectas.concat([{ id: -1, codigo: 'AUTOMATICA', estado: 'scheduled', fecha_ingreso: ctx.ingresoHoy, productos: hoyVirtual.filas.map(f => ({ sku: f.it.sku, unidades: f.unidades })) }])
+        : ctx.colectas;
     const filas = [];
-    cand.forEach(c => {
-        const llega = retiro + c.viaje;
-        const stock = c.proy.puntos[Math.min(llega, c.proy.puntos.length - 1)].stock;
-        const obj = Number(c.it.target_stock_days) || 0;
-        const unidades = Math.max(0, Math.round(obj * c.proy.vpd - stock));
-        if (unidades > 0) filas.push({ it: c.it, unidades: unidades, quiebre: c.quiebre });
+    const quebran = [];
+    (itemsData || []).forEach(it => {
+        if (it.pausado) return;
+        const proy = proyeccionProducto(it, colectasConHoy, hoy, dem);
+        if (!proy || !(proy.vpd > 0)) return;
+        const viaje = (Number(it.transit_delay_days) || 0) + dem;
+        let q = null;
+        const desde = proy.primeraLlegada !== null ? proy.primeraLlegada : 0;
+        for (let t = desde; t < proy.puntos.length; t++) { if (proy.puntos[t].stock < proy.vpd - 0.0001) { q = t; break; } }
+        if (q !== null && q >= primerDiaPosibleDeIngreso(it, hoy, dem, ctx.colAb) && q < retiro + viaje) quebran.push({ it: it, quiebre: q });
+        const llega = retiro + viaje;
+        const stock = proy.puntos[Math.min(llega, proy.puntos.length - 1)].stock;
+        const obj = Number(it.target_stock_days) || 0;
+        const unidades = Math.max(0, Math.round(obj * proy.vpd - stock));
+        if (unidades > 0) filas.push({ it: it, unidades: unidades, quiebre: q });
     });
     if (!filas.length) return null;
     filas.sort((a, b) => (a.quiebre === null ? 999 : a.quiebre) - (b.quiebre === null ? 999 : b.quiebre));
     const objs = filas.map(f => Number(f.it.target_stock_days) || 0).sort((a, b) => a - b);
     const transito = primero.viaje - dem;
-    const quebran = conQuiebre.filter(c => c.quiebre < retiro + c.viaje);        // se quedan sin stock antes de que entre esta colecta
-    const iso = n => claveDiaLocal(new Date(hoy0.getFullYear(), hoy0.getMonth(), hoy0.getDate() + n));
+    const iso = n => isoDesdeHoy(hoy, n);
     return { filas: filas, productos: filas.length, unidades: filas.reduce((a, f) => a + f.unidades, 0), hoy: hoy, retiro: retiro,
-             retiroISO: iso(retiro), ingresoISO: iso(retiro + transito), recomendado: recomendado, recomendadoISO: iso(recomendado),
-             movida: retiro !== recomendado, quebran: quebran,
+             retiroISO: iso(retiro), ingresoISO: iso(retiro + transito), recomendado: ctx.recomendado, recomendadoISO: iso(ctx.recomendado), minimoISO: iso(ctx.retiroHoy + 1),
+             movida: retiro !== ctx.recomendado, quebran: quebran,
              entra: retiro + primero.viaje, ingreso: retiro + primero.viaje - dem, primero: primero, tarde: Math.max(0, retiro + primero.viaje - primero.quiebre),
              objetivo: objs[Math.floor(objs.length / 2)] || 15 };
 }
@@ -2996,7 +3111,7 @@ function tarjetaColectaSiguiente(sola) {
     return tarjetaResumenColecta({
         id: sola ? 'colectaAutomaticaTarjeta' : 'colectaSiguienteTarjeta', seccion: 'Productos de la colecta siguiente', filas: filas, ayuda: ayuda, aviso: aviso,
         titulo: (sola ? 'Colecta automática' : 'Colecta siguiente') + ' (borrador)',
-        retiro: f(v.retiro), productos: String(v.productos), unidades: nf(v.unidades),
+        retiro: f(v.retiro), retiroHtml: campoRetiro('siguiente', v.retiroISO, v.minimoISO, f(v.retiro)), productos: String(v.productos), unidades: nf(v.unidades),
         botones: `<button type="button" class="btn btn-sm" onclick="abrirModalColecta(null, { virtual: 'siguiente' })" title="Abre el armado con ESTA misma lista y esta fecha de retiro">Armar esta colecta</button><button type="button" class="btn btn-secondary btn-sm" onclick="planillaDeTarjeta('siguiente')" title="Baja el Excel para cuando armes esta colecta; no guarda nada">Descargar planilla Excel</button>`
     });
 }

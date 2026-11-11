@@ -2215,3 +2215,5 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-colecta-resumen::after { content: attr(data-ayuda-tarjeta); position: absolute; left: 48px; top: 46px; width: min(520px, 85vw); padding: 8px 10px; border-radius: 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0,0,0,0.25); font-size: 12px; line-height: 1.45; white-space: pre-line; z-index: 30; opacity: 0; pointer-events: none; transition: opacity .12s; }
 .pc-colecta-resumen.ayuda-abierta::after { opacity: 1; }
 .pc-colecta-resumen:has(.pc-info:hover)::after { opacity: 0; }
+
+.pc-resumen-fecha { font: inherit; font-size: 18px; font-weight: 700; color: var(--text); background: transparent; border: 0; border-bottom: 1px dashed var(--text2); padding: 0; width: 100%; max-width: 160px; cursor: pointer; color-scheme: light dark; }

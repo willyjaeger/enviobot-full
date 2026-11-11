@@ -343,6 +343,31 @@ process.stdout.write(JSON.stringify({ hoy: hoy.filas.map(f => [f.it.sku, !!f.jun
         self.assertEqual(d['sig'], 'D')                              # la que manda la fecha de la siguiente es D, no A ni B
         self.assertGreaterEqual(d['retiroSig'] - d['retiroHoy'], 7)
 
+    def test_alejar_la_segunda_colecta_suma_productos_y_unidades_a_la_primera(self):
+        # Pedido de Guillermo (2026-11-11): la fecha de retiro es editable; si se aleja la segunda, la primera lleva lo que hace falta
+        # hasta que entre la otra (1 lenteja arriba, 3 abajo). La segunda lleva el resto hasta los días objetivo.
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+const it = (id, sku, stock) => ({ id: id, title: sku, sku: sku, current_stock: stock, vpd: 10, lead_time_days: 3, transit_delay_days: 3, buffer_days: 2, target_stock_days: 15 });
+ctx.itemsData = [it(1, 'A', 90), it(2, 'B', 140), it(3, 'D', 200), it(4, 'C', 900)];
+ctx.colectasData = [];
+const rec = ctx.colectaSiguienteVirtual();
+const mas = ctx.colectaSiguienteVirtual(ctx.isoDesdeHoy(rec.hoy, rec.retiro + 6));
+const h1 = ctx.colectaAutomaticaVirtual(rec.retiroISO), h2 = ctx.colectaAutomaticaVirtual(mas.retiroISO);
+const tot = v => { const o = {}; v.filas.forEach(f => { o[f.it.sku] = f.unidades; }); return o; };
+process.stdout.write(JSON.stringify({ h1: tot(h1), h2: tot(h2), s1: tot(rec), s2: tot(mas), ordenado: h2.filas.every((f, i, a) => i === 0 || (a[i - 1].quiebre || 999) <= (f.quiebre || 999)) }));
+"""
+        r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertGreater(sum(d['h2'].values()), sum(d['h1'].values()))      # alejar la segunda: la primera lleva más
+        self.assertGreaterEqual(len(d['h2']), len(d['h1']))                   # y no menos productos
+        self.assertLess(sum(d['s2'].values()), sum(d['s1'].values()) + 1000)  # la segunda sigue calculándose
+        self.assertTrue(d['ordenado'])
+
     def test_el_texto_de_lo_que_ya_no_se_salva_dice_hasta_cuando(self):
         harness = r"""
 const vm = require('vm');
@@ -372,11 +397,11 @@ process.stdout.write(JSON.stringify({ evit: Math.round(f.evitable), inev: Math.r
         tarj = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('id="colectaSiguienteTarjeta"')]
         self.assertIn('Fecha prevista de retiro', tarj)       # resumen en cuadritos: retiro, productos y unidades
         self.assertIn('<div class="pc-resumen-valor">1</div>', tarj)
-        self.assertIn('<div class="pc-resumen-valor">220</div>', tarj)
+        self.assertIn('<div class="pc-resumen-valor">130</div>', tarj)      # lleva lo justo hasta que entre la siguiente
         self.assertIn('Ver el detalle', tarj)
         self.assertIn('class="pc-info pc-ayuda pc-ayuda-larga"', tarj)    # la explicación va en un cartelito
         self.assertIn('Armar esta colecta', html)
-        self.assertIn('Cubre 30 días de objetivo', html)
+        self.assertIn('Cubre hasta el', html)
         tarjeta = html[html.index('id="colectaAutomaticaTarjeta"'):html.index('id="colectaSiguienteTarjeta"')]
         self.assertNotIn('Almendras', tarjeta)  # lo que tiene tiempo no entra en la colecta de hoy
         self.assertIn('Todavía no existe en Mercado Libre', html)

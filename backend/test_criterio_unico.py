@@ -47,7 +47,7 @@ const salida = vm.runInContext(`(function () {
   itemsData = __RAW.items.map(it => adaptarItemDesdeBackend(it));
   colectasData = __RAW.colectas || []; colectasRecibidasData = [];
   const col = colectasData.find(c => c.abierta);
-  const resumen = colectaAutomaticaVirtual().filas.map(f => ({ sku: f.it.sku, unidades: f.unidades }));
+  const resumen = colectaHoyBase().filas.map(f => ({ sku: f.it.sku, unidades: f.unidades }));
   const filas = col.productos.map(p => { const v = itemsData.find(x => x.sku === p.sku) || {};
       return { sku: p.sku, inventory_id: v.inventory_id, item_id: v.item_id, units_to_send: p.unidades }; });
   itemsOriginalesEdicion = filas.map(f => Object.assign({}, f));
@@ -96,7 +96,8 @@ class TestCriterioUnico(unittest.TestCase):
 
     def test_si_el_servidor_pide_unidades_las_pide_el_resumen_y_las_pide_editar_envio(self):
         r = self._correr({'05142': {'sugerido_al_ingreso': 12}})
-        self.assertIn({'sku': '05142', 'unidades': 12}, r['resumen'])          # el Resumen pide 12
+        # Sin stock y con faltante según el servidor, el Resumen lo pide (las unidades son las que hacen falta hasta que entra la colecta siguiente).
+        self.assertTrue(any(f['sku'] == '05142' and f['unidades'] > 0 for f in r['resumen']))
         editar = {f['sku']: f for f in r['editar']}
         self.assertEqual(editar['05142']['sugerido'], 29 + 12)                  # Editar envío: lo cargado (29) + lo que falta (12)
 
