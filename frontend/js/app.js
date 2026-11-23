@@ -3346,23 +3346,26 @@ async function exportarPerdidasExcel() {
                { rotulo: 'UNIDADES SIN VENDER', valor: r.unidades, formato: 'numero' },
                { rotulo: 'DÍAS SIN STOCK (PROMEDIO)', valor: promedio, formato: 'texto' },
                { rotulo: 'DE LO QUE SE PODÍA VENDER', valor: r.hayPrecios && r.vendido > 0 ? (r.pct * 100).toFixed(1).replace('.', ',') + ' %' : '-', formato: 'texto' }],
-        columnas: ['Producto', 'SKU', 'Períodos sin stock', 'Días sin stock', 'Unidades sin vender', 'Precio de venta', 'Facturación perdida'],
-        formatos: ['texto', 'texto', 'texto', 'numero', 'numero', 'pesos', 'pesos'], anchos: [46, 14, 36, 13, 16, 16, 20],
-        filas: r.filas.map(f => [f.it.title || '', f.it.sku || '', f.periodos.map(t => textoPeriodo(t, true)).join('\n') || 'sin detalle', f.dias, f.unidades, f.precio, f.plata]),
+        columnas: ['Producto', 'SKU', 'Desde', 'Hasta', 'Días sin stock', 'Unidades sin vender', 'Precio de venta', 'Facturación perdida'],
+        formatos: ['texto', 'texto', 'fecha', 'fecha', 'numero', 'numero', 'pesos', 'pesos'], anchos: [46, 14, 14, 22, 13, 16, 16, 20],
+        filas: [],
         notas: notas
     };
-    resumen.filas.push(['Total', '', '', null, r.unidades, null, r.hayPrecios ? Math.round(r.plata) : null]);
-    const detalle = [];
-    r.filas.forEach(f => f.periodos.forEach(t => detalle.push([f.it.title || '', f.it.sku || '', fechaLargaISO(t.desde), fechaLargaISO(t.hasta) + (t.enCurso ? ' (sigue)' : ''), t.dias, t.unidades, t.plata])));
-    detalle.sort((a, b) => a[2].split('/').reverse().join('').localeCompare(b[2].split('/').reverse().join('')) || String(a[0]).localeCompare(String(b[0])));
-    const totDet = detalle.reduce((a, d) => ({ dias: a.dias + d[4], u: a.u + d[5], p: a.p + (d[6] || 0) }), { dias: 0, u: 0, p: 0 });
-    detalle.push(['Total', '', '', '', totDet.dias, totDet.u, r.hayPrecios ? Math.round(totDet.p) : null]);
+    // Una fila por período (un producto con dos quiebres sale en dos filas, cada una con su Desde y su Hasta).
+    r.filas.forEach(f => {
+        if (!f.periodos.length) { resumen.filas.push([f.it.title || '', f.it.sku || '', 'sin detalle', '', f.dias, f.unidades, f.precio, f.plata]); return; }
+        f.periodos.slice().sort((a, b) => String(a.desde).localeCompare(String(b.desde))).forEach(t =>
+            resumen.filas.push([f.it.title || '', f.it.sku || '', fechaLargaISO(t.desde), fechaLargaISO(t.hasta) + (t.enCurso ? ' (sigue)' : ''), t.dias, t.unidades, f.precio, t.plata]));
+    });
+    resumen.filas.push(['Total', '', '', '', resumen.filas.reduce((a, x) => a + (x[4] || 0), 0), r.unidades, null, r.hayPrecios ? Math.round(r.plata) : null]);
     const hojaDetalle = {
-        nombre: 'Períodos sin stock', titulo: 'Períodos sin stock, uno por uno',
-        subtitulo: 'Cada fila es un tramo de días seguidos en los que el producto estuvo sin stock en Full (últimos 30 días).',
-        columnas: ['Producto', 'SKU', 'Desde', 'Hasta', 'Días', 'Unidades sin vender', 'Facturación perdida'],
-        formatos: ['texto', 'texto', 'fecha', 'fecha', 'numero', 'numero', 'pesos'], anchos: [46, 14, 14, 22, 9, 16, 20], filas: detalle
+        nombre: 'Por producto', titulo: 'Total por producto',
+        subtitulo: 'Lo mismo, sumado por producto: cuántos períodos sin stock tuvo y cuántos días en total (últimos 30 días).',
+        columnas: ['Producto', 'SKU', 'Períodos sin stock', 'Días sin stock', 'Unidades sin vender', 'Precio de venta', 'Facturación perdida'],
+        formatos: ['texto', 'texto', 'numero', 'numero', 'numero', 'pesos', 'pesos'], anchos: [46, 14, 16, 14, 16, 16, 20],
+        filas: r.filas.map(f => [f.it.title || '', f.it.sku || '', f.periodos.length, f.dias, f.unidades, f.precio, f.plata])
     };
+    hojaDetalle.filas.push(['Total', '', hojaDetalle.filas.reduce((a, x) => a + x[2], 0), r.dias, r.unidades, null, r.hayPrecios ? Math.round(r.plata) : null]);
     const hoyISO = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
     try {
         const resp = await fetch(`${API_BASE}/full/exportar/tabla-xlsx`, {
