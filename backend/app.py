@@ -2437,6 +2437,21 @@ def planilla_ml_envio_full():
                     headers={"Content-Disposition": f'attachment; filename="{planilla_ml.NOMBRE_ARCHIVO}"'})
 
 
+@app.route("/api/full/exportar/tabla-xlsx", methods=["POST"])
+@jwt_required()
+def exportar_tabla_xlsx():
+    """Devuelve un .xlsx con la tabla que manda el panel ({columnas, filas, hoja, nombre, formatos}). No guarda nada."""
+    import re as _re
+    import xlsx_simple
+    d = request.get_json(silent=True) or {}
+    try:
+        datos = xlsx_simple.generar(d.get("columnas") or [], d.get("filas") or [], d.get("hoja") or "Hoja1", d.get("formatos"))
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    nombre = _re.sub(r"[^A-Za-z0-9_.-]", "-", str(d.get("nombre") or "exportacion"))[:80] or "exportacion"
+    return Response(datos, mimetype=xlsx_simple.TIPO, headers={"Content-Disposition": f'attachment; filename="{nombre}.xlsx"'})
+
+
 @app.route("/api/full/ml/notificaciones", methods=["POST"])
 def notificaciones_ml():
     """Receptor de las notificaciones de ML (tema fbm_stock_operations). Pública: la llama Mercado Libre.

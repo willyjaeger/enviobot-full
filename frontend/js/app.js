@@ -26,6 +26,7 @@ const ICONOS_SVG = {
     radar: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
     capas: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
     escudo: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/>',
+    excel: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 12l5 6"/><path d="M14 12l-5 6"/>',
     camion: '<rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>'
 };
 
@@ -3287,9 +3288,9 @@ function htmlAvisoEnviosVencidos() {
     </div>`;
 }
 
-// ── Reloj de la plata perdida por quiebres (últimos 30 días) ───────────────────────────────────
+// ── Reloj de la facturación perdida por quiebres (últimos 30 días) ───────────────────────────────────
 // Por cada producto: días sin stock en los últimos 30 (lo que la app anotó cada día) x lo que vendía por día cuando tenía stock x precio de venta.
-// Es una estimación de ventas que no se hicieron, no plata que se haya gastado. Sin el precio (se trae de Mercado Libre) se muestran los días y las unidades.
+// Es una estimación de ventas que no se hicieron, no plata que se haya gastado (facturación, no ganancia). Sin el precio (se trae de Mercado Libre) se muestran los días y las unidades.
 function perdidaPorQuiebres() {
     const filas = [];
     (itemsData || []).forEach(it => {
@@ -3307,6 +3308,36 @@ function perdidaPorQuiebres() {
     return { filas: filas, plata: plata, vendido: vendido, pct: plata + vendido > 0 ? plata / (plata + vendido) : 0,
              sinPrecio: filas.filter(f => f.plata === null).length, hayPrecios: (itemsData || []).some(it => Number(it.precio) > 0),
              dias: filas.reduce((a, f) => a + f.dias, 0), unidades: filas.reduce((a, f) => a + f.unidades, 0) };
+}
+
+// Baja un Excel con lo mismo que muestra la lista del reloj. El archivo lo arma el servidor (no guarda nada).
+async function exportarPerdidasExcel() {
+    let r;
+    try { r = perdidaPorQuiebres(); } catch (e) { return; }
+    if (!r.filas.length) { showToast('No hay quiebres para exportar.', 'info'); return; }
+    const filas = r.filas.map(f => [f.it.title || '', f.it.sku || '', f.dias, f.unidades, f.precio, f.plata]);
+    filas.push(['Total', '', null, r.unidades, null, r.hayPrecios ? r.plata : null]);
+    try {
+        const resp = await fetch(`${API_BASE}/full/exportar/tabla-xlsx`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+            body: JSON.stringify({ columnas: ['Producto', 'SKU', 'Días sin stock (30 días)', 'Unidades sin vender', 'Precio de venta', 'Facturación perdida'], filas: filas,
+                                   formatos: ['texto', 'texto', 'numero', 'numero', 'pesos', 'pesos'], hoja: 'Facturación perdida',
+                                   nombre: 'Facturacion-perdida-por-quiebres-' + new Date().toISOString().split('T')[0] })
+        });
+        if (!resp.ok) { showToast('No se pudo armar el Excel.', 'error'); return; }
+        const url = URL.createObjectURL(await resp.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'Facturacion-perdida-por-quiebres-' + new Date().toISOString().split('T')[0] + '.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast('Se bajó ' + link.download, 'success', 5000);
+    } catch (e) {
+        showToast('Error de conexión. Probá de nuevo.', 'error');
+    }
 }
 
 function tarjetaRelojPerdidas() {
@@ -3333,10 +3364,10 @@ function tarjetaRelojPerdidas() {
         sub = 'Ningún producto se quedó sin stock en los días que la app registró de los últimos 30.';
     } else if (!r.hayPrecios) {
         monto = nf(r.unidades) + ' u. sin vender';
-        sub = 'Todavía no tengo los precios de tus publicaciones: se traen de Mercado Libre en una de las próximas sincronizaciones y acá aparece la plata.';
+        sub = 'Todavía no tengo los precios de tus publicaciones: se traen de Mercado Libre en una de las próximas sincronizaciones y acá aparece la facturación.';
     } else {
         monto = peso(r.plata);
-        sub = `${pluralizar(n, 'producto se quedó', 'productos se quedaron')} sin stock (${nf(r.dias)} ${r.dias === 1 ? 'día' : 'días'} en total, unas ${nf(r.unidades)} u. sin vender)` +
+        sub = `${pluralizar(n, 'producto se quedó', 'productos se quedaron')} sin stock (${n === 1 ? '' : 'cada uno estuvo sin stock ' + (r.dias / n).toFixed(1).replace('.', ',') + ' días en promedio, hasta ' + Math.max.apply(null, r.filas.map(f => f.dias)) + ' el que más; '}unas ${nf(r.unidades)} u. sin vender)` +
             (r.vendido > 0 ? `: el ${(r.pct * 100).toFixed(1).replace('.', ',')} % de lo que se podía vender.` : '.') +
             (r.sinPrecio ? ` Sin precio: ${r.sinPrecio}.` : '');
     }
@@ -3344,13 +3375,14 @@ function tarjetaRelojPerdidas() {
     const lista = n ? `<div class="pc-reloj-lista"><div class="pc-reloj-lista-tit">Productos que se quedaron sin stock (de más a menos plata)</div>
         <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Sin stock</th><th class="pc-num">Sin vender</th><th class="pc-num">Perdido</th></tr></thead><tbody>${filas}</tbody></table>
         <div class="pc-reloj-lista-pie">Estimación: días sin stock x lo que vendía por día cuando tenía stock x precio de venta. Cuenta solo los días que la app anotó.</div></div>` : '';
-    return `<div class="pc-reloj pc-banner" id="relojPerdidas" tabindex="0" aria-label="Plata perdida por quiebres en los últimos 30 días">
+    const boton = n ? `<button type="button" class="btn btn-secondary btn-sm pc-reloj-excel" onclick="event.stopPropagation(); exportarPerdidasExcel()" title="Baja un Excel con los productos, los días sin stock y la facturación perdida">${iconoSvg('excel', 16)}Exportar a Excel</button>` : '';
+    return `<div class="pc-reloj pc-banner" id="relojPerdidas" tabindex="0" aria-label="Facturación perdida por quiebres en los últimos 30 días">
         <span class="pc-reloj-esfera-caja">${esfera}</span>
         <div class="pc-banner-text">
-            <div class="pc-banner-titulo">Plata perdida por quiebres, últimos 30 días</div>
+            <div class="pc-banner-titulo">Facturación perdida por quiebres, últimos 30 días</div>
             <div class="pc-reloj-monto${n && r.hayPrecios ? ' pc-reloj-mala' : ''}">${escapeHtml(monto)}</div>
             <div class="pc-banner-sub">${escapeHtml(sub)}${n ? ' Pasá el mouse para ver cuáles.' : ''}</div>
-        </div>${lista}
+        </div>${boton}${lista}
     </div>`;
 }
 

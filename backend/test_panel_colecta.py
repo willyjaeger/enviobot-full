@@ -393,7 +393,7 @@ process.stdout.write(JSON.stringify({ n: r.filas.length, plata: r.plata, sinPrec
         self.assertEqual(d['sinPrecio'], 1)
         self.assertEqual(d['dias'], 3 + 5 + 30)
         self.assertIn('pc-reloj-lista', d['html'])          # la lista existe y se muestra al pasar el mouse
-        self.assertIn('Plata perdida por quiebres', d['html'])
+        self.assertIn('Facturación perdida por quiebres', d['html'])
         self.assertIn('Todavía no tengo los precios', d['sinPrecios'])
         self.assertIn('Sin quiebres', d['sinQuiebres'])
         self.assertNotIn('pc-reloj-lista', d['sinQuiebres'])
