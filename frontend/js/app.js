@@ -3215,17 +3215,7 @@ function avisosDelPanel() {
             });
         }
     } catch (e) { /* sin datos todavía */ }
-    try {
-        const v = colectaAutomaticaVirtual();
-        if (v.productos > 0) {
-            lista.push({
-                id: 'auto:' + v.productos + ':' + v.unidades, tipo: 'automatica',
-                titulo: 'Colecta automática para crear',
-                detalle: v.productos + (v.productos === 1 ? ' producto' : ' productos') + ', ' + v.unidades.toLocaleString('es-AR') + ' u. para armar hoy y no quebrar. Todavía no existe en Mercado Libre: cuando la armes y ML te dé el número de operación, pasa a ser una colecta real.',
-                accion: 'Armar colecta'
-            });
-        }
-    } catch (e) { /* sin datos de colectas todavía */ }
+    // El aviso "Colecta automática para crear" se sacó a pedido de Guillermo (2026-11-23): no se usa. La colecta automática sigue en el Resumen.
     return lista;
 }
 
@@ -3272,6 +3262,28 @@ function mostrarAvisosEmergentes() {
     }
     cont.innerHTML += tarjetas.join('');
     marcarAvisosEmergentesVistos(nuevos.map(a => a.id));
+}
+
+// Envíos "En tránsito" que ya deberían haber llegado: casi seguro quedaron mal marcados. El servidor ya no los cuenta como "en camino"
+// pasados DIAS_GRACIA_TRANSITO días de su fecha de ingreso (proyeccion.transito_vencido, mismo número); acá se avisa para que se cierren.
+const DIAS_GRACIA_TRANSITO = 3;
+function enviosEnTransitoVencidos() {
+    const hoy0 = new Date(); hoy0.setHours(0, 0, 0, 0);
+    return (colectasData || []).filter(c => c && c.estado === 'in_transit' && c.etapa !== 'recibida' && c.fecha_ingreso &&
+        diasEntreFechas(parsearFechaLocal(c.fecha_ingreso), hoy0) > DIAS_GRACIA_TRANSITO);
+}
+
+function htmlAvisoEnviosVencidos() {
+    const lista = enviosEnTransitoVencidos();
+    if (!lista.length) return '';
+    const nombres = lista.map(c => `<b>${escapeHtml(numeroCorto(c.codigo))}</b> (ingreso estimado ${escapeHtml(formatearFechaCorta(c.fecha_ingreso))})`).join(', ');
+    return `<div class="pc-banner pc-banner-aviso" id="enviosVencidosAviso">
+        <div class="pc-banner-text">
+            <div class="pc-banner-titulo">${lista.length === 1 ? 'Un envío sigue' : lista.length + ' envíos siguen'} "En tránsito" pero ya ${lista.length === 1 ? 'debería haber llegado' : 'deberían haber llegado'}</div>
+            <div class="pc-banner-sub">${nombres}. Si ya llegó a Full, marcalo como "Ingresado en Full" en el historial de envíos; mientras tanto el cálculo no lo cuenta como mercadería en camino.</div>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistorialColectas()">Ir al historial</button>
+    </div>`;
 }
 
 function renderizarPanelColecta() {
@@ -3353,7 +3365,8 @@ function renderizarPanelColecta() {
 
     // Las dos donas van en la misma tarjeta, separadas al medio; el detalle del índice queda debajo, a todo el ancho.
     const donaIndice = tarjetaIndiceQuiebres();
-    cont.innerHTML = `<div class="pc-hero-par">${tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)}${donaIndice}</div>`
+    cont.innerHTML = htmlAvisoEnviosVencidos()
+        + `<div class="pc-hero-par">${tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)}${donaIndice}</div>`
         + detalleIndiceQuiebres
         + tarjetaColectaAutomatica()
         + tarjetaEquilibrio()

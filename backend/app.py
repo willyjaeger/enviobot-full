@@ -1507,6 +1507,7 @@ def get_full_items():
         recibidas_by_inv = {}
         recibidas_by_item = {}
 
+        hoy_envios = datetime.utcnow().date()
         for r in shipment_rows:
             qty = int(r.get("total_units") or 0)
             st = r.get("status")
@@ -1515,6 +1516,9 @@ def get_full_items():
             item_k = (r.get("item_id") or "").strip()
 
             recibida_ml = st == "in_transit" and (r.get("meli_inbound_status") or "") == "received"
+            # Un envío en tránsito que ya debería haber llegado hace días quedó mal marcado: ya está en el stock, no se cuenta de nuevo.
+            if _proy.transito_vencido(r, hoy_envios, demora_real_proy):
+                continue
             if st == "scheduled":
                 target_sku_dict, target_inv_dict, target_item_dict = prep_by_sku, prep_by_inv, prep_by_item
             elif recibida_ml:

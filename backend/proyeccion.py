@@ -204,6 +204,25 @@ def ingreso_estimado(fila, demora_real=None):
     return cargada or supuesta
 
 
+# Días de tolerancia después de la fecha de ingreso estimada: ML puede tardar en recibir y poner a la venta lo que llega.
+DIAS_GRACIA_TRANSITO = 3
+
+
+def transito_vencido(fila, hoy, demora_real=None, gracia=DIAS_GRACIA_TRANSITO):
+    """True si una colecta 'en tránsito' que Mercado Libre no marcó como recibida ya debería haber llegado hace más de
+    `gracia` días. Casi seguro quedó mal marcada: esas unidades ya están en el stock, y seguir contándolas como
+    'en camino' las cuenta dos veces (el panel decía 'falta 0' de productos que sí había que reponer).
+    `hoy` es una fecha (date). Sin fecha de retiro no se puede decir."""
+    if (fila.get("status") or "") != "in_transit":
+        return False
+    if (fila.get("meli_inbound_status") or "") == "received":
+        return False
+    if not fila.get("pickup_date"):
+        return False
+    llegada = ingreso_estimado(fila, demora_real)
+    return llegada is not None and (hoy - llegada).days > int(gracia)
+
+
 def armar_colecta(fila, productos, hora=None, ahora=None, en_proceso=0, demora_real=None):
     """Una colecta lista para mostrar: estado, fechas (retiro, límite de edición, ingreso a Full) y sus productos.
     `fila` es el registro de inbound_shipments; `productos`, sus renglones (title, sku, units_to_send).

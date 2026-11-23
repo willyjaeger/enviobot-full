@@ -1400,8 +1400,11 @@ class TestBotonUnicoSubirAML(unittest.TestCase):
         self.assertIn('background: var(--accent)', boton)           # el amarillo
         self.assertIn('subirColectaAML()', boton)
         self.assertIn('Subir la colecta a Mercado Libre', boton)
-        # lo que ya hacía el amarillo sigue existiendo, ahora como botón secundario
-        self.assertRegex(html, r'btn-secondary"[^>]*onclick="confirmarDespachoColecta\(\)"')
+        # Pedido de Guillermo (2026-11-23): en "Armar colecta" quedan solo Descargar CSV, Cerrar y Subir la colecta;
+        # se sacaron "Copiar lista" y "Generar hoja de despacho" (las funciones siguen en app.js, sin botón).
+        self.assertNotIn('onclick="confirmarDespachoColecta()"', html)
+        self.assertNotIn('onclick="copiarListaColecta()"', html)
+        self.assertIn('onclick="exportarColectaCSV()"', html)
         # los dos botones sueltos de la planilla ya no están
         self.assertNotIn('Planilla para Mercado Libre', html)
         self.assertNotIn('>\n                            Subir en Mercado Libre', html)
