@@ -2248,3 +2248,6 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 /* Armar colecta: nunca scroll horizontal; el nombre del producto se recorta con "..." */
 .colecta-lista { overflow-x: hidden; }
 .colecta-lista .colecta-table { table-layout: auto; }
+
+/* Pestaña Colectas sin nada programado */
+.pc-sin-colectas { padding: 22px 18px; text-align: center; font-size: 14px; font-weight: 600; color: var(--text2); background: var(--surface); border: 1px dashed var(--border-hover); border-radius: 10px; }

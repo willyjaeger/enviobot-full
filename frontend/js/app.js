@@ -3381,7 +3381,12 @@ function renderizarPanelColecta() {
     // Pestaña Colectas: calendario y colectas armadas (o la tarjeta de lo que está en preparación).
     const contColectas = document.getElementById('panelColectasTab');
     if (contColectas) {
-        contColectas.innerHTML = (hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaColecta(g.enColecta)) + htmlColectasRecibidas();
+        const tarjetaPreparacion = hayColectas ? '' : tarjetaColecta(g.enColecta);
+        const sinColectas = !hayColectas && !tarjetaPreparacion
+            ? '<div class="pc-sin-colectas">No hay colectas programadas.</div>' : '';
+        contColectas.innerHTML = htmlAvisoEnviosVencidos()
+            + (hayColectas ? calendarioColectas(colectasEfectivas()) + colectasData.map(tarjetaDeColecta).join('') : tarjetaPreparacion)
+            + sinColectas + htmlColectasRecibidas();
     }
     const nCol = document.getElementById('tabContColectas');
     if (nCol) nCol.textContent = hayColectas ? String(colectasData.length) : '';
