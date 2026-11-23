@@ -398,6 +398,39 @@ process.stdout.write(JSON.stringify({ n: r.filas.length, plata: r.plata, sinPrec
         self.assertIn('Sin quiebres', d['sinQuiebres'])
         self.assertNotIn('pc-reloj-lista', d['sinQuiebres'])
 
+    def test_evolucion_de_quiebres_dice_si_mejoramos_o_empeoramos(self):
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+const iso = k => { const d = new Date(); d.setDate(d.getDate() - k); return ctx.claveDiaLocal(d); };
+const reg = iso(40);
+const it = (id, periodos) => ({ id: id, title: 'P' + id, sku: 'S' + id, vpd: 10, vpd_base: 10, precio: 100, periodos_sin_stock: periodos, stock_registrado_desde: reg });
+const per = (desde, hasta) => ({ desde: iso(desde), hasta: iso(hasta), dias: desde - hasta + 1, en_curso: false });
+// Antes: 2 productos sin stock 5 dias seguidos (hace 12 a 8 dias). Ultimos 7 dias: solo 1 dia de un producto.
+ctx.itemsData = [it(1, [per(12, 8)]), it(2, [per(12, 8)]), it(3, [per(3, 3)])];
+const mejora = ctx.serieQuiebresDiarios();
+// Al reves: nada antes, 3 productos sin stock en los ultimos dias.
+ctx.itemsData = [it(1, [per(4, 0)]), it(2, [per(4, 0)]), it(3, [per(4, 0)])];
+const empeora = ctx.serieQuiebresDiarios();
+ctx.itemsData = [Object.assign(it(1, [per(4, 0)]), { stock_registrado_desde: iso(3) })];
+const poco = ctx.serieQuiebresDiarios();
+ctx.itemsData = [it(1, [])];
+const sin = ctx.serieQuiebresDiarios();
+const html = ctx.htmlEvolucionQuiebres();
+process.stdout.write(JSON.stringify({ m: [mejora.tendencia, mejora.ult, mejora.ant], e: [empeora.tendencia, empeora.ult], p: poco.tendencia, s: sin.tendencia, n: mejora.dias.length, html: html }));
+"""
+        r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertEqual(d['n'], 30)
+        self.assertEqual(d['m'][0], 'mejora')                 # antes se perdía más que ahora
+        self.assertEqual(d['e'][0], 'empeora')
+        self.assertEqual(d['p'], 'poco')                      # pocos días registrados: no se compara
+        self.assertEqual(d['s'], 'sin')
+        self.assertIn('pc-evol-svg', d['html'])
+
     def test_el_texto_de_lo_que_ya_no_se_salva_dice_hasta_cuando(self):
         harness = r"""
 const vm = require('vm');

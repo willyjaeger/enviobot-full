@@ -3366,12 +3366,23 @@ async function exportarPerdidasExcel() {
         filas: r.filas.map(f => [f.it.title || '', f.it.sku || '', f.periodos.length, f.dias, f.unidades, f.precio, f.plata])
     };
     hojaDetalle.filas.push(['Total', '', hojaDetalle.filas.reduce((a, x) => a + x[2], 0), r.dias, r.unidades, null, r.hayPrecios ? Math.round(r.plata) : null]);
+    const ev = serieQuiebresDiarios();
+    const hojaDias = {
+        nombre: 'Día por día', titulo: 'Evolución día por día (últimos 30 días)',
+        subtitulo: 'Cuántos productos estuvieron sin stock cada día y cuánta facturación se dejó de vender. Tendencia: ' +
+            ({ mejora: 'mejorando', empeora: 'empeorando', estable: 'estable', sin: 'sin quiebres', poco: 'todavía hay pocos días registrados para comparar' })[ev.tendencia] + '.',
+        columnas: ['Fecha', 'Productos sin stock', 'Unidades sin vender', 'Facturación perdida'],
+        formatos: ['fecha', 'numero', 'numero', 'pesos'], anchos: [16, 20, 20, 22],
+        filas: ev.dias.map(d => [fechaLargaISO(d.iso), d.productos, Math.round(d.unidades), ev.hayPrecios ? Math.round(d.plata) : null]),
+        notas: ['Se calcula con los períodos sin stock que anotó la app y con lo que vende hoy cada producto (es una estimación).']
+    };
+    hojaDias.filas.push(['Total', ev.dias.reduce((a, d) => a + d.productos, 0), Math.round(ev.dias.reduce((a, d) => a + d.unidades, 0)), ev.hayPrecios ? Math.round(ev.dias.reduce((a, d) => a + d.plata, 0)) : null]);
     const hoyISO = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
     try {
         const resp = await fetch(`${API_BASE}/full/exportar/tabla-xlsx`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
-            body: JSON.stringify({ hojas: [resumen, hojaDetalle], nombre: 'Facturacion-perdida-por-quiebres-' + hoyISO })
+            body: JSON.stringify({ hojas: [resumen, hojaDetalle, hojaDias], nombre: 'Facturacion-perdida-por-quiebres-' + hoyISO })
         });
         if (!resp.ok) { showToast('No se pudo armar el Excel.', 'error'); return; }
         const url = URL.createObjectURL(await resp.blob());
@@ -3386,6 +3397,76 @@ async function exportarPerdidasExcel() {
     } catch (e) {
         showToast('Error de conexión. Probá de nuevo.', 'error');
     }
+}
+
+// ¿Mejoramos o empeoramos? Día por día de los últimos 30: cuántos productos estuvieron sin stock y cuánta facturación se dejó de vender.
+// Se arma con los períodos sin stock que anotó la app (un producto cuenta en cada día que estuvo en cero) y con lo que vende hoy cada producto.
+// La tendencia compara los últimos 7 días con los 7 anteriores (más de 15 % de diferencia; menos que eso es "estable").
+function serieQuiebresDiarios() {
+    const hoy = new Date();
+    const hoy0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+    const dias = [], idx = {};
+    for (let k = 29; k >= 0; k--) {
+        const iso = claveDiaLocal(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - k));
+        idx[iso] = dias.length;
+        dias.push({ iso: iso, productos: 0, unidades: 0, plata: 0 });
+    }
+    (itemsData || []).forEach(it => {
+        const vpd = Number(it.vpd_base) > 0 ? Number(it.vpd_base) : (Number(it.vpd) || 0);
+        const precio = Number(it.precio) > 0 ? Number(it.precio) : 0;
+        (it.periodos_sin_stock || []).forEach(t => {
+            const fin = parsearFechaLocal(t.hasta);
+            for (let d = parsearFechaLocal(t.desde); d <= fin; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+                const i = idx[claveDiaLocal(d)];
+                if (i === undefined) continue;
+                dias[i].productos += 1;
+                dias[i].unidades += vpd;
+                dias[i].plata += vpd * precio;
+            }
+        });
+    });
+    const hayPrecios = (itemsData || []).some(it => Number(it.precio) > 0);
+    const campo = hayPrecios ? 'plata' : 'productos';
+    const suma = (a, b) => dias.slice(a, b).reduce((acc, d) => acc + d[campo], 0);
+    const ult = suma(23, 30), ant = suma(16, 23);
+    const registros = (itemsData || []).map(it => it.stock_registrado_desde).filter(Boolean).sort();
+    const diasRegistrados = registros.length ? diasEntreFechas(parsearFechaLocal(registros[0]), hoy0) + 1 : 0;
+    let tendencia, cambio = null;
+    if (diasRegistrados < 14) tendencia = 'poco';
+    else if (ult === 0 && ant === 0) tendencia = 'sin';
+    else {
+        cambio = ant > 0 ? (ult - ant) / ant : 1;
+        tendencia = cambio <= -0.15 ? 'mejora' : (cambio >= 0.15 ? 'empeora' : 'estable');
+    }
+    return { dias: dias, hayPrecios: hayPrecios, ult: ult, ant: ant, cambio: cambio, tendencia: tendencia, diasRegistrados: diasRegistrados, max: Math.max.apply(null, dias.map(d => d[campo]).concat([0])) };
+}
+
+// Gráfico chico de barras (una por día) con el veredicto: mejorando, empeorando o estable.
+function htmlEvolucionQuiebres() {
+    let e;
+    try { e = serieQuiebresDiarios(); } catch (err) { return ''; }
+    const peso = n => '$ ' + Math.round(n).toLocaleString('es-AR');
+    const campo = e.hayPrecios ? 'plata' : 'productos';
+    const W = 420, H = 64, bw = W / e.dias.length;
+    const barras = e.dias.map((d, i) => {
+        const h = e.max > 0 ? Math.max(d[campo] > 0 ? 2 : 0, (d[campo] / e.max) * (H - 6)) : 0;
+        const tip = formatearFechaCorta(d.iso) + ': ' + (d.productos ? pluralizar(d.productos, 'producto sin stock', 'productos sin stock') + (e.hayPrecios ? ', ' + peso(d.plata) + ' perdidos' : '') : 'ningún producto sin stock');
+        return `<g><title>${escapeHtml(tip)}</title><rect x="${(i * bw + 1).toFixed(1)}" y="0" width="${(bw - 2).toFixed(1)}" height="${H}" class="pc-evol-hueco"/>` +
+               (h > 0 ? `<rect x="${(i * bw + 1).toFixed(1)}" y="${(H - h).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${h.toFixed(1)}" class="pc-evol-barra${i >= 23 ? ' pc-evol-ultima' : ''}"/>` : '') + '</g>';
+    }).join('');
+    const fmt = n => e.hayPrecios ? peso(n) : n + (n === 1 ? ' producto-día' : ' productos-día');
+    const pct = e.cambio === null ? '' : ' (' + (e.cambio > 0 ? '+' : '') + Math.round(e.cambio * 100) + ' %)';
+    const veredictos = {
+        mejora: ['pc-evol-mejora', 'Mejorando', 'Los últimos 7 días se perdió menos que en los 7 anteriores: ' + fmt(e.ult) + ' contra ' + fmt(e.ant) + pct + '.'],
+        empeora: ['pc-evol-empeora', 'Empeorando', 'Los últimos 7 días se perdió más que en los 7 anteriores: ' + fmt(e.ult) + ' contra ' + fmt(e.ant) + pct + '.'],
+        estable: ['pc-evol-estable', 'Estable', 'Los últimos 7 días: ' + fmt(e.ult) + '; los 7 anteriores: ' + fmt(e.ant) + pct + '.'],
+        sin: ['pc-evol-mejora', 'Sin quiebres', 'No hubo productos sin stock en las últimas dos semanas.'],
+        poco: ['pc-evol-estable', 'Pocos días registrados', 'La app registra el stock desde hace ' + e.diasRegistrados + (e.diasRegistrados === 1 ? ' día' : ' días') + ': hacen falta al menos 14 para comparar semanas.']
+    };
+    const v = veredictos[e.tendencia];
+    return `<div class="pc-reloj-evol"><div class="pc-evol-cab"><span class="pc-evol-chip ${v[0]}">${escapeHtml(v[1])}</span><span class="pc-evol-texto">${escapeHtml(v[2])}</span></div>
+        <svg class="pc-evol-svg" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" role="img" aria-label="Productos sin stock por día, últimos 30 días">${barras}</svg>
+        <div class="pc-evol-eje"><span>${escapeHtml(formatearFechaCorta(e.dias[0].iso))}</span><span>cada barra es un día; las de color más fuerte son los últimos 7 días</span><span>hoy</span></div></div>`;
 }
 
 function tarjetaRelojPerdidas() {
@@ -3430,7 +3511,7 @@ function tarjetaRelojPerdidas() {
             <div class="pc-banner-titulo">Facturación perdida por quiebres, últimos 30 días</div>
             <div class="pc-reloj-monto${n && r.hayPrecios ? ' pc-reloj-mala' : ''}">${escapeHtml(monto)}</div>
             <div class="pc-banner-sub">${escapeHtml(sub)}${n ? ' Pasá el mouse para ver cuáles.' : ''}</div>
-        </div>${boton}${lista}
+        </div>${boton}${htmlEvolucionQuiebres()}${lista}
     </div>`;
 }
 

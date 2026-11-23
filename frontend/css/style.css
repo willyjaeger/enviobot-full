@@ -2266,3 +2266,16 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-reloj-excel { align-self: flex-start; white-space: nowrap; }
 .pc-reloj-cuando { font-size: 12px; line-height: 1.5; white-space: nowrap; }
 .pc-reloj-sd { color: var(--text2); }
+.pc-reloj { flex-wrap: wrap; }
+.pc-reloj-evol { flex-basis: 100%; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
+.pc-evol-cab { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.pc-evol-chip { font-size: 12px; font-weight: 800; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border-hover); }
+.pc-evol-mejora { color: var(--good); background: var(--good-bg); border-color: var(--good-border); }
+.pc-evol-empeora { color: var(--danger); background: var(--danger-bg); border-color: var(--danger-border); }
+.pc-evol-estable { color: var(--text2); background: var(--surf2); }
+.pc-evol-texto { font-size: 13px; color: var(--text2); }
+.pc-evol-svg { display: block; max-width: 100%; }
+.pc-evol-hueco { fill: var(--surf2); }
+.pc-evol-barra { fill: var(--danger); opacity: 0.55; }
+.pc-evol-ultima { opacity: 1; }
+.pc-evol-eje { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); margin-top: 3px; }
