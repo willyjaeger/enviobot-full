@@ -4442,6 +4442,7 @@ async function abrirModalColecta(targetItemId = null, options = {}) {
         activeColectaEventName = '';
     }
     actualizarBannerModoEventoColecta();
+    reiniciarOrdenYBusquedaColecta();
 
     // Verificar permisos del módulo pago en backend
     await verificarEstadoInboundUsuario();
@@ -4614,9 +4615,15 @@ function toggleSelectAllColecta(checked) {
     const transit = wh.defaultTransit || 3;
     const daysFactor = targetDays + leadTime + transit;
 
-    colectaSelectedItems.clear();
+    // Con una búsqueda activa, "marcar todos" toca solo los artículos que se ven.
+    const hayBusqueda = !!normalizarBusquedaColecta(colectaBusqueda);
+    if (hayBusqueda) {
+        itemsData.filter(itemCoincideConBusquedaColecta).forEach(it => { if (!checked) colectaSelectedItems.delete(it.id); });
+    } else {
+        colectaSelectedItems.clear();
+    }
     if (checked) {
-        itemsData.forEach(it => {
+        itemsData.filter(itemCoincideConBusquedaColecta).forEach(it => {
             let suggested = calcularSugeridoColectaItem(it, daysFactor);
             const mult = (activeColectaMultiplier && activeColectaMultiplier > 1.0) ? activeColectaMultiplier : 1.0;
             const effectiveVpd = (it.vpd || 0) * mult;
@@ -4657,6 +4664,41 @@ function cambiarUnidadesColecta(id, val) {
     actualizarTotalColecta();
 }
 
+// Armar colecta: búsqueda de artículos y orden por columna. Arranca por "Sin stock el":
+// primero los que ya están sin stock y después los que se quedan antes.
+const ORDEN_COLECTA_INICIAL = { col: 'quiebre', dir: 'asc' };
+let colectaOrden = Object.assign({}, ORDEN_COLECTA_INICIAL);
+let colectaBusqueda = '';
+
+function normalizarBusquedaColecta(v) {
+    return String(v || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+function itemCoincideConBusquedaColecta(it) {
+    const q = normalizarBusquedaColecta(colectaBusqueda);
+    if (!q) return true;
+    const texto = normalizarBusquedaColecta([it.title, it.variation_name, it.sku, it.item_id, it.inventory_id].join(' '));
+    return q.split(/\s+/).every(parte => texto.indexOf(parte) !== -1);
+}
+
+function onColectaBuscar(valor) {
+    colectaBusqueda = valor || '';
+    renderizarFilasColecta();
+}
+
+function ordenarColectaPor(col) {
+    if (colectaOrden.col === col) colectaOrden.dir = colectaOrden.dir === 'asc' ? 'desc' : 'asc';
+    else colectaOrden = { col: col, dir: 'asc' };
+    renderizarFilasColecta();
+}
+
+function reiniciarOrdenYBusquedaColecta() {
+    colectaOrden = Object.assign({}, ORDEN_COLECTA_INICIAL);
+    colectaBusqueda = '';
+    const inp = document.getElementById('colectaBuscarInput');
+    if (inp) inp.value = '';
+}
+
 function renderizarFilasColecta(highlightItemId = null) {
     const tbody = document.getElementById('colectaTableBody');
     if (!tbody) return;
@@ -4668,33 +4710,60 @@ function renderizarFilasColecta(highlightItemId = null) {
     const transit = wh.defaultTransit || 3;
     const daysFactor = targetDays + leadTime + transit;
 
-    // Ordenar artículos por máxima urgencia: Quiebres y Críticos SIEMPRE ARRIBA
-    const itemsOrdenados = [...itemsData].sort((a, b) => {
-        // 1. Si uno es el highlightItemId, ponerlo primero
+    // Clave de cada columna. "Sin stock el": 0 = ya sin stock, 1 = tiene fecha (por días que le quedan),
+    // 2 = sin ventas, 3 = pausada en Mercado Libre.
+    const sinStockYa = (it) => it.status === 'out_of_stock' || it.current_stock <= 0;
+    const claveQuiebre = (it) => {
+        if (it.pausado) return [3, 0];
+        if (sinStockYa(it)) return [0, -(Number(it.vpd) || 0)];  // entre los ya sin stock, primero los que más venden
+        if (!it.stockout_date || it.days_left >= 900) return [2, 0];
+        return [1, Number(it.days_left) || 0];
+    };
+    const sugeridoDe = (it) => calcularSugeridoColectaItem(it, daysFactor);
+    const unidadesDe = (it) => colectaSelectedItems.get(it.id) !== undefined ? colectaSelectedItems.get(it.id) : sugeridoDe(it);
+    const claves = {
+        producto: (it) => [String(it.title || '').toLowerCase()],
+        stock: (it) => [Number(it.current_stock) || 0],
+        quiebre: claveQuiebre,
+        vpd: (it) => [Number(it.vpd) || 0],
+        sugerido: (it) => [sugeridoDe(it)],
+        unidades: (it) => [unidadesDe(it)]
+    };
+    const clave = claves[colectaOrden.col] || claves.quiebre;
+    const signo = colectaOrden.dir === 'desc' ? -1 : 1;
+    const cmp = (x, y) => {
+        for (let i = 0; i < Math.max(x.length, y.length); i++) {
+            const a1 = x[i], b1 = y[i];
+            if (a1 === b1) continue;
+            if (typeof a1 === 'string') return a1.localeCompare(b1, 'es');
+            return a1 < b1 ? -1 : 1;
+        }
+        return 0;
+    };
+    const visibles = itemsData.filter(itemCoincideConBusquedaColecta);
+    const itemsOrdenados = [...visibles].sort((a, b) => {
+        // Si vino a buscar un artículo puntual, va primero
         const isTargetA = highlightItemId && (a.id === highlightItemId || a.id === Number(highlightItemId));
         const isTargetB = highlightItemId && (b.id === highlightItemId || b.id === Number(highlightItemId));
         if (isTargetA && !isTargetB) return -1;
         if (!isTargetA && isTargetB) return 1;
-
-        // 2. Score de urgencia
-        const scoreUrgencia = (it) => {
-            if (it.pausado) return 6;
-            if (it.status === 'out_of_stock' || it.current_stock <= 0) return 1;
-            if (it.status === 'critical') return 2;
-            if (it.status === 'warning') return 3;
-            if (colectaSelectedItems.has(it.id)) return 4;
-            return 5;
-        };
-
-        const scoreA = scoreUrgencia(a);
-        const scoreB = scoreUrgencia(b);
-        if (scoreA !== scoreB) return scoreA - scoreB;
-
-        // 3. Menos días de stock primero
-        const daysA = a.days_left !== undefined ? a.days_left : 999;
-        const daysB = b.days_left !== undefined ? b.days_left : 999;
-        return daysA - daysB;
+        const r = cmp(clave(a), clave(b));
+        if (r !== 0) return r * signo;
+        return String(a.title || '').localeCompare(String(b.title || ''), 'es');
     });
+
+    // Flechas de orden en los encabezados y cuenta de resultados
+    ['producto', 'stock', 'quiebre', 'vpd', 'sugerido', 'unidades'].forEach(col => {
+        const el = document.getElementById('colectaSort_' + col);
+        if (!el) return;
+        el.textContent = colectaOrden.col === col ? (colectaOrden.dir === 'asc' ? '↑' : '↓') : '↕';
+        el.classList.toggle('colecta-sort-activa', colectaOrden.col === col);
+    });
+    const cuenta = document.getElementById('colectaBuscarCuenta');
+    if (cuenta) cuenta.textContent = normalizarBusquedaColecta(colectaBusqueda) ? `${visibles.length} de ${itemsData.length}` : '';
+    if (normalizarBusquedaColecta(colectaBusqueda) && visibles.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 28px; color: var(--text2);">No hay artículos que coincidan con la búsqueda.</td></tr>';
+    }
 
     itemsOrdenados.forEach(it => {
         const isSelected = colectaSelectedItems.has(it.id);

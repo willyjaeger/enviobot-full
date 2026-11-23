@@ -46,7 +46,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261123_1">
+    <link rel="stylesheet" href="css/style.css?v=20261123_3">
 </head>
 <body>
 
@@ -677,6 +677,12 @@
                     </button>
                 </div>
 
+                <!-- Buscador de artículos de la colecta -->
+                <div class="colecta-buscar">
+                    <input type="search" id="colectaBuscarInput" class="filter-input" placeholder="Buscar artículo por nombre, SKU o código de ML..." oninput="onColectaBuscar(this.value)" autocomplete="off">
+                    <span id="colectaBuscarCuenta" class="colecta-buscar-cuenta"></span>
+                </div>
+
                 <!-- Banner de Advertencia de Días Mínimos para no quebrar stock -->
                 <div id="colectaLeadTimeWarning" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; color: #fca5a5; font-size: 12.5px; line-height: 1.45;">
                     <strong style="color: #ff8080;">Atención por quiebre inminente:</strong> Con <strong id="warnDiasElegidos">0</strong> días de cobertura no llegás a cubrir el ciclo de reposición. Entre preparar pedidos (<span id="warnLeadTime">0</span> d), colchón de seguridad (<span id="warnBuffer">0</span> d) y demora del flete (<span id="warnTransit">0</span> d), necesitás un mínimo de <strong><span id="warnMinDias">0</span> días</strong> para no quedarte sin stock antes de que el camión ingrese a Full.
@@ -720,12 +726,12 @@
                                 <th style="width: 35px; text-align: center;">
                                     <input type="checkbox" id="checkAllColecta" checked onchange="toggleSelectAllColecta(this.checked)">
                                 </th>
-                                <th>Producto / SKU / publicación</th>
-                                <th style="text-align: right; width: 85px;">Stock Full</th>
-                                <th style="text-align: right; width: 105px;">Sin stock el</th>
-                                <th style="text-align: right; width: 80px;">Ritmo (VPD)</th>
-                                <th style="text-align: right; width: 85px;">Sugerido</th>
-                                <th style="text-align: center; width: 120px;">Unidades a mandar</th>
+                                <th class="colecta-th-orden" onclick="ordenarColectaPor('producto')" title="Ordenar por esta columna">Producto / SKU / publicación <span class="colecta-sort" id="colectaSort_producto">↕</span></th>
+                                <th class="colecta-th-orden" style="text-align: right; width: 85px;" onclick="ordenarColectaPor('stock')" title="Ordenar por esta columna">Stock Full <span class="colecta-sort" id="colectaSort_stock">↕</span></th>
+                                <th class="colecta-th-orden" style="text-align: right; width: 105px;" onclick="ordenarColectaPor('quiebre')" title="Ordenar por esta columna">Sin stock el <span class="colecta-sort" id="colectaSort_quiebre">↕</span></th>
+                                <th class="colecta-th-orden" style="text-align: right; width: 80px;" onclick="ordenarColectaPor('vpd')" title="Ordenar por esta columna">Ritmo (VPD) <span class="colecta-sort" id="colectaSort_vpd">↕</span></th>
+                                <th class="colecta-th-orden" style="text-align: right; width: 85px;" onclick="ordenarColectaPor('sugerido')" title="Ordenar por esta columna">Sugerido <span class="colecta-sort" id="colectaSort_sugerido">↕</span></th>
+                                <th class="colecta-th-orden" style="text-align: center; width: 120px;" onclick="ordenarColectaPor('unidades')" title="Ordenar por esta columna">Unidades a mandar <span class="colecta-sort" id="colectaSort_unidades">↕</span></th>
                             </tr>
                         </thead>
                         <tbody id="colectaTableBody">
@@ -1946,6 +1952,6 @@
     <script src="js/teclado-formularios.js?v=20261017_2"></script>
     <script src="js/theme.js?v=20261013_4"></script>
     <script src="js/notifications.js?v=20261013_4"></script>
-    <script src="js/app.js?v=20261123_2"></script>
+    <script src="js/app.js?v=20261123_3"></script>
 </body>
 </html>
