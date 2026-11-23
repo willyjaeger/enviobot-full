@@ -2264,3 +2264,5 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-reloj-lista-tit { font-weight: 700; margin-bottom: 6px; }
 .pc-reloj-lista-pie { font-size: 12px; color: var(--text2); margin-top: 8px; }
 .pc-reloj-excel { align-self: flex-start; white-space: nowrap; }
+.pc-reloj-cuando { font-size: 12px; line-height: 1.5; white-space: nowrap; }
+.pc-reloj-sd { color: var(--text2); }

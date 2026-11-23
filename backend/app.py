@@ -38,6 +38,7 @@ import proyeccion as _proy
 import demanda as _demanda
 import ventas_historial as _ventas_hist
 import ml_reposicion as _ml_repo
+import periodos_sin_stock as _periodos
 import avisos_tipos as _avisos
 import esquema as _esquema
 from inbound_service import render_remito_html
@@ -1547,6 +1548,8 @@ def get_full_items():
 
         # Días sin stock por producto (de la foto diaria): corrigen la velocidad de venta.
         sin_stock_por_item = {}
+        dias_cero_por_item = {}
+        registro_desde = None
         if _esquema.tiene_tabla(cur, "stock_daily"):
             cur.execute("""
                 SELECT item_id, variation_id,
@@ -1560,6 +1563,15 @@ def get_full_items():
             for f in cur.fetchall():
                 sin_stock_por_item[(f["item_id"], str(f.get("variation_id") or ""))] = (
                     int(f["sin7"] or 0), int(f["sin15"] or 0), int(f["sin30"] or 0))
+            # Los días concretos sin stock (para decir en qué períodos pasó) y desde cuándo hay registro.
+            cur.execute("""SELECT item_id, variation_id, day FROM stock_daily
+                           WHERE user_id = %s AND stock_max = 0 AND day > %s ORDER BY day""", (account_id, today - timedelta(days=30)))
+            for f in cur.fetchall():
+                dias_cero_por_item.setdefault((f["item_id"], str(f.get("variation_id") or "")), set()).add(f["day"])
+            cur.execute("SELECT MIN(day) AS d FROM stock_daily WHERE user_id = %s", (account_id,))
+            fila_min = cur.fetchone()
+            if fila_min and fila_min.get("d"):
+                registro_desde = fila_min["d"].isoformat()
 
         # Ritmo de venta limpio (demanda.py): ventas por día de los últimos 120 días (migración 006) y días sin stock.
         # Sin el historial el panel usa el cálculo de siempre.
@@ -1664,6 +1676,11 @@ def get_full_items():
                     c_item["ml_ritmo"] = datos_ml
                     break
             c_item["dias_sin_stock_30d"] = sin30
+            dias_cero = set()
+            for ch in c_item.get("channels", []):
+                dias_cero |= dias_cero_por_item.get((ch["item_id"], str(c_item.get("variation_id") or "")), set())
+            c_item["periodos_sin_stock_30d"] = _periodos.agrupar(dias_cero, today) if dias_cero else []
+            c_item["stock_registrado_desde"] = registro_desde
 
             if vpd > 0:
                 days_left = round(stock / vpd, 1)
@@ -2445,7 +2462,10 @@ def exportar_tabla_xlsx():
     import xlsx_simple
     d = request.get_json(silent=True) or {}
     try:
-        datos = xlsx_simple.generar(d.get("columnas") or [], d.get("filas") or [], d.get("hoja") or "Hoja1", d.get("formatos"))
+        if d.get("hojas"):
+            datos = xlsx_simple.generar_libro(d["hojas"])
+        else:
+            datos = xlsx_simple.generar(d.get("columnas") or [], d.get("filas") or [], d.get("hoja") or "Hoja1", d.get("formatos"))
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
     nombre = _re.sub(r"[^A-Za-z0-9_.-]", "-", str(d.get("nombre") or "exportacion"))[:80] or "exportacion"

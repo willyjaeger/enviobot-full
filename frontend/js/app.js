@@ -414,6 +414,8 @@ function adaptarItemDesdeBackend(raw) {
         prep_status: raw.prep_status || null,
         dias_sin_stock_30d: raw.dias_sin_stock_30d || 0,
         precio: raw.price !== undefined && raw.price !== null ? Number(raw.price) : null,
+        periodos_sin_stock: raw.periodos_sin_stock_30d || [],
+        stock_registrado_desde: raw.stock_registrado_desde || null,
         sobrestock: !!raw.sobrestock,
         umbral_sobrestock: raw.umbral_sobrestock || null
     };
@@ -3291,6 +3293,15 @@ function htmlAvisoEnviosVencidos() {
 // ── Reloj de la facturación perdida por quiebres (últimos 30 días) ───────────────────────────────────
 // Por cada producto: días sin stock en los últimos 30 (lo que la app anotó cada día) x lo que vendía por día cuando tenía stock x precio de venta.
 // Es una estimación de ventas que no se hicieron, no plata que se haya gastado (facturación, no ganancia). Sin el precio (se trae de Mercado Libre) se muestran los días y las unidades.
+function fechaLargaISO(iso) { return String(iso || '').split('-').reverse().join('/'); }
+
+// "03/11 al 08/11 (6 días)", "10/11 (1 día)"; si todavía sigue sin stock lo dice.
+function textoPeriodo(t, conAnio) {
+    const f = conAnio ? fechaLargaISO : formatearFechaCorta;
+    const rango = t.desde === t.hasta ? f(t.desde) : f(t.desde) + ' al ' + f(t.hasta);
+    return rango + ' (' + t.dias + (t.dias === 1 ? ' día' : ' días') + ')' + (t.enCurso ? ', sigue sin stock' : '');
+}
+
 function perdidaPorQuiebres() {
     const filas = [];
     (itemsData || []).forEach(it => {
@@ -3299,7 +3310,8 @@ function perdidaPorQuiebres() {
         const vpd = Number(it.vpd_base) > 0 ? Number(it.vpd_base) : (Number(it.vpd) || 0);
         const unidades = Math.round(dias * vpd);
         const precio = Number(it.precio) > 0 ? Number(it.precio) : null;
-        filas.push({ it: it, dias: dias, unidades: unidades, precio: precio, plata: precio !== null ? unidades * precio : null });
+        const periodos = (it.periodos_sin_stock || []).map(t => ({ desde: t.desde, hasta: t.hasta, dias: t.dias, enCurso: !!t.en_curso, unidades: Math.round(t.dias * vpd), plata: precio !== null ? Math.round(t.dias * vpd) * precio : null }));
+        filas.push({ it: it, dias: dias, unidades: unidades, precio: precio, plata: precio !== null ? unidades * precio : null, periodos: periodos });
     });
     filas.sort((a, b) => ((b.plata || 0) - (a.plata || 0)) || (b.dias - a.dias));
     const plata = filas.reduce((a, f) => a + (f.plata || 0), 0);
@@ -3315,21 +3327,54 @@ async function exportarPerdidasExcel() {
     let r;
     try { r = perdidaPorQuiebres(); } catch (e) { return; }
     if (!r.filas.length) { showToast('No hay quiebres para exportar.', 'info'); return; }
-    const filas = r.filas.map(f => [f.it.title || '', f.it.sku || '', f.dias, f.unidades, f.precio, f.plata]);
-    filas.push(['Total', '', null, r.unidades, null, r.hayPrecios ? r.plata : null]);
+    const hoy = new Date();
+    const hace30 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 29);
+    const dd = d => String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+    const n = r.filas.length;
+    const promedio = (r.dias / n).toFixed(1).replace('.', ',');
+    const registros = r.filas.map(f => f.it.stock_registrado_desde).filter(Boolean).sort();
+    const notas = [
+        'Cómo se calcula: días sin stock x lo que el producto vendía por día cuando tenía stock x precio de venta. Es una estimación de lo que se dejó de vender (facturación), no ganancia.',
+        'Solo cuenta los días que EnvioBot Full registró' + (registros.length ? ' (hay registro desde el ' + fechaLargaISO(registros[0]) + ')' : '') + '. Un día cuenta como sin stock si en todo el día el stock en Full fue cero.'
+    ];
+    if (r.sinPrecio) notas.push('Hay ' + r.sinPrecio + (r.sinPrecio === 1 ? ' producto sin precio' : ' productos sin precio') + ': no suma a la facturación perdida.');
+    const resumen = {
+        nombre: 'Resumen', titulo: 'Facturación perdida por quiebres de stock',
+        subtitulo: 'Últimos 30 días (del ' + dd(hace30) + ' al ' + dd(hoy) + '). Generado el ' + dd(hoy) + '.',
+        kpis: [{ rotulo: 'FACTURACIÓN PERDIDA', valor: r.hayPrecios ? Math.round(r.plata) : 'Sin precios', formato: r.hayPrecios ? 'pesos' : 'texto' },
+               { rotulo: 'PRODUCTOS CON QUIEBRE', valor: n, formato: 'numero' },
+               { rotulo: 'UNIDADES SIN VENDER', valor: r.unidades, formato: 'numero' },
+               { rotulo: 'DÍAS SIN STOCK (PROMEDIO)', valor: promedio, formato: 'texto' },
+               { rotulo: 'DE LO QUE SE PODÍA VENDER', valor: r.hayPrecios && r.vendido > 0 ? (r.pct * 100).toFixed(1).replace('.', ',') + ' %' : '-', formato: 'texto' }],
+        columnas: ['Producto', 'SKU', 'Períodos sin stock', 'Días sin stock', 'Unidades sin vender', 'Precio de venta', 'Facturación perdida'],
+        formatos: ['texto', 'texto', 'texto', 'numero', 'numero', 'pesos', 'pesos'], anchos: [46, 14, 36, 13, 16, 16, 20],
+        filas: r.filas.map(f => [f.it.title || '', f.it.sku || '', f.periodos.map(t => textoPeriodo(t, true)).join('\n') || 'sin detalle', f.dias, f.unidades, f.precio, f.plata]),
+        notas: notas
+    };
+    resumen.filas.push(['Total', '', '', null, r.unidades, null, r.hayPrecios ? Math.round(r.plata) : null]);
+    const detalle = [];
+    r.filas.forEach(f => f.periodos.forEach(t => detalle.push([f.it.title || '', f.it.sku || '', fechaLargaISO(t.desde), fechaLargaISO(t.hasta) + (t.enCurso ? ' (sigue)' : ''), t.dias, t.unidades, t.plata])));
+    detalle.sort((a, b) => a[2].split('/').reverse().join('').localeCompare(b[2].split('/').reverse().join('')) || String(a[0]).localeCompare(String(b[0])));
+    const totDet = detalle.reduce((a, d) => ({ dias: a.dias + d[4], u: a.u + d[5], p: a.p + (d[6] || 0) }), { dias: 0, u: 0, p: 0 });
+    detalle.push(['Total', '', '', '', totDet.dias, totDet.u, r.hayPrecios ? Math.round(totDet.p) : null]);
+    const hojaDetalle = {
+        nombre: 'Períodos sin stock', titulo: 'Períodos sin stock, uno por uno',
+        subtitulo: 'Cada fila es un tramo de días seguidos en los que el producto estuvo sin stock en Full (últimos 30 días).',
+        columnas: ['Producto', 'SKU', 'Desde', 'Hasta', 'Días', 'Unidades sin vender', 'Facturación perdida'],
+        formatos: ['texto', 'texto', 'fecha', 'fecha', 'numero', 'numero', 'pesos'], anchos: [46, 14, 14, 22, 9, 16, 20], filas: detalle
+    };
+    const hoyISO = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
     try {
         const resp = await fetch(`${API_BASE}/full/exportar/tabla-xlsx`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
-            body: JSON.stringify({ columnas: ['Producto', 'SKU', 'Días sin stock (30 días)', 'Unidades sin vender', 'Precio de venta', 'Facturación perdida'], filas: filas,
-                                   formatos: ['texto', 'texto', 'numero', 'numero', 'pesos', 'pesos'], hoja: 'Facturación perdida',
-                                   nombre: 'Facturacion-perdida-por-quiebres-' + new Date().toISOString().split('T')[0] })
+            body: JSON.stringify({ hojas: [resumen, hojaDetalle], nombre: 'Facturacion-perdida-por-quiebres-' + hoyISO })
         });
         if (!resp.ok) { showToast('No se pudo armar el Excel.', 'error'); return; }
         const url = URL.createObjectURL(await resp.blob());
         const link = document.createElement('a');
         link.href = url;
-        link.download = 'Facturacion-perdida-por-quiebres-' + new Date().toISOString().split('T')[0] + '.xlsx';
+        link.download = 'Facturacion-perdida-por-quiebres-' + hoyISO + '.xlsx';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -3371,9 +3416,9 @@ function tarjetaRelojPerdidas() {
             (r.vendido > 0 ? `: el ${(r.pct * 100).toFixed(1).replace('.', ',')} % de lo que se podía vender.` : '.') +
             (r.sinPrecio ? ` Sin precio: ${r.sinPrecio}.` : '');
     }
-    const filas = r.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num">${nf(f.dias)} ${f.dias === 1 ? 'día' : 'días'}</td><td class="pc-num">${nf(f.unidades)} u.</td><td class="pc-num"><b>${f.plata !== null ? peso(f.plata) : 'sin precio'}</b></td></tr>`).join('');
+    const filas = r.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-reloj-cuando">${f.periodos.length ? f.periodos.map(t => escapeHtml(textoPeriodo(t, false))).join('<br>') : '<span class="pc-reloj-sd">sin detalle</span>'}</td><td class="pc-num">${nf(f.dias)} ${f.dias === 1 ? 'día' : 'días'}</td><td class="pc-num">${nf(f.unidades)} u.</td><td class="pc-num"><b>${f.plata !== null ? peso(f.plata) : 'sin precio'}</b></td></tr>`).join('');
     const lista = n ? `<div class="pc-reloj-lista"><div class="pc-reloj-lista-tit">Productos que se quedaron sin stock (de más a menos plata)</div>
-        <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Sin stock</th><th class="pc-num">Sin vender</th><th class="pc-num">Perdido</th></tr></thead><tbody>${filas}</tbody></table>
+        <table class="pc-table"><thead><tr><th>Producto</th><th>Cuándo se quedó sin stock</th><th class="pc-num">Total sin stock</th><th class="pc-num">Sin vender</th><th class="pc-num">Perdido</th></tr></thead><tbody>${filas}</tbody></table>
         <div class="pc-reloj-lista-pie">Estimación: días sin stock x lo que vendía por día cuando tenía stock x precio de venta. Cuenta solo los días que la app anotó.</div></div>` : '';
     const boton = n ? `<button type="button" class="btn btn-secondary btn-sm pc-reloj-excel" onclick="event.stopPropagation(); exportarPerdidasExcel()" title="Baja un Excel con los productos, los días sin stock y la facturación perdida">${iconoSvg('excel', 16)}Exportar a Excel</button>` : '';
     return `<div class="pc-reloj pc-banner" id="relojPerdidas" tabindex="0" aria-label="Facturación perdida por quiebres en los últimos 30 días">
