@@ -2227,3 +2227,11 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .pc-spin-flechas button::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); border-left: 4px solid transparent; border-right: 4px solid transparent; }
 .pc-spin-arriba::after { border-bottom: 5px solid var(--text); }
 .pc-spin-abajo::after { border-top: 5px solid var(--text); }
+
+/* Tarjetas chicas del detalle de producto: etiqueta arriba, número grande, aclaración abajo (no en línea). */
+.pc-resumen-dato { display: flex; flex-direction: column; gap: 2px; }
+.pc-resumen-dato > span { font-size: 12px; color: var(--text2); }
+.pc-resumen-dato > b { font-size: 20px; font-weight: 800; color: var(--text); line-height: 1.2; }
+.pc-resumen-dato > small { font-size: 12px; color: var(--text2); line-height: 1.4; }
+.pc-resumen-datos { max-width: 720px; }
+@media (max-width: 720px) { .pc-resumen-datos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
