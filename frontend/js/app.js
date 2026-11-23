@@ -4714,16 +4714,25 @@ function renderizarFilasColecta(highlightItemId = null) {
             ? `<img src="${it.thumbnail}" alt="" style="width: 32px; height: 32px; object-fit: contain; border-radius: 4px; background: #fff; padding: 1px; border: 1px solid var(--border); flex-shrink: 0;">`
             : '';
 
-        // Badge de urgencia bien visible en la fila de Colecta
+        // Solo queda junto al nombre el aviso de pausa; el resto del estado va en la columna "Sin stock el".
         let urgenciaBadge = '';
         if (it.pausado) {
             urgenciaBadge = '<span class="badge badge-pausada" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Pausada en ML</span>';
-        } else if (it.status === 'out_of_stock' || it.current_stock <= 0) {
-            urgenciaBadge = '<span class="badge badge-danger" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Sin stock</span>';
-        } else if (it.status === 'critical') {
-            urgenciaBadge = '<span class="badge badge-danger" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Se queda sin stock pronto</span>';
-        } else if (it.status === 'warning') {
-            urgenciaBadge = '<span class="badge badge-warn" style="margin-left: 6px; font-size: 10px; padding: 1px 6px;">Preparar</span>';
+        }
+
+        // Fecha en que se queda sin stock (la del panel), con los días que faltan y el color del apuro.
+        let quiebreCelda;
+        const sinStockYa = it.status === 'out_of_stock' || it.current_stock <= 0;
+        const critico = sinStockYa || it.status === 'critical';
+        const colorQuiebre = critico ? 'var(--danger)' : (it.status === 'warning' ? 'var(--accent)' : 'var(--text)');
+        if (sinStockYa) {
+            quiebreCelda = '<strong style="color: var(--danger);">Ya sin stock</strong>';
+        } else if (!it.stockout_date || it.days_left >= 900) {
+            quiebreCelda = '<span style="color: var(--text2);">Sin ventas</span>';
+        } else {
+            const d = Math.max(0, Math.round(it.days_left || 0));
+            quiebreCelda = `<strong style="color: ${colorQuiebre};">${escapeHtml(formatearFecha(it.stockout_date))}</strong>` +
+                `<div style="font-size: 11px; color: var(--text2);">${d === 0 ? 'hoy' : (d === 1 ? 'en 1 día' : 'en ' + d + ' días')}</div>`;
         }
 
         const isHighlighted = highlightItemId && (it.id === highlightItemId || it.id === Number(highlightItemId));
@@ -4757,6 +4766,9 @@ function renderizarFilasColecta(highlightItemId = null) {
             </td>
             <td style="text-align: right; vertical-align: middle;">
                 <strong style="${it.current_stock <= 0 ? 'color: var(--danger);' : ''}">${it.current_stock}</strong> un.
+            </td>
+            <td style="text-align: right; vertical-align: middle; white-space: nowrap;">
+                ${quiebreCelda}
             </td>
             <td style="text-align: right; vertical-align: middle; color: var(--text2);">
                 ${it.vpd} un./d
