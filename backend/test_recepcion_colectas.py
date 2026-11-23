@@ -85,5 +85,56 @@ class TestColectaVencida(unittest.TestCase):
         self.assertEqual(r.decidir(fila, 5, HOY), ("received", HOY, None))
 
 
+class TestIngresoPorStock(unittest.TestCase):
+    R = date(2026, 11, 10)
+
+    def test_de_4_a_32_con_30_enviadas_es_recibida(self):
+        stock = {date(2026, 11, 10): 4, date(2026, 11, 11): 3, date(2026, 11, 12): 32}
+        self.assertEqual(r.ingreso_por_stock(stock, {}, self.R, 30), date(2026, 11, 12))
+
+    def test_las_ventas_no_esconden_la_suba(self):
+        stock = {date(2026, 11, 10): 10, date(2026, 11, 11): 10, date(2026, 11, 12): 10}
+        ventas = {date(2026, 11, 11): 6, date(2026, 11, 12): 6}
+        self.assertEqual(r.ingreso_por_stock(stock, ventas, self.R, 20), date(2026, 11, 12))
+
+    def test_si_solo_baja_no_hay_ingreso(self):
+        stock = {date(2026, 11, 10): 10, date(2026, 11, 11): 8, date(2026, 11, 12): 5}
+        self.assertIsNone(r.ingreso_por_stock(stock, {}, self.R, 30))
+
+    def test_sin_dato_del_dia_de_retiro_no_afirma_nada(self):
+        self.assertIsNone(r.ingreso_por_stock({date(2026, 11, 12): 99}, {}, self.R, 30))
+
+    def test_decidir_cierra_con_la_fecha_real(self):
+        fila = {"pickup_date": self.R, "meli_inbound_status": "picked_up"}
+        self.assertEqual(r.decidir(fila, 0, HOY, date(2026, 11, 12)), ("received", date(2026, 11, 12), "delivered"))
+
+
+class TestIngresoPorStock(unittest.TestCase):
+    R = date(2026, 11, 10)
+
+    def test_de_4_a_32_con_30_enviadas_es_recibida(self):
+        stock = {date(2026, 11, 10): 4, date(2026, 11, 11): 3, date(2026, 11, 12): 32}
+        self.assertEqual(r.ingreso_por_stock(stock, {}, self.R, 30), date(2026, 11, 12))
+
+    def test_las_ventas_no_esconden_la_suba(self):
+        stock = {date(2026, 11, 10): 10, date(2026, 11, 11): 10, date(2026, 11, 12): 10}
+        ventas = {date(2026, 11, 11): 6, date(2026, 11, 12): 6}
+        self.assertEqual(r.ingreso_por_stock(stock, ventas, self.R, 20), date(2026, 11, 12))
+
+    def test_si_solo_baja_no_hay_ingreso(self):
+        stock = {date(2026, 11, 10): 10, date(2026, 11, 11): 8, date(2026, 11, 12): 5}
+        self.assertIsNone(r.ingreso_por_stock(stock, {}, self.R, 30))
+
+    def test_sin_dato_del_dia_de_retiro_no_afirma_nada(self):
+        self.assertIsNone(r.ingreso_por_stock({date(2026, 11, 12): 99}, {}, self.R, 30))
+
+    def test_decidir_cierra_con_la_fecha_real(self):
+        fila = {"pickup_date": self.R, "meli_inbound_status": "picked_up"}
+        self.assertEqual(r.decidir(fila, 0, HOY, date(2026, 11, 12)), ("received", date(2026, 11, 12), "delivered"))
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+
