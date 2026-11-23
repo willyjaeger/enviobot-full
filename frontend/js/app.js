@@ -3595,9 +3595,9 @@ function renderizarPanelColecta() {
     // Las dos donas van en la misma tarjeta, separadas al medio; el detalle del índice queda debajo, a todo el ancho.
     const donaIndice = tarjetaIndiceQuiebres();
     cont.innerHTML = htmlAvisoEnviosVencidos()
+        + tarjetaRelojPerdidas()
         + `<div class="pc-hero-par">${tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)}${donaIndice}</div>`
         + detalleIndiceQuiebres
-        + tarjetaRelojPerdidas()
         + tarjetaColectaAutomatica()
         + tarjetaEquilibrio()
         + htmlSacar
