@@ -2244,3 +2244,7 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 .colecta-th-orden:hover { color: var(--text); }
 .colecta-sort { font-size: 11px; opacity: .45; }
 .colecta-sort.colecta-sort-activa { opacity: 1; color: var(--accent); }
+
+/* Armar colecta: nunca scroll horizontal; el nombre del producto se recorta con "..." */
+.colecta-lista { overflow-x: hidden; }
+.colecta-lista .colecta-table { table-layout: auto; }

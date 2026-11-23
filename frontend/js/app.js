@@ -4816,15 +4816,15 @@ function renderizarFilasColecta(highlightItemId = null) {
             <td style="text-align: center; vertical-align: middle;">
                 <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="toggleItemColecta(${it.id}, this.checked)">
             </td>
-            <td style="vertical-align: middle;">
+            <td style="vertical-align: middle; width: 100%; max-width: 0;">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     ${thumbImg}
                     <div style="min-width: 0;">
                         <div style="display: flex; align-items: center; gap: 4px;">
-                            <strong style="color: var(--text); font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px;">${it.title}</strong>
+                            <strong style="color: var(--text); font-size: 13px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">${it.title}</strong>
                             ${urgenciaBadge}
                         </div>
-                        <div style="font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                        <div style="font-size: 11px; color: var(--text2); display: flex; align-items: center; gap: 6px; margin-top: 2px; white-space: nowrap; overflow: hidden;">
                             <span>Cód ML: <strong style="color: var(--accent);">${it.inventory_id || it.item_id}</strong></span>
                             ${it.item_id ? `<span>·</span><span style="color: var(--text2);">${it.item_id}</span>` : ''}
                             ${channelBadges ? `<span>·</span> ${channelBadges}` : ''}
