@@ -186,6 +186,7 @@ def fetch_full_publications(access_token, meli_user_id):
                                     var_combs = v.get("attribute_combinations", [])
                                     var_name = " / ".join(f"{c.get('name')}: {c.get('value_name')}" for c in var_combs) if var_combs else None
                                     var_declared_stock = v.get("available_quantity", 0)
+                                    var_price = v.get("price") if v.get("price") is not None else body.get("price")
 
                                     all_flat_items.append({
                                         "item_id": item_id,
@@ -200,7 +201,8 @@ def fetch_full_publications(access_token, meli_user_id):
                                         "is_catalog": is_catalog,
                                         "status": status,
                                         "sub_status": sub_status,
-                                        "declared_stock": var_declared_stock
+                                        "declared_stock": var_declared_stock,
+                                        "price": var_price
                                     })
                             else:
                                 all_flat_items.append({
@@ -216,7 +218,8 @@ def fetch_full_publications(access_token, meli_user_id):
                                     "is_catalog": is_catalog,
                                     "status": status,
                                     "sub_status": sub_status,
-                                    "declared_stock": body.get("available_quantity", 0)
+                                    "declared_stock": body.get("available_quantity", 0),
+                                    "price": body.get("price")
                                 })
 
             offset += limit
@@ -407,6 +410,11 @@ def sync_account_full_catalog(user_id, cred_id, access_token, meli_user_id):
                 if esquema.tiene_columna(cur, "full_items", "sub_status"):
                     cur.execute("UPDATE full_items SET sub_status = %s WHERE user_id=%s AND item_id=%s AND variation_id=%s",
                                 (it.get("sub_status") or None, user_id, item_id, var_id))
+
+                # Precio de venta (migración 010): si la columna todavía no existe, se omite.
+                if it.get("price") is not None and esquema.tiene_columna(cur, "full_items", "price"):
+                    cur.execute("UPDATE full_items SET price = %s WHERE user_id=%s AND item_id=%s AND variation_id=%s",
+                                (it.get("price"), user_id, item_id, var_id))
 
                 # Leer overrides específicos si existen
                 cur.execute("SELECT lead_time_override, safety_stock_override FROM full_items WHERE user_id=%s AND item_id=%s AND variation_id=%s", (user_id, item_id, var_id))

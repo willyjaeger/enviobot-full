@@ -1376,6 +1376,8 @@ def get_full_items():
         """
         if _esquema.tiene_columna(cur, "full_items", "sub_status"):   # migración 002
             query = query.replace("i.status AS item_status,", "i.status AS item_status, i.sub_status AS item_sub_status,")
+        if _esquema.tiene_columna(cur, "full_items", "price"):        # migración 010
+            query = query.replace("i.status AS item_status,", "i.status AS item_status, i.price AS item_price,")
         default_lt = settings.get("default_lead_time_days", 5)
         default_ss = settings.get("default_safety_stock_days", 2)
         params = [default_lt, default_ss, account_id]
@@ -1454,10 +1456,13 @@ def get_full_items():
                     "sales_last_15d": row.get("sales_last_15d") or 0,
                     "sales_last_30d": row.get("sales_last_30d") or 0,
                     "channels": [channel_info],
-                    "target_coverage_days": target_cov
+                    "target_coverage_days": target_cov,
+                    "price": float(row["item_price"]) if row.get("item_price") is not None else None
                 }
             else:
                 c_item = consolidated[group_key]
+                if c_item.get("price") is None and row.get("item_price") is not None:
+                    c_item["price"] = float(row["item_price"])
                 if not c_item.get("sku") and row.get("sku"):
                     c_item["sku"] = row["sku"]
                 if not c_item.get("inventory_id") and row.get("inventory_id"):

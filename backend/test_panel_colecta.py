@@ -368,6 +368,36 @@ process.stdout.write(JSON.stringify({ h1: tot(h1), h2: tot(h2), s1: tot(rec), s2
         self.assertLess(sum(d['s2'].values()), sum(d['s1'].values()) + 1000)  # la segunda sigue calculándose
         self.assertTrue(d['ordenado'])
 
+    def test_reloj_de_plata_perdida_por_quiebres(self):
+        # Pedido de Guillermo (2026-11-23): plata perdida por los productos que quebraron stock en los últimos 30 días.
+        harness = r"""
+const vm = require('vm');
+const ctx = { document: { getElementById: () => null }, setInterval: () => 1, Date, Math, String, console };
+vm.createContext(ctx);
+vm.runInContext(require('fs').readFileSync(process.argv[1], 'utf8'), ctx);
+const it = (id, sku, dias, vpd, precio) => ({ id: id, title: sku, sku: sku, current_stock: 0, vpd: vpd, vpd_base: vpd, dias_sin_stock_30d: dias, precio: precio, ventas_30d: 100 });
+ctx.itemsData = [it(1, 'A', 3, 10, 1000), it(2, 'B', 5, 2, null), it(3, 'C', 0, 5, 500), it(4, 'D', 40, 1, 100)];
+const r = ctx.perdidaPorQuiebres();
+const html = ctx.tarjetaRelojPerdidas();
+ctx.itemsData = [it(1, 'A', 3, 10, null)];
+const sinPrecios = ctx.tarjetaRelojPerdidas();
+ctx.itemsData = [it(1, 'A', 0, 10, 1000)];
+const sinQuiebres = ctx.tarjetaRelojPerdidas();
+process.stdout.write(JSON.stringify({ n: r.filas.length, plata: r.plata, sinPrecio: r.sinPrecio, dias: r.dias, html: html, sinPrecios: sinPrecios, sinQuiebres: sinQuiebres }));
+"""
+        r = subprocess.run([NODE, '-e', harness, self.src_path], capture_output=True, text=True, encoding='utf-8', timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        d = json.loads(r.stdout)
+        self.assertEqual(d['n'], 3)                         # A, B y D quebraron; C no
+        self.assertEqual(d['plata'], 3 * 10 * 1000 + 30 * 1 * 100)   # A: 3 días x 10 u. x $1.000; D: tope de 30 días x 1 u. x $100; B no tiene precio
+        self.assertEqual(d['sinPrecio'], 1)
+        self.assertEqual(d['dias'], 3 + 5 + 30)
+        self.assertIn('pc-reloj-lista', d['html'])          # la lista existe y se muestra al pasar el mouse
+        self.assertIn('Plata perdida por quiebres', d['html'])
+        self.assertIn('Todavía no tengo los precios', d['sinPrecios'])
+        self.assertIn('Sin quiebres', d['sinQuiebres'])
+        self.assertNotIn('pc-reloj-lista', d['sinQuiebres'])
+
     def test_el_texto_de_lo_que_ya_no_se_salva_dice_hasta_cuando(self):
         harness = r"""
 const vm = require('vm');

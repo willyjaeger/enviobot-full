@@ -2251,3 +2251,15 @@ details.pc-plegable > summary.pc-block-title { margin-bottom: 8px; }
 
 /* Pestaña Colectas sin nada programado */
 .pc-sin-colectas { padding: 22px 18px; text-align: center; font-size: 14px; font-weight: 600; color: var(--text2); background: var(--surface); border: 1px dashed var(--border-hover); border-radius: 10px; }
+/* Reloj de la plata perdida: la lista de productos aparece al pasar el mouse (o con el foco) */
+.pc-reloj { position: relative; align-items: center; }
+.pc-reloj-esfera-caja { flex-shrink: 0; display: inline-flex; }
+.pc-reloj-marca { stroke: var(--text2); stroke-width: 1.5; stroke-linecap: round; }
+.pc-reloj-pista { fill: none; stroke: var(--border-hover); stroke-width: 8; }
+.pc-reloj-arco { fill: none; stroke: var(--danger); stroke-width: 8; stroke-linecap: round; }
+.pc-reloj-monto { font-size: 30px; font-weight: 800; color: var(--text); line-height: 1.15; margin: 2px 0; }
+.pc-reloj-mala { color: var(--danger); }
+.pc-reloj-lista { display: none; position: absolute; left: 0; right: 0; top: calc(100% - 6px); z-index: 40; max-height: 360px; overflow: auto; padding: 12px 14px; background: var(--surface); border: 1px solid var(--border-hover); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+.pc-reloj:hover .pc-reloj-lista, .pc-reloj:focus-within .pc-reloj-lista, .pc-reloj:focus .pc-reloj-lista { display: block; }
+.pc-reloj-lista-tit { font-weight: 700; margin-bottom: 6px; }
+.pc-reloj-lista-pie { font-size: 12px; color: var(--text2); margin-top: 8px; }

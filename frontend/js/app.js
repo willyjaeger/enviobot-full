@@ -412,6 +412,7 @@ function adaptarItemDesdeBackend(raw) {
         prep_item_id: raw.prep_item_id || null,
         prep_status: raw.prep_status || null,
         dias_sin_stock_30d: raw.dias_sin_stock_30d || 0,
+        precio: raw.price !== undefined && raw.price !== null ? Number(raw.price) : null,
         sobrestock: !!raw.sobrestock,
         umbral_sobrestock: raw.umbral_sobrestock || null
     };
@@ -3286,6 +3287,73 @@ function htmlAvisoEnviosVencidos() {
     </div>`;
 }
 
+// ── Reloj de la plata perdida por quiebres (últimos 30 días) ───────────────────────────────────
+// Por cada producto: días sin stock en los últimos 30 (lo que la app anotó cada día) x lo que vendía por día cuando tenía stock x precio de venta.
+// Es una estimación de ventas que no se hicieron, no plata que se haya gastado. Sin el precio (se trae de Mercado Libre) se muestran los días y las unidades.
+function perdidaPorQuiebres() {
+    const filas = [];
+    (itemsData || []).forEach(it => {
+        const dias = Math.min(30, Number(it.dias_sin_stock_30d) || 0);
+        if (dias <= 0) return;
+        const vpd = Number(it.vpd_base) > 0 ? Number(it.vpd_base) : (Number(it.vpd) || 0);
+        const unidades = Math.round(dias * vpd);
+        const precio = Number(it.precio) > 0 ? Number(it.precio) : null;
+        filas.push({ it: it, dias: dias, unidades: unidades, precio: precio, plata: precio !== null ? unidades * precio : null });
+    });
+    filas.sort((a, b) => ((b.plata || 0) - (a.plata || 0)) || (b.dias - a.dias));
+    const plata = filas.reduce((a, f) => a + (f.plata || 0), 0);
+    let vendido = 0;
+    (itemsData || []).forEach(it => { if (Number(it.precio) > 0) vendido += (Number(it.ventas_30d) || 0) * Number(it.precio); });
+    return { filas: filas, plata: plata, vendido: vendido, pct: plata + vendido > 0 ? plata / (plata + vendido) : 0,
+             sinPrecio: filas.filter(f => f.plata === null).length, hayPrecios: (itemsData || []).some(it => Number(it.precio) > 0),
+             dias: filas.reduce((a, f) => a + f.dias, 0), unidades: filas.reduce((a, f) => a + f.unidades, 0) };
+}
+
+function tarjetaRelojPerdidas() {
+    let r;
+    try { r = perdidaPorQuiebres(); } catch (e) { return ''; }
+    const peso = n => '$ ' + Math.round(n).toLocaleString('es-AR');
+    const nf = n => Math.round(n).toLocaleString('es-AR');
+    const n = r.filas.length;
+    // Esfera: 12 marcas de reloj y un arco que muestra qué parte de las ventas posibles se perdió (perdido / (vendido + perdido)).
+    const C = 2 * Math.PI * 46;
+    const arco = r.hayPrecios ? Math.min(1, r.pct) * C : 0;
+    let marcas = '';
+    for (let k = 0; k < 12; k++) {
+        const a = k * Math.PI / 6;
+        marcas += `<line x1="${(60 + 54 * Math.sin(a)).toFixed(1)}" y1="${(60 - 54 * Math.cos(a)).toFixed(1)}" x2="${(60 + 58 * Math.sin(a)).toFixed(1)}" y2="${(60 - 58 * Math.cos(a)).toFixed(1)}" class="pc-reloj-marca"/>`;
+    }
+    const esfera = `<svg class="pc-reloj-esfera" width="128" height="128" viewBox="0 0 120 120" role="img" aria-label="${escapeHtml(r.hayPrecios ? 'Se perdió el ' + (r.pct * 100).toFixed(1).replace('.', ',') + ' % de las ventas posibles' : 'Sin precios todavía')}">${marcas}
+        <circle cx="60" cy="60" r="46" class="pc-reloj-pista"/>
+        <circle cx="60" cy="60" r="46" class="pc-reloj-arco" stroke-dasharray="${arco.toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 60 60)"/>
+        <text x="60" y="58" text-anchor="middle" class="pc-dona-num">${n}</text><text x="60" y="76" text-anchor="middle" class="pc-dona-txt">${n === 1 ? 'producto' : 'productos'}</text></svg>`;
+    let monto, sub;
+    if (!n) {
+        monto = 'Sin quiebres';
+        sub = 'Ningún producto se quedó sin stock en los días que la app registró de los últimos 30.';
+    } else if (!r.hayPrecios) {
+        monto = nf(r.unidades) + ' u. sin vender';
+        sub = 'Todavía no tengo los precios de tus publicaciones: se traen de Mercado Libre en una de las próximas sincronizaciones y acá aparece la plata.';
+    } else {
+        monto = peso(r.plata);
+        sub = `${pluralizar(n, 'producto se quedó', 'productos se quedaron')} sin stock (${nf(r.dias)} ${r.dias === 1 ? 'día' : 'días'} en total, unas ${nf(r.unidades)} u. sin vender)` +
+            (r.vendido > 0 ? `: el ${(r.pct * 100).toFixed(1).replace('.', ',')} % de lo que se podía vender.` : '.') +
+            (r.sinPrecio ? ` Sin precio: ${r.sinPrecio}.` : '');
+    }
+    const filas = r.filas.map(f => `<tr><td>${nombreItemPanel(f.it)}</td><td class="pc-num">${nf(f.dias)} ${f.dias === 1 ? 'día' : 'días'}</td><td class="pc-num">${nf(f.unidades)} u.</td><td class="pc-num"><b>${f.plata !== null ? peso(f.plata) : 'sin precio'}</b></td></tr>`).join('');
+    const lista = n ? `<div class="pc-reloj-lista"><div class="pc-reloj-lista-tit">Productos que se quedaron sin stock (de más a menos plata)</div>
+        <table class="pc-table"><thead><tr><th>Producto</th><th class="pc-num">Sin stock</th><th class="pc-num">Sin vender</th><th class="pc-num">Perdido</th></tr></thead><tbody>${filas}</tbody></table>
+        <div class="pc-reloj-lista-pie">Estimación: días sin stock x lo que vendía por día cuando tenía stock x precio de venta. Cuenta solo los días que la app anotó.</div></div>` : '';
+    return `<div class="pc-reloj pc-banner" id="relojPerdidas" tabindex="0" aria-label="Plata perdida por quiebres en los últimos 30 días">
+        <span class="pc-reloj-esfera-caja">${esfera}</span>
+        <div class="pc-banner-text">
+            <div class="pc-banner-titulo">Plata perdida por quiebres, últimos 30 días</div>
+            <div class="pc-reloj-monto${n && r.hayPrecios ? ' pc-reloj-mala' : ''}">${escapeHtml(monto)}</div>
+            <div class="pc-banner-sub">${escapeHtml(sub)}${n ? ' Pasá el mouse para ver cuáles.' : ''}</div>
+        </div>${lista}
+    </div>`;
+}
+
 function renderizarPanelColecta() {
     const cont = document.getElementById('panelColecta');
     if (!cont) return;
@@ -3368,6 +3436,7 @@ function renderizarPanelColecta() {
     cont.innerHTML = htmlAvisoEnviosVencidos()
         + `<div class="pc-hero-par">${tarjetaEstadoGeneral(g, itemsData.length - g.pausados.length)}${donaIndice}</div>`
         + detalleIndiceQuiebres
+        + tarjetaRelojPerdidas()
         + tarjetaColectaAutomatica()
         + tarjetaEquilibrio()
         + htmlSacar
