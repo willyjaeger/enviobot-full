@@ -1284,6 +1284,16 @@ class TestBotonesVisibles(unittest.TestCase):
         self.assertIn('onclick="abrirHistorialColectas()"', html)
         self.assertIn('data-label="Historial de envíos"', html)
 
+    def test_solo_se_arma_desde_las_colectas_automaticas(self):
+        """Pedido de Guillermo (2026-11-23): el único "Armar colecta" es "Armar esta colecta" de las tarjetas de la colecta automática."""
+        html = _leer('index.html')
+        js = _leer(os.path.join('js', 'app.js'))
+        self.assertNotIn('+ Armar Nuevo Envío', html)
+        self.assertNotIn('irACrearColectaDesdeHistorial()"', html)
+        for texto in ('Armar Colecta\n', 'Planificar Envío Preventivo', 'btn-pedir-colecta'):
+            self.assertNotIn(texto, js)
+        self.assertEqual(js.count('Armar esta colecta</button>'), 2)   # la de hoy y la siguiente
+
     def test_el_contador_del_historial_sigue_existiendo_una_sola_vez(self):
         html = _leer('index.html')
         self.assertEqual(html.count('id="topbarHistorialBadge"'), 1)

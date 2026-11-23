@@ -3712,9 +3712,6 @@ function renderizarWidgetAlertas() {
             <div class="widget-alert-list">
                 ${itemsHtml}
             </div>
-            <button class="btn btn-sm" style="width: 100%; background: var(--accent); color: #111; font-weight: 700;" onclick="abrirModalColecta()">
-                Armar Colecta
-            </button>
         `;
     } else {
         container.innerHTML = `
@@ -3731,9 +3728,6 @@ function renderizarWidgetAlertas() {
             <p style="font-size: 12px; color: var(--text2); line-height: 1.5; margin-bottom: 12px;">
                 Todos los productos en ${wh.name} tienen stock suficiente.
             </p>
-            <button class="btn btn-secondary btn-sm" style="width: 100%;" onclick="abrirModalColecta()">
-                Planificar Envío Preventivo
-            </button>
         `;
     }
 }
@@ -4056,11 +4050,11 @@ function renderizarTabla() {
             const roundedDays = Math.max(1, Math.round(daysToDeadline));
 
             if (it.current_stock <= 0 || it.status === 'out_of_stock') {
-                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--danger); font-weight: 700;">Pedir hoy</span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Abrir colecta con este artículo incluido">+ Colecta</button></div>`;
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--danger); font-weight: 700;">Pedir hoy</span></div>`;
             } else if (daysToDeadline <= 0 || it.status === 'critical') {
-                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--accent); font-weight: 700;">Pedir hoy</span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Abrir colecta con este artículo incluido">+ Colecta</button></div>`;
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--accent); font-weight: 700;">Pedir hoy</span></div>`;
             } else if (daysToDeadline <= 3 || it.status === 'warning') {
-                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--text); font-weight: 600;">El ${formatearFecha(it.reorder_deadline_date)} <span style="color: var(--text2); font-weight: 400;">(${roundedDays}d)</span></span> <button class="btn-pedir-colecta" onclick="event.stopPropagation(); abrirModalColectaConItem(${it.id})" title="Planificar colecta para este artículo">+ Colecta</button></div>`;
+                fechaColectaHtml = `<div style="display: flex; align-items: center; justify-content: center; gap: 6px;"><span style="color: var(--text); font-weight: 600;">El ${formatearFecha(it.reorder_deadline_date)} <span style="color: var(--text2); font-weight: 400;">(${roundedDays}d)</span></span></div>`;
             } else {
                 fechaColectaHtml = `<span style="color: var(--text2);">El ${formatearFecha(it.reorder_deadline_date)} <span style="font-weight: 400;">(${roundedDays}d)</span></span>`;
             }
@@ -5676,7 +5670,7 @@ async function cargarHistorialColectas(soloBadge = false) {
                             <line x1="12" y1="22.08" x2="12" y2="12"></line>
                         </svg><br>
                         <strong style="font-size: 15px; color: var(--text);">No hay envíos registrados todavía.</strong><br>
-                        <span style="font-size: 13px; margin-top: 4px; display: inline-block;">Podés planificar tu primer despacho con el botón <strong>+ Armar Nuevo Envío</strong>.</span>
+                        <span style="font-size: 13px; margin-top: 4px; display: inline-block;">Armá tu primera colecta desde <strong>Armar esta colecta</strong>, en la colecta automática del Resumen.</span>
                     </div>
                 `;
                 return;
