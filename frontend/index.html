@@ -46,7 +46,7 @@
             if (btn) btn.style.display = 'inline-flex';
         });
     </script>
-    <link rel="stylesheet" href="css/style.css?v=20261123_4">
+    <link rel="stylesheet" href="css/style.css?v=20261123_5">
 </head>
 <body>
 
@@ -752,18 +752,12 @@
                 <!-- Acciones Inferiores -->
                 <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border); flex-wrap: wrap; gap: 8px;">
                     <div style="display: flex; gap: 6px;">
-                        <button type="button" class="btn btn-secondary btn-sm" onclick="copiarListaColecta()">
-                            Copiar lista
-                        </button>
                         <button type="button" class="btn btn-secondary btn-sm" onclick="exportarColectaCSV()">
                             Descargar CSV (Excel)
                         </button>
                     </div>
                     <div style="display: flex; gap: 8px;">
                         <button type="button" class="btn btn-secondary" onclick="cerrarModalColecta()">Cerrar</button>
-                        <button type="button" class="btn btn-secondary" onclick="confirmarDespachoColecta()" title="Registra la colecta en EnvioBot y arma la hoja de despacho. No la carga en Mercado Libre.">
-                            Generar hoja de despacho
-                        </button>
                         <button type="button" class="btn" id="btnSubirColectaML" style="background: var(--accent); color: #111; font-weight: 800;" onclick="subirColectaAML()" title="Descarga la planilla de Mercado Libre ya completa y abre la pantalla de Mercado Libre donde se sube">
                             Subir la colecta a Mercado Libre
                         </button>
@@ -1952,6 +1946,6 @@
     <script src="js/teclado-formularios.js?v=20261017_2"></script>
     <script src="js/theme.js?v=20261013_4"></script>
     <script src="js/notifications.js?v=20261013_4"></script>
-    <script src="js/app.js?v=20261123_4"></script>
+    <script src="js/app.js?v=20261123_5"></script>
 </body>
 </html>
