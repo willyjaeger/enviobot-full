@@ -1277,12 +1277,9 @@ class TestBotonesVisibles(unittest.TestCase):
 
     def test_los_botones_estan_arriba_de_todo_el_panel(self):
         html = _leer('index.html')
-        barra = html.index('class="pc-toolbar"')
-        self.assertLess(barra, html.index('id="panelColecta"'))
-        self.assertLess(barra, html.index('id="cardStockPrincipal"'))
-        zona = html[barra:html.index('id="panelColecta"')]
-        self.assertIn('abrirModalColecta()', zona)
-        self.assertIn('Armar colecta', zona)
+        # Pedido de Guillermo (2026-11-23): se sacó el botón grande "Armar colecta" de Resumen y Colectas.
+        self.assertNotIn('class="pc-toolbar"', html)
+        self.assertNotIn('onclick="abrirModalColecta()"', html)
         # el historial pasó al menú lateral, siempre a la vista
         self.assertIn('onclick="abrirHistorialColectas()"', html)
         self.assertIn('data-label="Historial de envíos"', html)
