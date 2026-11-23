@@ -12,6 +12,8 @@ from datetime import date, datetime
 
 logger = logging.getLogger("recepcion_colectas")
 
+DIAS_PARA_DAR_POR_RECIBIDA = 7
+
 
 def decidir(fila, en_proceso, hoy):
     """Qué hacer con una colecta en tránsito. Devuelve (nuevo estado de ML, nueva fecha de ingreso, nuevo status)
@@ -19,6 +21,11 @@ def decidir(fila, en_proceso, hoy):
     recibida = (fila.get("meli_inbound_status") or "") == "received"
     if not recibida and en_proceso > 0:
         return "received", hoy, None
+    # Ya pasó mucho desde el retiro y Mercado Libre no tiene nada en proceso: la recibió y la procesó entre dos
+    # sincronizaciones (o antes de que existiera este control). Sin esto quedaba "en camino" para siempre y se contaba doble.
+    retiro = fila.get("pickup_date")
+    if not recibida and en_proceso <= 0 and retiro is not None and (hoy - retiro).days > DIAS_PARA_DAR_POR_RECIBIDA:
+        return None, None, "delivered"
     if recibida and en_proceso <= 0:
         return None, None, "delivered"
     return None, None, None

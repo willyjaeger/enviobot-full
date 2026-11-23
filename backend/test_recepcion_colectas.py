@@ -70,5 +70,20 @@ class TestRecepcion(unittest.TestCase):
         self.assertEqual(res["recibidas"], 0)
 
 
+class TestColectaVencida(unittest.TestCase):
+    """Una colecta en transito vieja y sin nada en proceso ya entro: se cierra (no queda 'en camino' para siempre)."""
+    def test_retirada_hace_mas_de_7_dias_sin_stock_en_proceso_se_cierra(self):
+        fila = {"pickup_date": date(2026, 10, 10), "meli_inbound_status": "picked_up"}
+        self.assertEqual(r.decidir(fila, 0, HOY), (None, None, "delivered"))
+
+    def test_retirada_hace_poco_sigue_en_camino(self):
+        fila = {"pickup_date": date(2026, 10, 15), "meli_inbound_status": "picked_up"}
+        self.assertEqual(r.decidir(fila, 0, HOY), (None, None, None))
+
+    def test_vieja_pero_con_stock_en_proceso_se_marca_recibida(self):
+        fila = {"pickup_date": date(2026, 10, 10), "meli_inbound_status": "picked_up"}
+        self.assertEqual(r.decidir(fila, 5, HOY), ("received", HOY, None))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1701,7 +1701,11 @@ function proyeccionProducto(it, colectas, hoy, demora) {
     (colectas || []).forEach(function (c) {
         (c.productos || []).forEach(function (p) {
             if (normalizarSkuPanel(p.sku) !== normalizarSkuPanel(it.sku)) return;
-            const ingresoDia = Math.max(0, diasEntreFechas(hoy0, parsearFechaLocal(c.fecha_ingreso)));
+            const ingresoCrudo = diasEntreFechas(hoy0, parsearFechaLocal(c.fecha_ingreso));
+            // Si ya entró y ya pasó la demora de ML, esas unidades están en el stock de hoy: contarlas de nuevo es doble conteo.
+            // Solo se cuentan igual las que ML tiene en proceso (recibidas pero todavía no a la venta).
+            if (ingresoCrudo + demora <= 0 && !(Number(c.unidades_en_proceso) > 0)) return;
+            const ingresoDia = Math.max(0, ingresoCrudo);
             const dia = ingresoDia + demora;
             if (dia > DIAS_PROYECCION) return;
             entran[dia] = (entran[dia] || 0) + (Number(p.unidades) || 0);
